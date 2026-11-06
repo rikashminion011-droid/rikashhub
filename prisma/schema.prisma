@@ -1,0 +1,729 @@
+// Rikash Finance: PostgreSQL schema.
+// Conventions: uuid primary keys, Decimal(14,2) money, createdAt/updatedAt everywhere,
+// soft delete (deletedAt) on user-facing financial records, every row owned by a userId.
+// Table names are snake_case (@@map); column names are camelCase.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum AccountType {
+  BANK
+  CASH
+  WALLET
+  DEBIT_CARD
+  SLICE
+  OTHER
+}
+
+/// ASSET accounts hold money (balance). CREDIT_LINE accounts (e.g. Slice) hold an amount owed (outstanding).
+enum AccountKind {
+  ASSET
+  CREDIT_LINE
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  CLOSED
+}
+
+enum CardStatus {
+  ACTIVE
+  BLOCKED
+  CLOSED
+}
+
+enum StatementStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  CREDIT_CARD_PAYMENT
+  DEBT_PAYMENT
+  SAVINGS_DEPOSIT
+  SAVINGS_WITHDRAWAL
+  EMI_PAYMENT
+  SUBSCRIPTION_PAYMENT
+  TRANSFER
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  DEBIT_CARD
+  CREDIT_CARD
+  NET_BANKING
+  WALLET
+  CHEQUE
+  OTHER
+}
+
+enum DueCategory {
+  CREDIT_CARD_BILL
+  EMI
+  PERSONAL_LOAN
+  SUBSCRIPTION
+  RENT
+  INSURANCE
+  UTILITY
+  INTERNET
+  MOBILE
+  OTHER
+}
+
+enum Recurrence {
+  ONCE
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+}
+
+enum DueStatus {
+  UPCOMING
+  DUE_TODAY
+  OVERDUE
+  PAID
+  PARTIALLY_PAID
+}
+
+enum DebtDirection {
+  OWE
+  OWED_TO_ME
+}
+
+enum DebtType {
+  PERSONAL_LOAN
+  BORROWED
+  LENT
+  FRIENDS_FAMILY
+  OTHER
+}
+
+enum InterestModel {
+  REDUCING_BALANCE
+  FLAT
+  INTEREST_FREE
+}
+
+enum PaymentFrequency {
+  ONE_TIME
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum DebtStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum SavingsPurpose {
+  GENERAL
+  EMERGENCY
+  GOAL
+}
+
+enum SavingsTxType {
+  DEPOSIT
+  WITHDRAWAL
+  INTEREST
+}
+
+enum MilestoneCategory {
+  VEHICLE
+  HOUSE
+  EMERGENCY_FUND
+  TRAVEL
+  INVESTMENT
+  EDUCATION
+  PERSONAL
+  OTHER
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum MilestoneStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum ReminderKind {
+  DUE_UPCOMING
+  DUE_OVERDUE
+  CARD_DUE
+  DEBT_DUE
+  MILESTONE
+}
+
+// ───────────────────────── Identity ─────────────────────────
+
+/// Mirrors Supabase auth.users. `id` is the auth user id (no default: it is supplied on first sign-in).
+model User {
+  id        String    @id @db.Uuid
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  profile                UserProfile?
+  accounts               Account[]
+  creditCards            CreditCard[]
+  creditCardStatements   CreditCardStatement[]
+  categories             TransactionCategory[]
+  transactions           Transaction[]
+  attachments            Attachment[]
+  recurringPayments      RecurringPayment[]
+  monthlyDues            MonthlyDue[]
+  paymentRecords         PaymentRecord[]
+  debts                  Debt[]
+  debtPayments           DebtPayment[]
+  savingsAccounts        SavingsAccount[]
+  savingsTransactions    SavingsTransaction[]
+  milestones             Milestone[]
+  milestoneContributions MilestoneContribution[]
+  reminders              Reminder[]
+  monthlySummaries       MonthlySummary[]
+  auditLogs              AuditLog[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  userId           String   @id @db.Uuid
+  fullName         String?
+  currency         String   @default("INR")
+  locale           String   @default("en-IN")
+  timezone         String   @default("Asia/Kolkata")
+  reminderLeadDays Int      @default(3)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+// ───────────────────────── Accounts & cards ─────────────────────────
+
+/// Bank accounts, cash, wallets, debit cards and credit-line accounts such as Slice.
+/// For kind=ASSET `currentBalance` is money held. For kind=CREDIT_LINE it is the amount owed.
+model Account {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  name           String
+  provider       String?
+  type           AccountType
+  kind           AccountKind   @default(ASSET)
+  /// Only the last 4 digits are ever stored or shown.
+  maskedNumber   String?       @db.VarChar(4)
+  openingBalance Decimal       @default(0) @db.Decimal(14, 2)
+  currentBalance Decimal       @default(0) @db.Decimal(14, 2)
+  creditLimit    Decimal?      @db.Decimal(14, 2)
+  linkedCardLast4 String?      @db.VarChar(4)
+  status         AccountStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  txFrom             Transaction[]      @relation("TxFromAccount")
+  txTo               Transaction[]      @relation("TxToAccount")
+  recurringPayments  RecurringPayment[]
+  monthlyDues        MonthlyDue[]
+
+  @@index([userId, deletedAt])
+  @@index([userId, type])
+  @@map("accounts")
+}
+
+model CreditCard {
+  id             String     @id @default(uuid()) @db.Uuid
+  userId         String     @db.Uuid
+  bankName       String
+  cardName       String
+  /// Last 4 digits: the only part shown in the UI.
+  cardLast4      String     @db.VarChar(4)
+  /// Full number encrypted server-side (AES-256-GCM). Never sent to the client. CVV/PIN are never stored.
+  cardNumberEnc  String?
+  network        String?
+  creditLimit    Decimal    @db.Decimal(14, 2)
+  /// Amount currently owed. Available credit = creditLimit - outstanding (derived, never stored).
+  outstanding    Decimal    @default(0) @db.Decimal(14, 2)
+  /// Day of month (1-31).
+  billingDay     Int
+  statementDay   Int
+  dueDay         Int
+  minimumDue     Decimal    @default(0) @db.Decimal(14, 2)
+  totalDue       Decimal    @default(0) @db.Decimal(14, 2)
+  annualFee      Decimal    @default(0) @db.Decimal(14, 2)
+  rewardPoints   Int        @default(0)
+  status         CardStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  statements        CreditCardStatement[]
+  txFrom            Transaction[]         @relation("TxFromCard")
+  txTo              Transaction[]         @relation("TxToCard")
+  recurringPayments RecurringPayment[]
+  monthlyDues       MonthlyDue[]
+
+  @@index([userId, deletedAt])
+  @@map("credit_cards")
+}
+
+model CreditCardStatement {
+  id           String          @id @default(uuid()) @db.Uuid
+  userId       String          @db.Uuid
+  creditCardId String          @db.Uuid
+  periodStart  DateTime        @db.Date
+  periodEnd    DateTime        @db.Date
+  statementDate DateTime       @db.Date
+  dueDate      DateTime        @db.Date
+  totalDue     Decimal         @db.Decimal(14, 2)
+  minimumDue   Decimal         @db.Decimal(14, 2)
+  paidAmount   Decimal         @default(0) @db.Decimal(14, 2)
+  status       StatementStatus @default(OPEN)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditCard CreditCard @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
+
+  @@unique([creditCardId, periodEnd])
+  @@index([userId, dueDate])
+  @@map("credit_card_statements")
+}
+
+// ───────────────────────── Transactions ─────────────────────────
+
+model TransactionCategory {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  name      String
+  type      CategoryType
+  icon      String?
+  color     String?
+  /// Lower-case keywords used for automatic categorisation.
+  keywords  String[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, type, name])
+  @@map("transaction_categories")
+}
+
+/// `accountId`/`creditCardId` = where money comes from (the instrument charged).
+/// `toAccountId`/`toCreditCardId`/`savingsAccountId`/`debtId` = where it goes.
+/// What each type does to balances is defined in one place: src/lib/finance/ledger.ts.
+model Transaction {
+  id               String          @id @default(uuid()) @db.Uuid
+  userId           String          @db.Uuid
+  type             TransactionType
+  amount           Decimal         @db.Decimal(14, 2)
+  date             DateTime        @db.Date
+  paymentMethod    PaymentMethod?
+  accountId        String?         @db.Uuid
+  creditCardId     String?         @db.Uuid
+  toAccountId      String?         @db.Uuid
+  toCreditCardId   String?         @db.Uuid
+  savingsAccountId String?         @db.Uuid
+  debtId           String?         @db.Uuid
+  monthlyDueId     String?         @db.Uuid
+  categoryId       String?         @db.Uuid
+  description      String?
+  notes            String?
+  /// Idempotency key for automated entries (unique per user).
+  dedupeKey        String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account        Account?             @relation("TxFromAccount", fields: [accountId], references: [id])
+  creditCard     CreditCard?          @relation("TxFromCard", fields: [creditCardId], references: [id])
+  toAccount      Account?             @relation("TxToAccount", fields: [toAccountId], references: [id])
+  toCreditCard   CreditCard?          @relation("TxToCard", fields: [toCreditCardId], references: [id])
+  savingsAccount SavingsAccount?      @relation(fields: [savingsAccountId], references: [id])
+  debt           Debt?                @relation(fields: [debtId], references: [id])
+  monthlyDue     MonthlyDue?          @relation(fields: [monthlyDueId], references: [id])
+  category       TransactionCategory? @relation(fields: [categoryId], references: [id])
+
+  attachments         Attachment[]
+  paymentRecord       PaymentRecord?
+  debtPayment         DebtPayment?
+  savingsTransaction  SavingsTransaction?
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, date])
+  @@index([userId, type, date])
+  @@index([userId, deletedAt])
+  @@index([accountId])
+  @@index([creditCardId])
+  @@index([categoryId])
+  @@map("transactions")
+}
+
+model Attachment {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  transactionId String?   @db.Uuid
+  fileName      String
+  mimeType      String
+  sizeBytes     Int
+  /// Path inside the private Supabase Storage bucket (never a public URL).
+  storagePath   String
+  checksum      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([userId, transactionId])
+  @@map("attachments")
+}
+
+// ───────────────────────── Monthly dues ─────────────────────────
+
+model RecurringPayment {
+  id                  String        @id @default(uuid()) @db.Uuid
+  userId              String        @db.Uuid
+  name                String
+  category            DueCategory
+  amount              Decimal       @db.Decimal(14, 2)
+  recurrence          Recurrence
+  startDate           DateTime      @db.Date
+  endDate             DateTime?     @db.Date
+  dayOfMonth          Int?
+  paymentMethod       PaymentMethod?
+  accountId           String?       @db.Uuid
+  creditCardId        String?       @db.Uuid
+  debtId              String?       @db.Uuid
+  reminderDaysBefore  Int           @default(3)
+  active              Boolean       @default(true)
+  /// Dues have been generated up to and including this date.
+  generatedThrough    DateTime?     @db.Date
+  notes               String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account    Account?    @relation(fields: [accountId], references: [id])
+  creditCard CreditCard? @relation(fields: [creditCardId], references: [id])
+  debt       Debt?       @relation(fields: [debtId], references: [id])
+  dues       MonthlyDue[]
+
+  @@index([userId, active])
+  @@map("recurring_payments")
+}
+
+model MonthlyDue {
+  id                 String      @id @default(uuid()) @db.Uuid
+  userId             String      @db.Uuid
+  recurringPaymentId String?     @db.Uuid
+  name               String
+  category           DueCategory
+  amount             Decimal     @db.Decimal(14, 2)
+  paidAmount         Decimal     @default(0) @db.Decimal(14, 2)
+  dueDate            DateTime    @db.Date
+  reminderDate       DateTime?   @db.Date
+  status             DueStatus   @default(UPCOMING)
+  paymentMethod      PaymentMethod?
+  accountId          String?     @db.Uuid
+  creditCardId       String?     @db.Uuid
+  debtId             String?     @db.Uuid
+  notes              String?
+  paidAt             DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recurringPayment RecurringPayment? @relation(fields: [recurringPaymentId], references: [id])
+  account          Account?          @relation(fields: [accountId], references: [id])
+  creditCard       CreditCard?       @relation(fields: [creditCardId], references: [id])
+  debt             Debt?             @relation(fields: [debtId], references: [id])
+
+  records      PaymentRecord[]
+  transactions Transaction[]
+
+  /// A recurring rule can generate only one due per date: this makes generation idempotent.
+  @@unique([recurringPaymentId, dueDate])
+  @@index([userId, dueDate, status])
+  @@map("monthly_dues")
+}
+
+model PaymentRecord {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  monthlyDueId  String   @db.Uuid
+  transactionId String?  @unique @db.Uuid
+  amount        Decimal  @db.Decimal(14, 2)
+  paidOn        DateTime @db.Date
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  monthlyDue  MonthlyDue   @relation(fields: [monthlyDueId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([userId, monthlyDueId])
+  @@map("payment_records")
+}
+
+// ───────────────────────── Debts ─────────────────────────
+
+model Debt {
+  id                   String           @id @default(uuid()) @db.Uuid
+  userId               String           @db.Uuid
+  direction            DebtDirection
+  type                 DebtType
+  counterparty         String
+  principal            Decimal          @db.Decimal(14, 2)
+  /// Annual percentage rate.
+  interestRate         Decimal          @default(0) @db.Decimal(6, 3)
+  interestModel        InterestModel    @default(INTEREST_FREE)
+  /// Needed for the FLAT model.
+  termMonths           Int?
+  startDate            DateTime         @db.Date
+  dueDate              DateTime?        @db.Date
+  emiAmount            Decimal?         @db.Decimal(14, 2)
+  paymentFrequency     PaymentFrequency @default(MONTHLY)
+  /// Principal still unpaid (updated atomically with each payment).
+  outstandingPrincipal Decimal          @db.Decimal(14, 2)
+  principalPaidTotal   Decimal          @default(0) @db.Decimal(14, 2)
+  interestPaidTotal    Decimal          @default(0) @db.Decimal(14, 2)
+  status               DebtStatus       @default(ACTIVE)
+  notes                String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  deletedAt            DateTime?
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments          DebtPayment[]
+  transactions      Transaction[]
+  recurringPayments RecurringPayment[]
+  monthlyDues       MonthlyDue[]
+
+  @@index([userId, direction, status])
+  @@map("debts")
+}
+
+model DebtPayment {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  debtId        String    @db.Uuid
+  transactionId String?   @unique @db.Uuid
+  amount        Decimal   @db.Decimal(14, 2)
+  principalPart Decimal   @db.Decimal(14, 2)
+  interestPart  Decimal   @default(0) @db.Decimal(14, 2)
+  paidOn        DateTime  @db.Date
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debt        Debt         @relation(fields: [debtId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([userId, debtId, paidOn])
+  @@map("debt_payments")
+}
+
+// ───────────────────────── Savings & milestones ─────────────────────────
+
+model SavingsAccount {
+  id             String         @id @default(uuid()) @db.Uuid
+  userId         String         @db.Uuid
+  name           String
+  institution    String?
+  purpose        SavingsPurpose @default(GENERAL)
+  /// Annual interest rate (%), used for projections.
+  interestRate   Decimal        @default(0) @db.Decimal(6, 3)
+  openingBalance Decimal        @default(0) @db.Decimal(14, 2)
+  /// Deposits - withdrawals + interest, maintained atomically.
+  balance        Decimal        @default(0) @db.Decimal(14, 2)
+  targetAmount   Decimal?       @db.Decimal(14, 2)
+  monthlyTarget  Decimal?       @db.Decimal(14, 2)
+  milestoneId    String?        @db.Uuid
+  status         AccountStatus  @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestone    Milestone?              @relation(fields: [milestoneId], references: [id])
+  entries      SavingsTransaction[]
+  transactions Transaction[]
+  contributions MilestoneContribution[]
+
+  @@index([userId, deletedAt])
+  @@map("savings_accounts")
+}
+
+model SavingsTransaction {
+  id               String        @id @default(uuid()) @db.Uuid
+  userId           String        @db.Uuid
+  savingsAccountId String        @db.Uuid
+  type             SavingsTxType
+  amount           Decimal       @db.Decimal(14, 2)
+  date             DateTime      @db.Date
+  transactionId    String?       @unique @db.Uuid
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  savingsAccount SavingsAccount @relation(fields: [savingsAccountId], references: [id])
+  transaction    Transaction?   @relation(fields: [transactionId], references: [id])
+
+  @@index([userId, savingsAccountId, date])
+  @@map("savings_transactions")
+}
+
+model Milestone {
+  id            String            @id @default(uuid()) @db.Uuid
+  userId        String            @db.Uuid
+  name          String
+  category      MilestoneCategory @default(OTHER)
+  targetAmount  Decimal           @db.Decimal(14, 2)
+  currentAmount Decimal           @default(0) @db.Decimal(14, 2)
+  startDate     DateTime          @db.Date
+  targetDate    DateTime          @db.Date
+  priority      Priority          @default(MEDIUM)
+  description   String?
+  status        MilestoneStatus   @default(ACTIVE)
+  completedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions MilestoneContribution[]
+  savings       SavingsAccount[]
+
+  @@index([userId, status])
+  @@map("milestones")
+}
+
+model MilestoneContribution {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  milestoneId      String    @db.Uuid
+  savingsAccountId String?   @db.Uuid
+  amount           Decimal   @db.Decimal(14, 2)
+  date             DateTime  @db.Date
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestone      Milestone       @relation(fields: [milestoneId], references: [id])
+  savingsAccount SavingsAccount? @relation(fields: [savingsAccountId], references: [id])
+
+  @@index([userId, milestoneId, date])
+  @@map("milestone_contributions")
+}
+
+// ───────────────────────── Automation & audit ─────────────────────────
+
+model Reminder {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  kind      ReminderKind
+  refType   String
+  refId     String       @db.Uuid
+  title     String
+  message   String?
+  remindOn  DateTime     @db.Date
+  readAt    DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One reminder per user/kind/record/day: makes the reminder job idempotent.
+  @@unique([userId, kind, refType, refId, remindOn])
+  @@index([userId, readAt, remindOn])
+  @@map("reminders")
+}
+
+model MonthlySummary {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  /// First day of the month.
+  month     DateTime @db.Date
+  income    Decimal  @db.Decimal(14, 2)
+  expense   Decimal  @db.Decimal(14, 2)
+  saved     Decimal  @db.Decimal(14, 2)
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month])
+  @@map("monthly_summaries")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
