@@ -1,16 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Mail, User } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { Field } from "@/components/shared/form-field";
-import { PasswordInput } from "@/components/shared/password-input";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { signup } from "../actions";
 import { signupSchema, type SignupValues } from "../schemas";
+import { AuthInput, AuthPasswordInput, AuthSubmit, authErrorClass } from "./auth-inputs";
 
 export function SignupForm() {
   const [serverError, setServerError] = useState<string | null>(null);
@@ -37,36 +35,38 @@ export function SignupForm() {
 
   if (confirmation) {
     return (
-      <div role="status" className="space-y-4 rounded-xl border bg-muted/40 p-5">
-        <CheckCircle2 className="size-6 text-success" />
-        <p className="text-sm leading-relaxed">{confirmation}</p>
-        <Link href="/login" className="text-sm font-medium underline-offset-4 hover:underline">
-          Back to sign in
+      <div role="status" className="mt-7 space-y-4 rounded-3xl bg-neutral-50 p-6 text-center xl:mt-8">
+        <CheckCircle2 className="mx-auto size-8 text-emerald-600" />
+        <p className="text-sm leading-relaxed text-neutral-700">{confirmation}</p>
+        <Link href="/login" className="text-sm font-semibold text-neutral-950 underline-offset-4 hover:underline">
+          Back to log in
         </Link>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-5">
-      <Field id="fullName" label="Full name" error={errors.fullName?.message}>
-        <Input
+    <form onSubmit={onSubmit} noValidate className="mt-7 space-y-5 xl:mt-8">
+      <Field id="fullName" label="Full name" error={errors.fullName?.message} hideLabel>
+        <AuthInput
           id="fullName"
+          icon={User}
           autoComplete="name"
-          placeholder="Your name"
+          placeholder="Full name"
           aria-invalid={!!errors.fullName}
           aria-describedby={errors.fullName ? "fullName-message" : undefined}
           {...register("fullName")}
         />
       </Field>
 
-      <Field id="email" label="Email" error={errors.email?.message}>
-        <Input
+      <Field id="email" label="Email" error={errors.email?.message} hideLabel>
+        <AuthInput
           id="email"
           type="email"
+          icon={Mail}
           autoComplete="email"
           inputMode="email"
-          placeholder="you@example.com"
+          placeholder="Email"
           aria-invalid={!!errors.email}
           aria-describedby={errors.email ? "email-message" : undefined}
           {...register("email")}
@@ -78,20 +78,23 @@ export function SignupForm() {
         label="Password"
         error={errors.password?.message}
         hint="At least 10 characters, with a letter and a number."
+        hideLabel
       >
-        <PasswordInput
+        <AuthPasswordInput
           id="password"
           autoComplete="new-password"
+          placeholder="Password"
           aria-invalid={!!errors.password}
           aria-describedby="password-message"
           {...register("password")}
         />
       </Field>
 
-      <Field id="confirmPassword" label="Confirm password" error={errors.confirmPassword?.message}>
-        <PasswordInput
+      <Field id="confirmPassword" label="Confirm password" error={errors.confirmPassword?.message} hideLabel>
+        <AuthPasswordInput
           id="confirmPassword"
           autoComplete="new-password"
+          placeholder="Confirm password"
           aria-invalid={!!errors.confirmPassword}
           aria-describedby={errors.confirmPassword ? "confirmPassword-message" : undefined}
           {...register("confirmPassword")}
@@ -99,20 +102,20 @@ export function SignupForm() {
       </Field>
 
       {serverError ? (
-        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className={authErrorClass}>
           {serverError}
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
-        {pending ? <Loader2 className="animate-spin" /> : null}
-        {pending ? "Creating account…" : "Create account"}
-      </Button>
+      <AuthSubmit disabled={pending}>
+        {pending ? <Loader2 className="size-5 animate-spin" /> : null}
+        {pending ? "Creating account…" : "Create Account"}
+      </AuthSubmit>
 
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="text-center text-sm text-[#848484]">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
-          Sign in
+        <Link href="/login" className="font-semibold text-neutral-950 underline-offset-4 hover:underline">
+          Log in
         </Link>
       </p>
     </form>

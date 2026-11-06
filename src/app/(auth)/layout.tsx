@@ -1,37 +1,43 @@
-import { Landmark, LineChart, ShieldCheck } from "lucide-react";
-import { Logo } from "@/components/shared/logo";
+import { Plus_Jakarta_Sans } from "next/font/google";
+import { BrandHeader } from "@/features/auth/components/brand-header";
 
-const HIGHLIGHTS = [
-  { icon: Landmark, text: "Accounts, cards, debts and savings in one ledger" },
-  { icon: LineChart, text: "Every figure calculated from your own records" },
-  { icon: ShieldCheck, text: "Your data is private: only you can see it" },
-];
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-jakarta",
+});
 
+/**
+ * Login layout. Phones and tablets: hero photo on top with the card overlapping its bottom edge.
+ * Wide screens (xl): photo on the left (62.5%), the card centred in the remaining column.
+ * The photos are cropped from the supplied design, so the arcs and floating tiles are part of the image.
+ */
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <aside className="hidden flex-col justify-between bg-zinc-950 p-10 text-zinc-50 lg:flex">
-        <Logo inverted />
-        <div className="max-w-md space-y-8">
-          <h2 className="text-3xl leading-tight font-semibold tracking-tight">
-            Know where every rupee goes.
-          </h2>
-          <ul className="space-y-4">
-            {HIGHLIGHTS.map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-start gap-3 text-sm text-zinc-300">
-                <Icon className="mt-0.5 size-4 shrink-0 text-zinc-50" aria-hidden />
-                {text}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <p className="text-xs text-zinc-500">Personal finance management, in ₹.</p>
-      </aside>
+    <div
+      className={`${jakarta.variable} min-h-dvh bg-[#f9f9f9] text-neutral-950 xl:grid xl:grid-cols-[62.5%_minmax(0,1fr)] xl:bg-[#fefefe]`}
+    >
+      <div className="xl:sticky xl:top-0 xl:h-dvh xl:overflow-hidden">
+        <picture>
+          <source media="(min-width: 1280px)" srcSet="/auth/login-hero-desktop.webp" />
+          {/* Plain <img> inside <picture>: the files are already optimised crops and only one is downloaded. */}
+          <img
+            src="/auth/login-hero-mobile.webp"
+            alt=""
+            width={1055}
+            height={690}
+            fetchPriority="high"
+            className="block h-auto w-full xl:h-full xl:object-cover xl:object-[22%_50%]"
+          />
+        </picture>
+      </div>
 
-      <main className="flex items-center justify-center px-4 py-10 sm:px-8">
-        <div className="w-full max-w-sm space-y-8">
-          <Logo className="lg:hidden" />
-          {children}
+      <main className="px-0 pb-12 xl:flex xl:items-center xl:justify-center xl:py-10">
+        <div className="relative mx-auto -mt-[5.5vw] w-[87%] rounded-[2.75rem] bg-white px-6 pt-8 pb-10 shadow-[0_24px_70px_-24px_rgba(0,0,0,0.3)] sm:px-10 xl:mt-0 xl:w-[94.5%] xl:px-[clamp(2rem,2.7vw,3.2rem)] xl:pt-[clamp(2.25rem,2.8vw,3.2rem)] xl:pb-[clamp(2.25rem,2.8vw,3.2rem)]">
+          <div className="mx-auto max-w-md xl:max-w-none">
+            <BrandHeader />
+            {children}
+          </div>
         </div>
       </main>
     </div>

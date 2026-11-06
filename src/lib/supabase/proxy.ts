@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getPublicEnv } from "@/lib/env";
+import { SESSION_ONLY_COOKIE, applySessionPreference } from "./session-cookies";
 
 /**
  * Refreshes the Supabase session cookie on every request and reports whether the visitor
@@ -10,6 +11,7 @@ import { getPublicEnv } from "@/lib/env";
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
   const { supabaseUrl, supabaseKey } = getPublicEnv();
+  const sessionOnly = request.cookies.get(SESSION_ONLY_COOKIE)?.value === "1";
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
@@ -19,7 +21,9 @@ export async function updateSession(request: NextRequest) {
       setAll(cookiesToSet) {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
         response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) response.cookies.set(name, value, options);
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, applySessionPreference(value, options, sessionOnly));
+        }
       },
     },
   });

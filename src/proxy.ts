@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
 /** Paths reachable without a session. Cron endpoints authenticate themselves with CRON_SECRET. */
-const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/api/cron"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/auth", "/api/cron"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 function matches(pathname: string, paths: readonly string[]) {

@@ -14,6 +14,8 @@ export const loginSchema = z.object({
   email,
   // No strength rules here: only check it is present. Strength is enforced when it is created.
   password: z.string().min(1, "Enter your password").max(72, "Password is too long"),
+  /** Ticked: stay signed in across browser restarts. Unticked: sign out when the browser closes. */
+  remember: z.boolean(),
 });
 
 export const signupSchema = z
@@ -28,5 +30,19 @@ export const signupSchema = z
     path: ["confirmPassword"],
   });
 
+export const forgotPasswordSchema = z.object({ email });
+
+export const resetPasswordSchema = z
+  .object({
+    password: newPassword,
+    confirmPassword: z.string().min(1, "Confirm your password"),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
 export type LoginValues = z.infer<typeof loginSchema>;
 export type SignupValues = z.infer<typeof signupSchema>;
+export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
