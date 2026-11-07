@@ -101,7 +101,10 @@ export async function signup(input: unknown): Promise<ActionResult> {
   if (data.session) redirect("/dashboard");
 
   // Email confirmation on. The same message is shown whether or not the address already exists.
-  return { ok: true, message: `We sent a confirmation link to ${email}. Open it to finish creating your account.` };
+  return {
+    ok: true,
+    message: `We sent a confirmation link to ${email}. Open it in this same browser, then log in. Check your spam folder if it does not arrive.`,
+  };
 }
 
 /** Sends a password-reset email. The answer is identical whether or not the account exists. */
@@ -121,7 +124,10 @@ export async function requestPasswordReset(input: unknown): Promise<ActionResult
     return { ok: false, error: "Too many emails were sent. Please wait a few minutes and try again." };
   }
 
-  return { ok: true, message: `If an account exists for ${email}, we have sent a link to reset the password.` };
+  return {
+    ok: true,
+    message: `If an account exists for ${email}, we have sent a link to reset the password. Open it in this same browser. Check your spam folder if it does not arrive.`,
+  };
 }
 
 /** Sets a new password. Only works with the session created by the emailed reset link. */

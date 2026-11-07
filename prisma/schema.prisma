@@ -197,6 +197,8 @@ model User {
   creditCardStatements   CreditCardStatement[]
   categories             TransactionCategory[]
   transactions           Transaction[]
+  expenseParties         ExpenseParty[]
+  transactionSplits      TransactionSplit[]
   attachments            Attachment[]
   recurringPayments      RecurringPayment[]
   monthlyDues            MonthlyDue[]
@@ -221,6 +223,8 @@ model UserProfile {
   locale           String   @default("en-IN")
   timezone         String   @default("Asia/Kolkata")
   reminderLeadDays Int      @default(3)
+  /// Set once the starter payment methods, users and categories have been created for this user.
+  expenseDefaultsSeededAt DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -246,6 +250,9 @@ model Account {
   currentBalance Decimal       @default(0) @db.Decimal(14, 2)
   creditLimit    Decimal?      @db.Decimal(14, 2)
   linkedCardLast4 String?      @db.VarChar(4)
+  /// A payment method is a top-level account (GPay, HDFC, Slice). Accounts under it (Canara, IDFC,
+  /// DBS under GPay) point to it here. Only one level deep.
+  parentId       String?       @db.Uuid
   status         AccountStatus @default(ACTIVE)
   notes          String?
   createdAt      DateTime      @default(now())
@@ -254,6 +261,8 @@ model Account {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  parent             Account?           @relation("AccountChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children           Account[]          @relation("AccountChildren")
   txFrom             Transaction[]      @relation("TxFromAccount")
   txTo               Transaction[]      @relation("TxToAccount")
   recurringPayments  RecurringPayment[]
@@ -261,6 +270,7 @@ model Account {
 
   @@index([userId, deletedAt])
   @@index([userId, type])
+  @@index([userId, parentId])
   @@map("accounts")
 }
 
@@ -368,7 +378,10 @@ model Transaction {
   categoryId       String?         @db.Uuid
   description      String?
   notes            String?
-  /// Idempotency key for automated entries (unique per user).
+  /// True when the expense was split between several people (see transaction_splits).
+  isSplit          Boolean         @default(false)
+  /// Idempotency key (unique per user): automated entries and form submissions use it so a retry or
+  /// double click cannot create a second record.
   dedupeKey        String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -388,6 +401,7 @@ model Transaction {
   paymentRecord       PaymentRecord?
   debtPayment         DebtPayment?
   savingsTransaction  SavingsTransaction?
+  splits              TransactionSplit[]
 
   @@unique([userId, dedupeKey])
   @@index([userId, date])
@@ -726,4 +740,45 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([entity, entityId])
   @@map("audit_logs")
+}
+
+// ───────────────────────── Expense entry: people and splits ─────────────────────────
+
+/// A person or bucket an expense is for ("Personal", "Office", "Mukesh"...). Not a login user.
+model ExpenseParty {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  name      String
+  /// Lower-cased, trimmed name: makes "mukesh" and "Mukesh" the same person.
+  nameKey   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  splits TransactionSplit[]
+
+  @@unique([userId, nameKey])
+  @@map("expense_parties")
+}
+
+/// Who an expense is for and how much each person owes. Every expense entered through the form has
+/// at least one row; a split expense has several. The rows always add up to the transaction amount
+/// (enforced by a deferred database trigger).
+model TransactionSplit {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  transactionId String   @db.Uuid
+  partyId       String   @db.Uuid
+  amount        Decimal  @db.Decimal(14, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  party       ExpenseParty @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, partyId])
+  @@index([userId, partyId])
+  @@map("transaction_splits")
 }

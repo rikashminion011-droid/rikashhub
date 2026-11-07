@@ -32,7 +32,9 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
   });
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mt-7 space-y-5 xl:mt-8">
+    // method="post": if the form is submitted before the page finishes loading, the browser must
+    // never fall back to a GET that puts the email and password in the address bar.
+    <form onSubmit={onSubmit} noValidate method="post" className="mt-7 space-y-5 xl:mt-8">
       {notice ? (
         <p role="status" className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm text-neutral-700">
           {notice}

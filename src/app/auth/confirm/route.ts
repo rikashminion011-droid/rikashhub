@@ -26,7 +26,9 @@ export async function GET(request: NextRequest) {
     if (!error) return NextResponse.redirect(new URL(next, request.url));
   }
 
+  // Supabase itself reports a dead link as ?error_code=otp_expired.
+  const expired = searchParams.get("error_code") === "otp_expired";
   const failed = new URL("/login", request.url);
-  failed.searchParams.set("error", "confirm");
+  failed.searchParams.set("error", expired ? "expired" : "confirm");
   return NextResponse.redirect(failed);
 }

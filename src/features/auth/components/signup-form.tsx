@@ -46,7 +46,7 @@ export function SignupForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mt-7 space-y-5 xl:mt-8">
+    <form onSubmit={onSubmit} noValidate method="post" className="mt-7 space-y-5 xl:mt-8">
       <Field id="fullName" label="Full name" error={errors.fullName?.message} hideLabel>
         <AuthInput
           id="fullName"

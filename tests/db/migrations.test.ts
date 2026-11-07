@@ -59,16 +59,16 @@ afterAll(async () => {
 });
 
 describe("migrations", () => {
-  it("create all 20 tables", async () => {
+  it("create all 22 tables", async () => {
     const { rows } = await db.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1`,
     );
     expect(rows.map((r) => r.table_name)).toEqual([
       "accounts", "attachments", "audit_logs", "credit_card_statements", "credit_cards",
-      "debt_payments", "debts", "milestone_contributions", "milestones", "monthly_dues",
-      "monthly_summaries", "payment_records", "recurring_payments", "reminders",
-      "savings_accounts", "savings_transactions", "transaction_categories", "transactions",
-      "user_profiles", "users",
+      "debt_payments", "debts", "expense_parties", "milestone_contributions", "milestones",
+      "monthly_dues", "monthly_summaries", "payment_records", "recurring_payments", "reminders",
+      "savings_accounts", "savings_transactions", "transaction_categories", "transaction_splits",
+      "transactions", "user_profiles", "users",
     ]);
   });
 
@@ -78,7 +78,7 @@ describe("migrations", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind = 'r'`,
     );
-    expect(rows).toHaveLength(20);
+    expect(rows).toHaveLength(22);
     expect(rows.filter((r) => !r.relrowsecurity).map((r) => r.relname)).toEqual([]);
   });
 

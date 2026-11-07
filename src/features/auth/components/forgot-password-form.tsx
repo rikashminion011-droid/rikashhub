@@ -45,7 +45,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mt-7 space-y-5 xl:mt-8">
+    <form onSubmit={onSubmit} noValidate method="post" className="mt-7 space-y-5 xl:mt-8">
       <Field id="email" label="Email" error={errors.email?.message} hideLabel>
         <AuthInput
           id="email"

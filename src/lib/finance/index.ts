@@ -8,3 +8,4 @@ export * from "./recurrence";
 export * from "./dues";
 export * from "./duplicates";
 export * from "./categorize";
+export * from "./split";

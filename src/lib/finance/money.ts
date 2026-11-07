@@ -38,6 +38,17 @@ export function toPaise(value: number | string | { toString(): string }): Paise 
   return sign === "-" ? -paise : paise;
 }
 
+/**
+ * Parse what a person types into an amount box ("1,250.50", "₹ 99", " 40.5 "). Returns paise,
+ * or null when it is empty, not a plain positive amount, or has more than 2 decimal places.
+ * Zero is valid here; callers decide whether zero is allowed.
+ */
+export function parseAmountInput(text: string): Paise | null {
+  const cleaned = text.replace(/[₹,\s]/g, "");
+  if (!/^\d{1,10}(\.\d{1,2})?$/.test(cleaned)) return null;
+  return toPaise(cleaned);
+}
+
 /** Paise back to a 2-decimal rupee string suitable for a Decimal column, e.g. 123456 -> "1234.56". */
 export function paiseToDecimalString(paise: Paise): string {
   assertInteger(paise);
