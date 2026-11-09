@@ -7,6 +7,9 @@ export interface CurrentUser {
   id: string;
   email: string;
   name: string | null;
+  /** ISO timestamps from Supabase, shown on the User page. */
+  createdAt: string | null;
+  lastSignInAt: string | null;
 }
 
 /**
@@ -22,6 +25,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     id: data.user.id,
     email: data.user.email ?? "",
     name: typeof fullName === "string" && fullName.trim() ? fullName.trim() : null,
+    createdAt: data.user.created_at ?? null,
+    lastSignInAt: data.user.last_sign_in_at ?? null,
   };
 });
 

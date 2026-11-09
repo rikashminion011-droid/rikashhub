@@ -27,6 +27,7 @@ export function AddOptionDialog({
   label = "Name",
   placeholder,
   saveLabel = "Save",
+  initialValue = "",
   extra,
   onSave,
 }: {
@@ -37,6 +38,8 @@ export function AddOptionDialog({
   label?: string;
   placeholder?: string;
   saveLabel?: string;
+  /** Pre-filled text, for renaming. */
+  initialValue?: string;
   extra?: ReactNode;
   onSave: (name: string) => Promise<string | null>;
 }) {
@@ -49,6 +52,7 @@ export function AddOptionDialog({
           label={label}
           placeholder={placeholder}
           saveLabel={saveLabel}
+          initialValue={initialValue}
           extra={extra}
           onSave={onSave}
           onDone={() => onOpenChange(false)}
@@ -64,6 +68,7 @@ function AddOptionForm({
   label,
   placeholder,
   saveLabel,
+  initialValue,
   extra,
   onSave,
   onDone,
@@ -73,11 +78,12 @@ function AddOptionForm({
   label: string;
   placeholder?: string;
   saveLabel: string;
+  initialValue: string;
   extra?: ReactNode;
   onSave: (name: string) => Promise<string | null>;
   onDone: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialValue);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 

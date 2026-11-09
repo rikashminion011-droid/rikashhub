@@ -3,7 +3,7 @@ import { z } from "zod";
 const email = z.string().trim().toLowerCase().pipe(z.email("Enter a valid email address"));
 
 /** 72 is the bcrypt limit Supabase applies to passwords. */
-const newPassword = z
+export const newPassword = z
   .string()
   .min(10, "Use at least 10 characters")
   .max(72, "Use at most 72 characters")

@@ -20,7 +20,7 @@ import {
   type OptionsResult,
 } from "../types";
 import { MAX_NOTES_LENGTH, validateExpenseInput, type ExpenseFieldErrors, type ExpenseFormInput } from "../validation";
-import { AddOptionDialog, ConfirmDialog } from "./add-option-dialog";
+import { AddOptionDialog, ConfirmDialog } from "@/components/shared/option-dialogs";
 import { ChoiceChips } from "./choice-chips";
 import { SplitSection } from "./split-section";
 

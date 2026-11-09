@@ -7,6 +7,7 @@ import {
   Layers,
   LayoutDashboard,
   PiggyBank,
+  UserRound,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -123,6 +124,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
 ];
 
+/** Shown below the modules, under "Account". */
+export const ACCOUNT_ITEM: NavItem = {
+  title: "User",
+  href: "/user",
+  icon: UserRound,
+  description: "Your account, your password and the people you add expenses for.",
+  planned: [],
+};
+
 export function findNavItem(pathname: string): NavItem | undefined {
-  return NAV_ITEMS.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  return [...NAV_ITEMS, ACCOUNT_ITEM].find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
 }
