@@ -37,7 +37,7 @@ const COLUMNS = ["Date", "Time", "Day", "Debit", "Credit", "Reason", "Bank", "Ca
 
 export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Rikash Finance";
+  workbook.creator = "Rikash Hub";
   workbook.created = meta.generatedAt;
   const sheet = workbook.addWorksheet("GPay Transactions", { views: [{ state: "frozen", ySplit: 7 }] });
 

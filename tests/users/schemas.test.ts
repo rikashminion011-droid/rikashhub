@@ -51,15 +51,15 @@ describe("person name schemas", () => {
 });
 
 describe("sidebar navigation", () => {
-  it("keeps the nine modules and puts User separately under Account", () => {
-    expect(NAV_ITEMS).toHaveLength(9);
+  it("keeps the eight modules and puts User separately under Account", () => {
+    expect(NAV_ITEMS).toHaveLength(8);
     expect(NAV_ITEMS.map((i) => i.href)).not.toContain("/user");
     expect(ACCOUNT_ITEM).toMatchObject({ title: "User", href: "/user" });
   });
 
   it("finds the User page for the top bar title", () => {
     expect(findNavItem("/user")?.title).toBe("User");
-    expect(findNavItem("/quick-entry")?.title).toBe("Quick Entry");
+    expect(findNavItem("/quick-pay")?.title).toBe("Quick Entry");
     expect(findNavItem("/nope")).toBeUndefined();
   });
 });

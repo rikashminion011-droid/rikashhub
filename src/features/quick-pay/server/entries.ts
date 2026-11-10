@@ -295,18 +295,24 @@ async function totalsFor(db: PrismaClient, where: Prisma.TransactionWhereInput):
 }
 
 /** One page of the filtered transactions (newest first) and the totals for the whole filtered set. */
-export async function listTransactions(db: PrismaClient, userId: string, filters: TxFilters): Promise<{ rows: TxRow[]; totals: TxTotals; page: number; pageCount: number }> {
+export async function listTransactions(
+  db: PrismaClient,
+  userId: string,
+  filters: TxFilters,
+  options: { pageSize?: number } = {},
+): Promise<{ rows: TxRow[]; totals: TxTotals; page: number; pageCount: number }> {
+  const size = options.pageSize ?? PAGE_SIZE;
   const where = buildWhere(userId, filters);
   const totals = await totalsFor(db, where);
-  const pageCount = Math.max(1, Math.ceil(totals.count / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(totals.count / size));
   const page = Math.min(filters.page, pageCount);
 
   const rows = await db.transaction.findMany({
     where,
     include: includeForRows,
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
-    skip: (page - 1) * PAGE_SIZE,
-    take: PAGE_SIZE,
+    skip: (page - 1) * size,
+    take: size,
   });
   return { rows: rows.map(toRow), totals, page, pageCount };
 }

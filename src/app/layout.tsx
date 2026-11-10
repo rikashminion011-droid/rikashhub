@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "Rikash Finance", template: "%s · Rikash Finance" },
+  title: { default: "Rikash Hub", template: "%s · Rikash Hub" },
   description: "Personal finance management: accounts, cards, dues, debts, savings and goals in ₹.",
 };
 

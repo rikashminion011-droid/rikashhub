@@ -1,20 +1,21 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, FilePlus2, Landmark, Layers, Loader2, Plus, Settings2, Tag, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { CascadingSelect } from "@/components/shared/cascading-select";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { QuickPayActions } from "../actions";
+import { groupBanks, groupCategories } from "../cascade";
 import { formatTransactionWhen } from "../datetime";
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
 import { MAX_REASON_LENGTH, validateQuickPayInput, type EntryType, type QuickPayErrors } from "../validation";
@@ -66,6 +67,15 @@ function AddLink({ href, children }: { href: string; children: React.ReactNode }
   );
 }
 
+function FieldLabel({ htmlFor, icon: Icon, children }: { htmlFor?: string; icon?: typeof Tag; children: React.ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className="flex items-center gap-2 text-sm font-semibold">
+      {Icon ? <Icon className="size-4 text-muted-foreground" aria-hidden /> : null}
+      {children}
+    </label>
+  );
+}
+
 export function QuickEntryForm({
   initialOptions,
   initialEntry,
@@ -83,7 +93,7 @@ export function QuickEntryForm({
   const [saving, setSaving] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
 
-  // Walking through saved entries: ids newest first; -1 means "a new entry".
+  // Walking through saved entries: ids newest first; no current entry means "a new entry".
   const [ids, setIds] = useState<string[]>([]);
   const [current, setCurrent] = useState<EntryDetails | null>(initialEntry);
   const [loadingEntry, setLoadingEntry] = useState(false);
@@ -95,6 +105,9 @@ export function QuickEntryForm({
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
   const index = current ? ids.indexOf(current.id) : -1;
+
+  const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
+  const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
 
   // ── Loading data the form needs ─────────────────────────────────────────
 
@@ -251,8 +264,6 @@ export function QuickEntryForm({
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  const bankOptions = options.banks.map((b) => ({ value: b.id, label: b.label }));
-  const categoryOptions = options.categories.map((c) => ({ value: c.id, label: c.label }));
   const personOptions = options.persons.map((p) => ({ value: p.id, label: p.name }));
   const when = current ? formatTransactionWhen(new Date(current.occurredAt)) : null;
 
@@ -260,11 +271,14 @@ export function QuickEntryForm({
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle>{current ? "Edit entry" : "New entry"}</CardTitle>
-            <CardDescription>
-              {when ? `${when.date} · ${when.timeAndDay}` : "Saved with the date and time you press Save."}
-            </CardDescription>
+          <div className="flex items-center gap-3">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+              <FilePlus2 className="size-5" aria-hidden />
+            </span>
+            <div className="space-y-0.5">
+              <CardTitle className="text-xl">{current ? "Edit Entry" : "New Entry"}</CardTitle>
+              <CardDescription>{when ? `${when.date} · ${when.timeAndDay}` : "Saved with the date and time you press Save."}</CardDescription>
+            </div>
           </div>
 
           {/* Switch between saved entries */}
@@ -272,7 +286,7 @@ export function QuickEntryForm({
             <Button type="button" variant="outline" size="icon-sm" aria-label="Older entry" disabled={olderDisabled} onClick={() => goTo(current ? index + 1 : 0)}>
               <ChevronLeft />
             </Button>
-            <span className="min-w-24 text-center text-xs text-muted-foreground tabular-nums" aria-live="polite">
+            <span className="min-w-20 text-center text-xs text-muted-foreground tabular-nums" aria-live="polite">
               {loadingEntry ? "Loading…" : current ? (index >= 0 ? `${index + 1} of ${ids.length}` : "Saved entry") : ids.length ? `New · ${ids.length} saved` : "New"}
             </span>
             <Button type="button" variant="outline" size="icon-sm" aria-label="Newer entry" disabled={newerDisabled} onClick={() => goTo(index > 0 ? index - 1 : -1)}>
@@ -288,12 +302,42 @@ export function QuickEntryForm({
       </CardHeader>
 
       <CardContent>
-        <form onSubmit={onSubmit} noValidate method="post" className={cn("space-y-6", loadingEntry && "pointer-events-none opacity-60")} aria-busy={loadingEntry}>
-          {/* Value and type */}
+        <form onSubmit={onSubmit} noValidate method="post" className={cn("space-y-5", loadingEntry && "pointer-events-none opacity-60")} aria-busy={loadingEntry}>
+          {/* Debit / Credit */}
+          <div role="radiogroup" aria-label="Transaction type" className="grid grid-cols-2 gap-2">
+            {(["DEBIT", "CREDIT"] as const).map((t) => {
+              const on = form.type === t;
+              const debit = t === "DEBIT";
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => set("type", t)}
+                  className={cn(
+                    "flex h-12 items-center justify-center gap-2 rounded-xl border text-base font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    on
+                      ? debit
+                        ? "border-red-300 bg-red-50 text-red-700"
+                        : "border-green-300 bg-green-50 text-green-700"
+                      : debit
+                        ? "border-transparent bg-red-50/40 text-red-700/60 hover:bg-red-50"
+                        : "border-transparent bg-green-50/40 text-green-700/60 hover:bg-green-50",
+                  )}
+                >
+                  {debit ? <ArrowDown className="size-4" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
+                  {debit ? "Debit" : "Credit"}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Amount */}
           <div id="field-amount" className="scroll-mt-24 space-y-2">
-            <Label htmlFor="qp-amount">Value</Label>
-            <div className="relative">
-              <span aria-hidden className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-xl text-muted-foreground">₹</span>
+            <FieldLabel htmlFor="qp-amount">Amount</FieldLabel>
+            <div className="flex overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 focus-within:ring-3 focus-within:ring-amber-300/40 aria-[invalid=true]:border-destructive" aria-invalid={!!errors.amount}>
+              <span aria-hidden className="flex w-12 items-center justify-center bg-amber-100/60 text-xl">₹</span>
               <Input
                 id="qp-amount"
                 inputMode="decimal"
@@ -306,30 +350,8 @@ export function QuickEntryForm({
                   set("amount", e.target.value);
                   setErrors((x) => ({ ...x, amount: undefined }));
                 }}
-                className="h-14 pl-10 text-2xl font-semibold tabular-nums"
+                className="h-12 rounded-none border-0 bg-transparent text-xl font-semibold tabular-nums shadow-none focus-visible:ring-0"
               />
-            </div>
-            {/* Small Credit / Debit toggle */}
-            <div role="radiogroup" aria-label="Transaction type" className="inline-grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-0.5 text-xs">
-              {(["DEBIT", "CREDIT"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  role="radio"
-                  aria-checked={form.type === t}
-                  onClick={() => set("type", t)}
-                  className={cn(
-                    "h-7 min-w-20 rounded-md px-3 font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                    form.type === t
-                      ? t === "DEBIT"
-                        ? "bg-destructive/15 text-destructive"
-                        : "bg-success/15 text-success"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {t === "DEBIT" ? "Debit" : "Credit"}
-                </button>
-              ))}
             </div>
             {errors.amount ? (
               <p id="error-amount" role="alert" className="text-xs text-destructive">
@@ -340,7 +362,7 @@ export function QuickEntryForm({
 
           {/* Reason */}
           <div className="space-y-2">
-            <Label htmlFor="qp-reason">Reason</Label>
+            <FieldLabel htmlFor="qp-reason" icon={Tag}>Reason</FieldLabel>
             <Input
               id="qp-reason"
               autoComplete="off"
@@ -348,54 +370,56 @@ export function QuickEntryForm({
               maxLength={MAX_REASON_LENGTH}
               value={form.reason}
               onChange={(e) => set("reason", e.target.value)}
+              className="h-10"
             />
           </div>
 
-          {/* Bank through */}
-          <div id="field-bank" className="scroll-mt-24 space-y-2">
-            <Label htmlFor="qp-bank">Bank Through</Label>
-            <SearchableSelect
-              id="qp-bank"
-              ariaLabel="Bank through"
-              options={bankOptions}
-              value={form.accountId}
-              onChange={(v) => {
-                set("accountId", v);
-                setErrors((x) => ({ ...x, bank: undefined }));
-              }}
-              placeholder="Choose a bank"
-              searchPlaceholder="Search banks…"
-              emptyText="No bank found. Use Add Details to create one."
-              invalid={!!errors.bank}
-              footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
-            />
-            {errors.bank ? (
-              <p role="alert" className="text-xs text-destructive">
-                {errors.bank}
-              </p>
-            ) : null}
+          {/* Bank through and category, side by side */}
+          <div className="grid gap-5 md:grid-cols-2">
+            <div id="field-bank" className="scroll-mt-24 space-y-2">
+              <FieldLabel htmlFor="qp-bank" icon={Landmark}>Bank Through</FieldLabel>
+              <CascadingSelect
+                id="qp-bank"
+                ariaLabel="Bank through"
+                groups={bankGroups}
+                value={form.accountId}
+                onChange={(v) => {
+                  set("accountId", v);
+                  setErrors((x) => ({ ...x, bank: undefined }));
+                }}
+                placeholder="Choose a bank"
+                searchPlaceholder="Search banks…"
+                emptyText="No bank found. Use Add Details to create one."
+                invalid={!!errors.bank}
+                footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
+              />
+              {errors.bank ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {errors.bank}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel htmlFor="qp-category" icon={Layers}>Category</FieldLabel>
+              <CascadingSelect
+                id="qp-category"
+                ariaLabel="Category"
+                groups={categoryGroups}
+                value={form.categoryId}
+                onChange={(v) => set("categoryId", v)}
+                placeholder="Choose a category (optional)"
+                searchPlaceholder="Search categories…"
+                emptyText="No category found."
+                clearable
+                footer={<AddLink href={SETTINGS.categories}>Add Category</AddLink>}
+              />
+            </div>
           </div>
 
-          {/* Category */}
-          <div className="space-y-2">
-            <Label htmlFor="qp-category">Category</Label>
-            <SearchableSelect
-              id="qp-category"
-              ariaLabel="Category"
-              options={categoryOptions}
-              value={form.categoryId}
-              onChange={(v) => set("categoryId", v)}
-              placeholder="Choose a category (optional)"
-              searchPlaceholder="Search categories…"
-              emptyText="No category found."
-              clearable
-              footer={<AddLink href={SETTINGS.categories}>Add Category</AddLink>}
-            />
-          </div>
-
-          {/* Split: the person only appears when Split is on */}
-          <div id="field-split" className="scroll-mt-24 space-y-3">
-            <label className="flex w-fit cursor-pointer items-center gap-3 text-sm font-medium">
+          {/* Split and Credits Added */}
+          <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
+            <label className="flex w-fit cursor-pointer items-center gap-3 text-sm font-semibold">
               <Checkbox
                 checked={form.splitEnabled}
                 onCheckedChange={(next) => {
@@ -405,35 +429,8 @@ export function QuickEntryForm({
               />
               Split
             </label>
-            {form.splitEnabled ? (
-              <div className="space-y-2">
-                <SearchableSelect
-                  ariaLabel="Person"
-                  options={personOptions}
-                  value={form.partyId}
-                  onChange={(v) => {
-                    set("partyId", v);
-                    setErrors((x) => ({ ...x, split: undefined }));
-                  }}
-                  placeholder="Choose a person"
-                  searchPlaceholder="Search people…"
-                  emptyText="No people yet. Use Add a Person."
-                  invalid={!!errors.split}
-                  footer={<AddLink href={SETTINGS.persons}>Add a Person</AddLink>}
-                />
-                {errors.split ? (
-                  <p role="alert" className="text-xs text-destructive">
-                    {errors.split}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          {/* Credits Added: only for a Debit, and only when ticked */}
-          {form.type === "DEBIT" ? (
-            <div className="space-y-3">
-              <label className="flex w-fit cursor-pointer items-center gap-3 text-sm font-medium">
+            {form.type === "DEBIT" ? (
+              <label className="flex w-fit cursor-pointer items-center gap-3 text-sm font-semibold">
                 <Checkbox
                   checked={form.creditsAdded}
                   onCheckedChange={(next) => {
@@ -443,29 +440,56 @@ export function QuickEntryForm({
                 />
                 Credits Added
               </label>
-              {showCredits ? (
-                <div className="rounded-xl border bg-muted/30 p-3" aria-live="polite">
-                  {loadingCredits && !credits ? (
-                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3.5 animate-spin" /> Loading recent credits…
-                    </p>
-                  ) : credits && credits.length > 0 ? (
-                    <ul className="divide-y">
-                      {credits.map((c) => (
-                        <li key={c.id} className="flex items-baseline justify-between gap-3 py-1.5 text-sm first:pt-0 last:pb-0">
-                          <span className="min-w-0 truncate">
-                            <span className="font-semibold tabular-nums text-success">{formatINR(c.amountPaise)}</span>
-                            <span className="text-muted-foreground"> – {c.reason || "No reason"}</span>
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">{formatTransactionWhen(new Date(c.occurredAt)).date}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">No credits saved yet. Credits you save will show up here, newest first.</p>
-                  )}
-                </div>
+            ) : null}
+          </div>
+
+          {/* The person only appears when Split is on */}
+          {form.splitEnabled ? (
+            <div id="field-split" className="scroll-mt-24 space-y-2">
+              <SearchableSelect
+                ariaLabel="Person"
+                options={personOptions}
+                value={form.partyId}
+                onChange={(v) => {
+                  set("partyId", v);
+                  setErrors((x) => ({ ...x, split: undefined }));
+                }}
+                placeholder="Choose a person"
+                searchPlaceholder="Search people…"
+                emptyText="No people yet. Use Add a Person."
+                invalid={!!errors.split}
+                footer={<AddLink href={SETTINGS.persons}>Add a Person</AddLink>}
+              />
+              {errors.split ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {errors.split}
+                </p>
               ) : null}
+            </div>
+          ) : null}
+
+          {/* Credits Added: only for a Debit, and only when ticked */}
+          {showCredits ? (
+            <div className="rounded-xl border bg-muted/30 p-3" aria-live="polite">
+              {loadingCredits ? (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" /> Loading recent credits…
+                </p>
+              ) : credits && credits.length > 0 ? (
+                <ul className="divide-y">
+                  {credits.map((c) => (
+                    <li key={c.id} className="flex items-baseline justify-between gap-3 py-1.5 text-sm first:pt-0 last:pb-0">
+                      <span className="min-w-0 truncate">
+                        <span className="font-semibold tabular-nums text-green-600">{formatINR(c.amountPaise)}</span>
+                        <span className="text-muted-foreground"> – {c.reason || "No reason"}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatTransactionWhen(new Date(c.occurredAt)).date}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">No credits saved yet. Credits you save will show up here, newest first.</p>
+              )}
             </div>
           ) : null}
 
@@ -475,13 +499,13 @@ export function QuickEntryForm({
             </p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="lg" className="h-11 flex-1 text-base" disabled={saving || loadingEntry}>
-              {saving ? <Loader2 className="animate-spin" /> : null}
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button type="submit" size="lg" className="h-12 flex-1 rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving || loadingEntry}>
+              {saving ? <Loader2 className="animate-spin" /> : <Check />}
               {saving ? "Saving…" : current ? "Update Entry" : "Save Entry"}
             </Button>
             {current ? (
-              <Button type="button" variant="outline" size="lg" className="h-11 text-destructive" onClick={() => setConfirmDelete(true)} disabled={saving}>
+              <Button type="button" variant="outline" size="lg" className="h-12 rounded-xl text-destructive" onClick={() => setConfirmDelete(true)} disabled={saving}>
                 <Trash2 /> Delete
               </Button>
             ) : null}

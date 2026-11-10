@@ -37,7 +37,7 @@ async function peopleContext() {
 
 async function refreshed(userId: string, createdId?: string): Promise<{ ok: true; people: PersonRow[]; createdId?: string }> {
   revalidatePath("/user");
-  revalidatePath("/quick-entry");
+  revalidatePath("/quick-pay", "layout");
   return { ok: true, people: await listPeople(getPrisma(), userId), createdId };
 }
 

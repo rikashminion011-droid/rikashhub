@@ -19,11 +19,11 @@ function NavLink({ item, pathname, onNavigate }: { item: NavItem; pathname: stri
         className={cn(
           "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
           active
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            ? "bg-[#fdf1df] text-neutral-950"
             : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
         )}
       >
-        <Icon className="size-4 shrink-0" aria-hidden />
+        <Icon className={cn("size-4 shrink-0", active && "text-amber-500")} aria-hidden />
         {title}
       </Link>
     </li>
@@ -37,7 +37,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 shrink-0 items-center px-5">
-        <Link href="/dashboard" onClick={onNavigate} aria-label="Rikash Finance home">
+        <Link href="/dashboard" onClick={onNavigate} aria-label="Rikash Hub home">
           <Logo />
         </Link>
       </div>

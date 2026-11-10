@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHeader } from "@/components/shared/page-header";
+import { Zap } from "lucide-react";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import {
   deleteEntryAction,
@@ -10,9 +10,12 @@ import {
   saveEntryAction,
 } from "@/features/quick-pay/actions";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
-import { getEntry } from "@/features/quick-pay/server/entries";
+import { RecentEntries, TodaySummary } from "@/features/quick-pay/components/quick-side-panels";
+import { istDateOf } from "@/features/quick-pay/datetime";
+import { getEntry, listTransactions } from "@/features/quick-pay/server/entries";
 import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
-import type { EntryDetails, QuickPayOptions } from "@/features/quick-pay/types";
+import type { EntryDetails, QuickPayOptions, TxRow, TxTotals } from "@/features/quick-pay/types";
+import { parseTxFilters } from "@/features/quick-pay/filters";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
@@ -25,28 +28,44 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
   const user = await requireUser();
   const params = await searchParams;
   const entryId = typeof params.entry === "string" && UUID.test(params.entry) ? params.entry : null;
+  const now = new Date();
+  const today = istDateOf(now);
 
   let options: QuickPayOptions;
   let entry: EntryDetails | null = null;
+  let todayTotals: TxTotals;
+  let recent: TxRow[];
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    options = await getQuickPayOptions(db, user.id);
-    if (entryId) entry = await getEntry(db, user.id, entryId);
+    const [loadedOptions, todayResult, recentResult, loadedEntry] = await Promise.all([
+      getQuickPayOptions(db, user.id),
+      listTransactions(db, user.id, parseTxFilters({ from: today, to: today }), { pageSize: 1 }),
+      listTransactions(db, user.id, parseTxFilters({}), { pageSize: 5 }),
+      entryId ? getEntry(db, user.id, entryId) : Promise.resolve(null),
+    ]);
+    options = loadedOptions;
+    todayTotals = todayResult.totals;
+    recent = recentResult.rows;
+    entry = loadedEntry;
   } catch (error) {
     console.error("[quick-pay] could not load from the database", error);
-    return (
-      <>
-        <PageHeader title="Quick Entry" description="Record a credit or debit in seconds." />
-        <DatabaseUnavailable />
-      </>
-    );
+    return <DatabaseUnavailable />;
   }
 
   return (
     <>
-      <PageHeader title="Quick Entry" description="Record a credit or debit. Entries show up in GPay Transactions straight away." />
-      <div className="max-w-2xl">
+      <div className="mb-6 flex items-center gap-4">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+          <Zap className="size-7 fill-current" aria-hidden />
+        </span>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Quick Entry</h1>
+          <p className="text-sm text-muted-foreground">Record a credit or debit. Entries show up in GPay Transactions straight away.</p>
+        </div>
+      </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <QuickEntryForm
           // A different entry means a fresh form (keeps the switcher and the fields in step with the URL).
           key={entry?.id ?? "new"}
@@ -61,6 +80,10 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
             getOptions: getOptionsAction,
           }}
         />
+        <div className="space-y-6">
+          <TodaySummary totals={todayTotals} now={now} />
+          <RecentEntries rows={recent} />
+        </div>
       </div>
     </>
   );

@@ -4,12 +4,14 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { CascadingSelect } from "@/components/shared/cascading-select";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { saveBulkAction } from "../actions";
+import { groupBanks, groupCategories } from "../cascade";
 import type { QuickPayOptions } from "../types";
 import { MAX_BULK_ROWS, isBlankBulkRow, validateBulk, type BulkRowErrors, type BulkRowInput } from "../validation";
 
@@ -43,8 +45,8 @@ export function BulkEntry({
   // One id per sheet: sending the same sheet again (retry, double click) can never save it twice.
   const [requestId, setRequestId] = useState(newRequestId);
 
-  const banks = options.banks.map((b) => ({ value: b.id, label: b.label }));
-  const categories = options.categories.map((c) => ({ value: c.id, label: c.label }));
+  const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
+  const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
   const persons = options.persons.map((p) => ({ value: p.id, label: p.name }));
 
   const totals = useMemo(() => {
@@ -187,11 +189,11 @@ export function BulkEntry({
                     {e.reason ? <p className="mt-0.5 text-[11px] text-destructive">{e.reason}</p> : null}
                   </td>
                   <td className={cell}>
-                    <SearchableSelect compact ariaLabel={`Row ${index + 1} bank`} options={banks} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} />
+                    <CascadingSelect compact ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} />
                     {e.bank ? <p className="mt-0.5 text-[11px] text-destructive">{e.bank}</p> : null}
                   </td>
                   <td className={cell}>
-                    <SearchableSelect compact clearable ariaLabel={`Row ${index + 1} category`} options={categories} value={row.categoryId} onChange={(v) => update(row.key, { categoryId: v })} placeholder="Category" searchPlaceholder="Search categories…" />
+                    <CascadingSelect compact clearable ariaLabel={`Row ${index + 1} category`} groups={categoryGroups} value={row.categoryId} onChange={(v) => update(row.key, { categoryId: v })} placeholder="Category" searchPlaceholder="Search categories…" />
                   </td>
                   <td className={cell}>
                     <SearchableSelect compact clearable ariaLabel={`Row ${index + 1} split`} options={persons} value={row.partyId} onChange={(v) => update(row.key, { partyId: v })} placeholder="Person" searchPlaceholder="Search people…" />

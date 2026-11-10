@@ -12,7 +12,7 @@ export function Logo({ className, inverted = false }: { className?: string; inve
       >
         R
       </span>
-      <span className="text-[15px] font-semibold tracking-tight">Rikash Finance</span>
+      <span className="text-[15px] font-semibold tracking-tight">Rikash Hub</span>
     </div>
   );
 }

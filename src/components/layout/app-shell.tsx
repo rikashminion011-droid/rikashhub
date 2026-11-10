@@ -8,7 +8,6 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { findNavItem } from "@/config/navigation";
 import { useUiStore } from "@/stores/ui-store";
 import { SidebarContent } from "./sidebar-nav";
-import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
 export function AppShell({
@@ -46,9 +45,8 @@ export function AppShell({
           >
             <Menu />
           </Button>
-          <p className="truncate text-sm font-medium">{current?.title ?? "Rikash Finance"}</p>
+          <p className="truncate text-sm font-medium">{current?.title ?? "Rikash Hub"}</p>
           <div className="ml-auto flex items-center gap-1">
-            <ThemeToggle />
             <UserMenu name={user.name} email={user.email} />
           </div>
         </header>

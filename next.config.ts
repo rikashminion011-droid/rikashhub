@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  async redirects() {
+    // The old expense Quick Entry page was replaced by Quick Pay.
+    return [{ source: "/quick-entry", destination: "/quick-pay", permanent: false }];
+  },
   async headers() {
     return [
       {

@@ -25,17 +25,6 @@ export interface NavItem {
 /** The nine modules, in sidebar order. */
 export const NAV_ITEMS: readonly NavItem[] = [
   {
-    title: "Quick Entry",
-    href: "/quick-entry",
-    icon: Zap,
-    description: "Record any transaction in seconds.",
-    planned: [
-      "Income, expenses, card and debt payments, EMIs, subscriptions, savings and transfers",
-      "Automatic categorisation, duplicate warnings and receipt attachments",
-      "Searchable history with edit, delete and filters",
-    ],
-  },
-  {
     title: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
