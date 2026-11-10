@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { getBalancesAction, setOpeningBalanceAction } from "../actions";
 import type { BalanceLine } from "../balances";
 import type { BalancesData } from "../types";
+import { istDateOf, istTimeOf } from "../datetime";
 import { parseOpeningBalance } from "../validation";
 
 export interface BalanceActions {
@@ -26,11 +27,11 @@ export function BalancesDialog({ actions }: { actions: BalanceActions }) {
       <DialogTrigger render={<Button variant="outline" />}>
         <Landmark /> View Balances
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Bank balances</DialogTitle>
           <DialogDescription>
-            Current balance = Opening balance + total credits − total debits. Edit an opening balance and press Save; balances update by themselves whenever entries are added, edited or deleted.
+            Current balance = Opening balance + credits − debits, counting only entries from the opening date and time onwards. Set an opening balance with its date and time and press Save; balances update by themselves whenever entries are added, edited or deleted.
           </DialogDescription>
         </DialogHeader>
         <BalancesBody actions={actions} />
@@ -71,11 +72,11 @@ function BalancesBody({ actions }: { actions: BalanceActions }) {
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[34rem] text-sm">
+        <table className="w-full min-w-[44rem] text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th scope="col" className="px-3 py-2 text-left font-medium">Account</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Opening balance</th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">Opening balance, date and time</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Credits</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Debits</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Current balance</th>
@@ -143,10 +144,16 @@ function LineRow({
   onChange: (next: BalancesData) => void;
 }) {
   const saved = (line.openingPaise / 100).toFixed(2);
+  const savedAt = line.openingAt ? new Date(line.openingAt) : null;
+  const savedDate = savedAt ? istDateOf(savedAt) : "";
+  const savedTime = savedAt ? istTimeOf(savedAt) : "";
   const [text, setText] = useState(saved);
+  const [date, setDate] = useState(savedDate);
+  const [time, setTime] = useState(savedTime);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = text.trim() !== saved && parseOpeningBalance(text) !== line.openingPaise;
+  const amountDirty = text.trim() !== saved && parseOpeningBalance(text) !== line.openingPaise;
+  const dirty = amountDirty || date !== savedDate || (date !== "" && time !== savedTime);
 
   async function save() {
     if (parseOpeningBalance(text) === null) {
@@ -155,7 +162,7 @@ function LineRow({
     }
     setSaving(true);
     setError(null);
-    const result = await actions.setOpeningBalance({ accountId: line.id, amount: text });
+    const result = await actions.setOpeningBalance({ accountId: line.id, amount: text, date: date || undefined, time: date ? time || "00:00" : undefined });
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -169,7 +176,7 @@ function LineRow({
     <tr className="border-t align-top">
       <th scope="row" className={cn("px-3 py-2 text-left font-normal", indent && "pl-8")}>{label}</th>
       <td className="px-3 py-2">
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <div className="relative w-32">
             <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
             <Input
@@ -190,6 +197,29 @@ function LineRow({
               className="h-8 pl-6 text-right tabular-nums"
             />
           </div>
+          <Input
+            type="date"
+            aria-label={`Opening date of ${label}`}
+            value={date}
+            max={istDateOf(new Date())}
+            onChange={(e) => {
+              setDate(e.target.value);
+              if (e.target.value && !time) setTime("00:00");
+              setError(null);
+            }}
+            className="h-8 w-36"
+          />
+          <Input
+            type="time"
+            aria-label={`Opening time of ${label}`}
+            value={time}
+            disabled={!date}
+            onChange={(e) => {
+              setTime(e.target.value);
+              setError(null);
+            }}
+            className="h-8 w-28"
+          />
           <Button type="button" size="icon-sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || saving} aria-label={`Save opening balance of ${label}`} onClick={save}>
             {saving ? <Loader2 className="animate-spin" /> : <Save />}
           </Button>

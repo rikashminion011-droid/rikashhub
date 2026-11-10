@@ -7,6 +7,7 @@ import { METHOD_KINDS, type MethodKind } from "@/features/expenses/types";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { RateLimiter } from "@/lib/security/rate-limit";
+import { istInstant } from "./datetime";
 import {
   createBulk,
   createEntry,
@@ -217,13 +218,23 @@ export async function getBalancesAction(): Promise<QuickPayResult<{ balances: Ba
 
 export async function setOpeningBalanceAction(raw: unknown): Promise<QuickPayResult<{ balances: BalancesData }>> {
   try {
-    const parsed = z.object({ accountId: id, amount: z.string().max(20) }).safeParse(raw);
+    const parsed = z.object({ accountId: id, amount: z.string().max(20), date: z.string().max(10).optional(), time: z.string().max(5).optional() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That balance could not be read." };
     const openingPaise = parseOpeningBalance(parsed.data.amount);
     if (openingPaise === null) return { ok: false, error: "Enter a valid amount, for example 2000 or -500.", fieldErrors: { amount: "Invalid amount" } };
 
+    let openingAt: Date | null = null;
+    if (parsed.data.date) {
+      try {
+        openingAt = istInstant(parsed.data.date, parsed.data.time || "00:00");
+      } catch {
+        return { ok: false, error: "Enter a valid date and time.", fieldErrors: { date: "Invalid date or time" } };
+      }
+      if (Number.isNaN(openingAt.getTime())) return { ok: false, error: "Enter a valid date and time." };
+    }
+
     const { user, db } = await context();
-    await setOpeningBalance(db, user.id, { accountId: parsed.data.accountId, openingPaise });
+    await setOpeningBalance(db, user.id, { accountId: parsed.data.accountId, openingPaise, openingAt });
     refresh();
     return { ok: true, balances: await getBalances(db, user.id) };
   } catch (error) {

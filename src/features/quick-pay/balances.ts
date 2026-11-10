@@ -17,6 +17,8 @@ export interface AccountBalanceInput {
   kind: BalanceKind;
   parentId: string | null;
   openingPaise: number;
+  /** ISO instant the opening balance is as of; null = all entries count. */
+  openingAt?: string | null;
   creditsPaise: number;
   debitsPaise: number;
 }
@@ -25,6 +27,7 @@ export interface BalanceLine {
   id: string;
   name: string;
   openingPaise: number;
+  openingAt: string | null;
   creditsPaise: number;
   debitsPaise: number;
   currentPaise: number;
@@ -45,6 +48,7 @@ const line = (a: AccountBalanceInput): BalanceLine => ({
   id: a.id,
   name: a.name,
   openingPaise: a.openingPaise,
+  openingAt: a.openingAt ?? null,
   creditsPaise: a.creditsPaise,
   debitsPaise: a.debitsPaise,
   currentPaise: currentBalance(a),
@@ -70,6 +74,7 @@ export function buildBalanceGroups(accounts: readonly AccountBalanceInput[]): Ba
         id: main.id,
         name: main.name,
         openingPaise: sum((l) => l.openingPaise),
+        openingAt: null,
         creditsPaise: sum((l) => l.creditsPaise),
         debitsPaise: sum((l) => l.debitsPaise),
         currentPaise: sum((l) => l.currentPaise),

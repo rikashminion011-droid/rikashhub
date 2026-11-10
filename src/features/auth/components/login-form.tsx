@@ -34,7 +34,7 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
   return (
     // method="post": if the form is submitted before the page finishes loading, the browser must
     // never fall back to a GET that puts the email and password in the address bar.
-    <form onSubmit={onSubmit} noValidate method="post" className="mt-7 space-y-5 xl:mt-8">
+    <form onSubmit={onSubmit} noValidate method="post" className="mt-5 space-y-4 xl:mt-5">
       {notice ? (
         <p role="status" className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm text-neutral-700">
           {notice}
@@ -70,7 +70,7 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
         <AuthCheckbox label="Remember me" {...register("remember")} />
         <Link
           href="/forgot-password"
-          className="text-sm font-semibold whitespace-nowrap text-neutral-950 underline-offset-4 hover:underline sm:text-[0.95rem] xl:text-[clamp(0.9rem,1.2vw,1.3rem)]"
+          className="text-sm font-semibold whitespace-nowrap text-neutral-950 underline-offset-4 hover:underline sm:text-sm xl:text-sm"
         >
           Forgot password?
         </Link>
@@ -87,7 +87,7 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
         {pending ? "Logging in…" : "Log In"}
       </AuthSubmit>
 
-      <p className="text-center text-sm text-[#848484]">
+      <p className="text-center text-xs text-[#848484]">
         New here?{" "}
         <Link href="/signup" className="font-semibold text-neutral-950 underline-offset-4 hover:underline">
           Create an account

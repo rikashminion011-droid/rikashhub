@@ -247,6 +247,8 @@ model Account {
   /// Only the last 4 digits are ever stored or shown.
   maskedNumber   String?       @db.VarChar(4)
   openingBalance Decimal       @default(0) @db.Decimal(14, 2)
+  /// The moment the opening balance is "as of". Only entries at or after it count towards the balance. Null = every entry counts.
+  openingAt      DateTime?     @db.Timestamptz(3)
   currentBalance Decimal       @default(0) @db.Decimal(14, 2)
   creditLimit    Decimal?      @db.Decimal(14, 2)
   linkedCardLast4 String?      @db.VarChar(4)

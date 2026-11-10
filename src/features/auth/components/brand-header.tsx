@@ -4,7 +4,7 @@ import Image from "next/image";
 export function BrandHeader() {
   return (
     <div className="flex flex-col items-center text-center">
-      <div className="flex items-center gap-3 text-[clamp(2.25rem,10vw,3rem)] xl:text-[clamp(2.75rem,3.8vw,4.4rem)]">
+      <div className="flex items-center gap-3 text-[clamp(1.75rem,8vw,2.25rem)] xl:text-[2.25rem]">
         <Image
           src="/auth/hub-logo.png"
           alt=""
@@ -18,7 +18,7 @@ export function BrandHeader() {
           My Hub
         </span>
       </div>
-      <p className="mt-2.5 text-base text-[#848484] sm:text-lg xl:text-[clamp(1.1rem,1.65vw,1.9rem)]">
+      <p className="mt-2 text-sm text-[#848484] xl:text-sm">
         Track <span aria-hidden>•</span> Manage <span aria-hidden>•</span> Achieve
       </p>
     </div>
@@ -28,11 +28,11 @@ export function BrandHeader() {
 /** Page heading inside the card, e.g. "Welcome Back". */
 export function AuthHeading({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="mt-8 text-center xl:mt-9">
-      <h1 className="font-[family-name:var(--font-jakarta)] text-[1.75rem] leading-tight font-extrabold tracking-tight text-neutral-950 xl:text-[clamp(1.9rem,2.4vw,2.8rem)]">
+    <div className="mt-6 text-center xl:mt-6">
+      <h1 className="font-[family-name:var(--font-jakarta)] text-[1.4rem] leading-tight font-extrabold tracking-tight text-neutral-950 xl:text-[1.4rem]">
         {title}
       </h1>
-      <p className="mt-1.5 text-base text-[#848484] xl:text-[clamp(1rem,1.3vw,1.5rem)]">{subtitle}</p>
+      <p className="mt-1 text-sm text-[#848484] xl:text-sm">{subtitle}</p>
     </div>
   );
 }

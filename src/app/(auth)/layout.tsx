@@ -33,8 +33,8 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
       </div>
 
       <main className="px-0 pb-12 xl:flex xl:items-center xl:justify-center xl:py-10">
-        <div className="relative mx-auto -mt-[5.5vw] w-[87%] rounded-[2.75rem] bg-white px-6 pt-8 pb-10 shadow-[0_24px_70px_-24px_rgba(0,0,0,0.3)] sm:px-10 xl:mt-0 xl:w-[94.5%] xl:px-[clamp(2rem,2.7vw,3.2rem)] xl:pt-[clamp(2.25rem,2.8vw,3.2rem)] xl:pb-[clamp(2.25rem,2.8vw,3.2rem)]">
-          <div className="mx-auto max-w-md xl:max-w-none">
+        <div className="relative mx-auto -mt-[5.5vw] w-[87%] rounded-[2.25rem] bg-white px-6 pt-7 pb-8 shadow-[0_24px_70px_-24px_rgba(0,0,0,0.3)] sm:px-10 xl:mt-0 xl:w-[88%] xl:max-w-[26rem] xl:rounded-[2rem] xl:px-8 xl:py-8">
+          <div className="mx-auto max-w-sm xl:max-w-none">
             <BrandHeader />
             {children}
           </div>

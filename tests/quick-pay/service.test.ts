@@ -234,6 +234,27 @@ describe("balances", () => {
     await expect(setOpeningBalance(db, ME.id, { accountId: "99999999-9999-4999-8999-999999999999", openingPaise: 1 })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("only counts entries from the opening date and time onwards", async () => {
+    const acc = await addBank(db, ME.id, { name: "Dated wallet", kind: "BANK" });
+    const early = entry({ accountId: acc, amountPaise: 10000 });
+    const late = entry({ accountId: acc, amountPaise: 30000 });
+    await createEntry(db, ME.id, rid(), early, istInstant("2026-06-01", "09:00"));
+    await createEntry(db, ME.id, rid(), late, istInstant("2026-06-10", "09:00"));
+    expect(await currentOf(acc)).toBe(-400);
+
+    await setOpeningBalance(db, ME.id, { accountId: acc, openingPaise: 100000, openingAt: istInstant("2026-06-05", "00:00") });
+    expect(await currentOf(acc)).toBe(700);
+    const line = (await getBalances(db, ME.id)).groups.find((g) => g.name === "Dated wallet")!.direct!;
+    expect(line).toMatchObject({ debitsPaise: 30000, currentPaise: 70000 });
+    expect(line.openingAt).toBe("2026-06-04T18:30:00.000Z");
+
+    // The cut-off is exact to the minute: an entry at 09:00 is excluded by an opening of 09:01.
+    await setOpeningBalance(db, ME.id, { accountId: acc, openingPaise: 100000, openingAt: istInstant("2026-06-10", "09:01") });
+    expect(await currentOf(acc)).toBe(1000);
+    await setOpeningBalance(db, ME.id, { accountId: acc, openingPaise: 100000, openingAt: istInstant("2026-06-10", "09:00") });
+    expect(await currentOf(acc)).toBe(700);
+  });
+
   it("counts spending entered through the older Expense Entry page too", async () => {
     const data = await getExpenseFormData(db, ME.id);
     const gpay = data.methods.find((m) => m.name === "GPay")!;

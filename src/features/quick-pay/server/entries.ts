@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
-import { recomputeBalances } from "@/lib/db/balances";
+import { recomputeBalances, sinceOpening } from "@/lib/db/balances";
 import { paiseToDecimalString, parseISODate, toPaise } from "@/lib/finance";
 import { buildBalanceGroups, type AccountBalanceInput } from "../balances";
 import { istDateOf, rangeToInstants } from "../datetime";
@@ -333,13 +333,21 @@ export async function listForExport(db: PrismaClient, userId: string, filters: T
 // ───────────────────────── Balances ─────────────────────────
 
 export async function getBalances(db: PrismaClient, userId: string): Promise<BalancesData> {
-  const [accounts, credits, debits] = await Promise.all([
-    db.account.findMany({ where: { userId, deletedAt: null }, orderBy: [{ createdAt: "asc" }, { name: "asc" }] }),
-    db.transaction.groupBy({ by: ["toAccountId"], where: { userId, deletedAt: null, type: "INCOME", toAccountId: { not: null } }, _sum: { amount: true } }),
-    db.transaction.groupBy({ by: ["accountId"], where: { userId, deletedAt: null, type: "EXPENSE", accountId: { not: null } }, _sum: { amount: true } }),
-  ]);
-  const creditOf = new Map(credits.map((c) => [c.toAccountId, c._sum.amount ? paiseOf(c._sum.amount) : 0]));
-  const debitOf = new Map(debits.map((d) => [d.accountId, d._sum.amount ? paiseOf(d._sum.amount) : 0]));
+  const accounts = await db.account.findMany({ where: { userId, deletedAt: null }, orderBy: [{ createdAt: "asc" }, { name: "asc" }] });
+  const creditOf = new Map<string, number>();
+  const debitOf = new Map<string, number>();
+  // Each account counts only the entries from its own opening date and time onwards.
+  await Promise.all(
+    accounts.map(async (a) => {
+      const since = sinceOpening(a.openingAt);
+      const [credit, debit] = await Promise.all([
+        db.transaction.aggregate({ where: { userId, deletedAt: null, type: "INCOME", toAccountId: a.id, ...since }, _sum: { amount: true } }),
+        db.transaction.aggregate({ where: { userId, deletedAt: null, type: "EXPENSE", accountId: a.id, ...since }, _sum: { amount: true } }),
+      ]);
+      creditOf.set(a.id, credit._sum.amount ? paiseOf(credit._sum.amount) : 0);
+      debitOf.set(a.id, debit._sum.amount ? paiseOf(debit._sum.amount) : 0);
+    }),
+  );
 
   const inputs: AccountBalanceInput[] = accounts.map((a) => ({
     id: a.id,
@@ -347,6 +355,7 @@ export async function getBalances(db: PrismaClient, userId: string): Promise<Bal
     kind: a.kind === "CREDIT_LINE" ? "CREDIT_LINE" : "ASSET",
     parentId: a.parentId,
     openingPaise: paiseOf(a.openingBalance),
+    openingAt: a.openingAt ? a.openingAt.toISOString() : null,
     creditsPaise: creditOf.get(a.id) ?? 0,
     debitsPaise: debitOf.get(a.id) ?? 0,
   }));
@@ -355,15 +364,15 @@ export async function getBalances(db: PrismaClient, userId: string): Promise<Bal
 }
 
 /** Sets an account's opening balance (it may be negative) and recalculates its current balance. */
-export async function setOpeningBalance(db: PrismaClient, userId: string, input: { accountId: string; openingPaise: number }): Promise<void> {
+export async function setOpeningBalance(db: PrismaClient, userId: string, input: { accountId: string; openingPaise: number; openingAt?: Date | null }): Promise<void> {
   await db.$transaction(async (tx) => {
     const updated = await tx.account.updateMany({
       where: { id: input.accountId, userId, deletedAt: null },
-      data: { openingBalance: paiseToDecimalString(input.openingPaise) },
+      data: { openingBalance: paiseToDecimalString(input.openingPaise), openingAt: input.openingAt ?? null },
     });
     if (updated.count !== 1) throw new ExpenseError("That bank no longer exists.", "NOT_FOUND");
     await recomputeBalances(tx, userId, [input.accountId]);
-    await tx.auditLog.create({ data: { userId, action: "quickpay.opening-balance", entity: "account", entityId: input.accountId, after: { openingPaise: input.openingPaise } } });
+    await tx.auditLog.create({ data: { userId, action: "quickpay.opening-balance", entity: "account", entityId: input.accountId, after: { openingPaise: input.openingPaise, openingAt: input.openingAt?.toISOString() ?? null } } });
   });
 }
 
