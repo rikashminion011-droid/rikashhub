@@ -7,6 +7,7 @@ import {
   Layers,
   LayoutDashboard,
   PiggyBank,
+  ReceiptText,
   UserRound,
   Zap,
   type LucideIcon,
@@ -124,6 +125,24 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
 ];
 
+/** The Quick Pay group, shown under the nine modules. */
+export const QUICK_PAY_ITEMS: readonly NavItem[] = [
+  {
+    title: "Quick Entry",
+    href: "/quick-pay",
+    icon: Zap,
+    description: "Record a credit or debit in seconds.",
+    planned: [],
+  },
+  {
+    title: "GPay Transactions",
+    href: "/quick-pay/transactions",
+    icon: ReceiptText,
+    description: "Every Quick Pay entry, with filters, balances and export.",
+    planned: [],
+  },
+];
+
 /** Shown below the modules, under "Account". */
 export const ACCOUNT_ITEM: NavItem = {
   title: "User",
@@ -133,6 +152,11 @@ export const ACCOUNT_ITEM: NavItem = {
   planned: [],
 };
 
+const ALL_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ACCOUNT_ITEM];
+
+/** The item for a path. When several match (/quick-pay and /quick-pay/transactions) the most specific one wins. */
 export function findNavItem(pathname: string): NavItem | undefined {
-  return [...NAV_ITEMS, ACCOUNT_ITEM].find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  return ALL_ITEMS.filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)).sort(
+    (a, b) => b.href.length - a.href.length,
+  )[0];
 }

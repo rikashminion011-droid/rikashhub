@@ -347,14 +347,19 @@ model TransactionCategory {
   color     String?
   /// Lower-case keywords used for automatic categorisation.
   keywords  String[]
+  /// A main category has no parent; a sub-category (Food -> Dosa) points at its main. One level deep.
+  parentId  String?      @db.Uuid
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   deletedAt DateTime?
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       TransactionCategory?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children     TransactionCategory[] @relation("CategoryChildren")
   transactions Transaction[]
 
-  @@unique([userId, type, name])
+  @@unique([userId, type, parentId, name])
+  @@index([userId, parentId])
   @@map("transaction_categories")
 }
 
@@ -380,6 +385,10 @@ model Transaction {
   notes            String?
   /// True when the expense was split between several people (see transaction_splits).
   isSplit          Boolean         @default(false)
+  /// The exact moment of the entry (date and time). `date` stays the calendar date of this moment in IST.
+  occurredAt       DateTime?       @db.Timestamptz(3)
+  /// Created through the Quick Pay module (single or bulk entry): these are the rows GPay Transactions shows.
+  quickPay         Boolean         @default(false)
   /// Idempotency key (unique per user): automated entries and form submissions use it so a retry or
   /// double click cannot create a second record.
   dedupeKey        String?
@@ -404,6 +413,7 @@ model Transaction {
   splits              TransactionSplit[]
 
   @@unique([userId, dedupeKey])
+  @@index([userId, quickPay, occurredAt])
   @@index([userId, date])
   @@index([userId, type, date])
   @@index([userId, deletedAt])

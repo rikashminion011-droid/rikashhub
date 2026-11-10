@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/logo";
-import { ACCOUNT_ITEM, NAV_ITEMS, type NavItem } from "@/config/navigation";
+import { ACCOUNT_ITEM, NAV_ITEMS, QUICK_PAY_ITEMS, findNavItem, type NavItem } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 
 function NavLink({ item, pathname, onNavigate }: { item: NavItem; pathname: string; onNavigate?: () => void }) {
   const { title, href, icon: Icon } = item;
-  const active = pathname === href || pathname.startsWith(`${href}/`);
+  // Only the most specific item is highlighted (GPay Transactions, not Quick Entry as well).
+  const active = findNavItem(pathname)?.href === href;
   return (
     <li>
       <Link
@@ -44,6 +45,13 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-2">
         <ul className="space-y-0.5">
           {NAV_ITEMS.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+          ))}
+        </ul>
+
+        <p className="mt-5 mb-1 px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">Quick Pay</p>
+        <ul className="space-y-0.5">
+          {QUICK_PAY_ITEMS.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
           ))}
         </ul>

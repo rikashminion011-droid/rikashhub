@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Every page in this app is per-user and authenticated, so Cache Components /
   // partial prefetching (static-shell prerendering) are intentionally not enabled.
-  serverExternalPackages: ["pg"],
+  serverExternalPackages: ["pg", "exceljs", "jspdf", "jspdf-autotable"],
   turbopack: {
     rules: {
       "*.css": {

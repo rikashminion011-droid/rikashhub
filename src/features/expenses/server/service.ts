@@ -44,7 +44,7 @@ function accountFieldsFor(kind: MethodKind) {
   }
 }
 
-function kindOfAccount(account: { type: string; kind: string }): MethodKind {
+export function kindOfAccount(account: { type: string; kind: string }): MethodKind {
   if (account.kind === "CREDIT_LINE" || account.type === "SLICE") return "CREDIT_LINE";
   if (account.type === "WALLET") return "WALLET";
   if (account.type === "BANK" || account.type === "DEBIT_CARD") return "BANK";
@@ -128,7 +128,8 @@ export async function getExpenseFormData(db: PrismaClient, userId: string): Prom
       orderBy: { createdAt: "asc" },
     }),
     db.expenseParty.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: "asc" } }),
-    db.transactionCategory.findMany({ where: { userId, deletedAt: null, type: "EXPENSE" }, orderBy: { createdAt: "asc" } }),
+    // Main categories only: sub-categories (Food -> Dosa) are managed in Quick Pay.
+    db.transactionCategory.findMany({ where: { userId, deletedAt: null, type: "EXPENSE", parentId: null }, orderBy: { createdAt: "asc" } }),
   ]);
 
   return {
@@ -207,7 +208,7 @@ export async function addParty(db: PrismaClient, userId: string, input: { name: 
 export async function addCategory(db: PrismaClient, userId: string, input: { name: string }): Promise<string> {
   const name = cleanName(input.name);
   const existing = await db.transactionCategory.findFirst({
-    where: { userId, type: "EXPENSE", name: { equals: name, mode: "insensitive" } },
+    where: { userId, type: "EXPENSE", parentId: null, name: { equals: name, mode: "insensitive" } },
   });
   if (existing && !existing.deletedAt) throw new ExpenseError(`"${existing.name}" already exists.`, "CONFLICT");
   if (existing) {
