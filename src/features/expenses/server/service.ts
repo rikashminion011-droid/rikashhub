@@ -56,8 +56,38 @@ export function kindOfAccount(account: { type: string; kind: string }): MethodKi
  * Makes sure the signed-in user has a row in our own tables (the Supabase login only exists in
  * Supabase's auth schema) and, once, creates the starter payment methods, people and categories.
  * Safe to call on every request and from concurrent requests.
+ *
+ * This runs on every page view and each database query is a network round trip, so the common case
+ * (already set up) is kept cheap: one query the first time a server instance sees the user, and none
+ * after that. The email is part of the memo key, so a changed email is synced on the next request.
  */
 export async function ensureUserSetup(
+  db: PrismaClient,
+  user: { id: string; email: string; name: string | null },
+): Promise<void> {
+  const key = `${user.id}|${user.email}`;
+  let confirmed = confirmedUsers.get(db);
+  if (!confirmed) {
+    confirmed = new Set();
+    confirmedUsers.set(db, confirmed);
+  }
+  if (confirmed.has(key)) return;
+
+  const existing = await db.user.findUnique({
+    where: { id: user.id },
+    select: { email: true, profile: { select: { expenseDefaultsSeededAt: true } } },
+  });
+  const upToDate = existing && existing.email === user.email && existing.profile?.expenseDefaultsSeededAt;
+  if (!upToDate) await runUserSetup(db, user);
+
+  confirmed.add(key);
+}
+
+/** Users a server instance has already confirmed, per database client. */
+const confirmedUsers = new WeakMap<PrismaClient, Set<string>>();
+
+/** The full check: creates the user and profile rows and seeds the starter data when missing. */
+async function runUserSetup(
   db: PrismaClient,
   user: { id: string; email: string; name: string | null },
 ): Promise<void> {
