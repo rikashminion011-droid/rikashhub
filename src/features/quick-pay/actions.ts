@@ -8,12 +8,14 @@ import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { RateLimiter } from "@/lib/security/rate-limit";
 import { istInstant } from "./datetime";
+import { MAX_IMPORT_ROWS, banksNeeded, planImport, type ImportRow } from "./import/plan";
 import {
   createBulk,
   createEntry,
   deleteEntry,
   getBalances,
   getEntry,
+  importEntries,
   listEntryIds,
   listRecentCredits,
   setOpeningBalance,
@@ -239,6 +241,65 @@ export async function setOpeningBalanceAction(raw: unknown): Promise<QuickPayRes
     return { ok: true, balances: await getBalances(db, user.id) };
   } catch (error) {
     return failure(error, "set opening balance");
+  }
+}
+
+// ───────────────────────── Import ─────────────────────────
+
+const importSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        id: z.string().max(40),
+        kind: z.enum(["DEBIT", "CREDIT", "SELF_TRANSFER"]),
+        occurredAt: z.string().max(40),
+        amountPaise: z.number(),
+        reason: z.string().max(400),
+        bank: z.string().max(120),
+        toBank: z.string().max(120).nullable(),
+      }),
+    )
+    .max(MAX_IMPORT_ROWS),
+  bankMap: z.record(z.string().max(120), z.string().nullable()),
+  includeSelfTransfers: z.boolean(),
+});
+
+export interface ImportResult {
+  imported: number;
+  duplicates: number;
+  skipped: number;
+  invalid: { id: string; reason: string; why: string }[];
+}
+
+/**
+ * Saves the rows of a previewed statement as GPay transactions. The server makes the plan again from the rows and the
+ * chosen banks, so it never relies on what the browser worked out. Payments already imported are skipped, not doubled.
+ */
+export async function importGpayAction(raw: unknown): Promise<QuickPayResult<{ result: ImportResult }>> {
+  try {
+    const parsed = importSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That import could not be read. Upload the file again." };
+    const { rows, bankMap, includeSelfTransfers } = parsed.data;
+    if (rows.length === 0) return { ok: false, error: "There is nothing to import." };
+    for (const name of banksNeeded(rows as ImportRow[], includeSelfTransfers)) {
+      if (!(name in bankMap)) return { ok: false, error: `Choose a bank for ${name}, or skip it.` };
+    }
+
+    const plan = planImport(rows as ImportRow[], { bankMap, includeSelfTransfers }, new Set());
+    const { user, db } = await context();
+    const saved = await importEntries(db, user.id, plan.entries);
+    refresh();
+    return {
+      ok: true,
+      result: {
+        imported: saved.imported,
+        duplicates: saved.duplicates + plan.counts.duplicate,
+        skipped: plan.counts.skipped,
+        invalid: plan.statuses.flatMap((s, i) => (s.state === "invalid" ? [{ id: rows[i]!.id, reason: rows[i]!.reason, why: s.why }] : [])),
+      },
+    };
+  } catch (error) {
+    return failure(error, "import");
   }
 }
 

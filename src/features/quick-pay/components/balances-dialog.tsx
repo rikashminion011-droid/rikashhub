@@ -27,7 +27,7 @@ export function BalancesDialog({ actions }: { actions: BalanceActions }) {
       <DialogTrigger render={<Button variant="outline" />}>
         <Landmark /> View Balances
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[min(64rem,calc(100vw-2rem))]">
         <DialogHeader>
           <DialogTitle>Bank balances</DialogTitle>
           <DialogDescription>

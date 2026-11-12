@@ -5,8 +5,9 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { deleteEntryAction, getBalancesAction, setOpeningBalanceAction } from "@/features/quick-pay/actions";
+import { deleteEntryAction, getBalancesAction, getOptionsAction, importGpayAction, setOpeningBalanceAction } from "@/features/quick-pay/actions";
 import { BalancesDialog } from "@/features/quick-pay/components/balances-dialog";
+import { ImportDialog } from "@/features/quick-pay/components/import-dialog";
 import { ExportMenu } from "@/features/quick-pay/components/export-menu";
 import { TransactionsFilterBar } from "@/features/quick-pay/components/transactions-filter-bar";
 import { TransactionsTable } from "@/features/quick-pay/components/transactions-table";
@@ -63,6 +64,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
             <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))}>
               <FilePlus2 /> Add Bulk
             </Link>
+            <ImportDialog actions={{ getOptions: getOptionsAction, importGpay: importGpayAction }} />
             <ExportMenu query={query} />
           </>
         }

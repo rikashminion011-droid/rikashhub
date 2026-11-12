@@ -3,7 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Every page in this app is per-user and authenticated, so Cache Components /
   // partial prefetching (static-shell prerendering) are intentionally not enabled.
-  serverExternalPackages: ["pg", "exceljs", "jspdf", "jspdf-autotable"],
+  serverExternalPackages: ["pg", "exceljs", "jspdf", "jspdf-autotable", "unpdf"],
+  experimental: {
+    // The import sends the rows of a statement (up to 5,000) back when you press Import.
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   turbopack: {
     rules: {
       "*.css": {

@@ -5,6 +5,7 @@ import { recomputeBalances, sinceOpening } from "@/lib/db/balances";
 import { paiseToDecimalString, parseISODate, toPaise } from "@/lib/finance";
 import { buildBalanceGroups, type AccountBalanceInput } from "../balances";
 import { istDateOf, rangeToInstants } from "../datetime";
+import type { PlannedEntry } from "../import/plan";
 import { PAGE_SIZE, effectiveRange, type TxFilters } from "../filters";
 import type { BalancesData, EntryDetails, RecentCredit, TxRow, TxTotals } from "../types";
 import type { EntryType, ValidBulkRow, ValidQuickPay } from "../validation";
@@ -374,6 +375,64 @@ export async function setOpeningBalance(db: PrismaClient, userId: string, input:
     await recomputeBalances(tx, userId, [input.accountId]);
     await tx.auditLog.create({ data: { userId, action: "quickpay.opening-balance", entity: "account", entityId: input.accountId, after: { openingPaise: input.openingPaise, openingAt: input.openingAt?.toISOString() ?? null } } });
   });
+}
+
+// ───────────────────────── Import ─────────────────────────
+
+/**
+ * Saves entries made from an imported statement. Each entry carries a unique key built from the payment's UPI
+ * Transaction ID, so importing the same statement (or an overlapping one) again adds only what is new.
+ * Everything is saved in one database transaction and the affected bank balances are recalculated from the records.
+ */
+export async function importEntries(db: PrismaClient, userId: string, entries: readonly PlannedEntry[]): Promise<{ imported: number; duplicates: number }> {
+  if (entries.length === 0) return { imported: 0, duplicates: 0 };
+  return db.$transaction(
+    async (tx) => {
+      await resolveBanks(tx, userId, entries.map((e) => e.accountId));
+
+      const existing = new Set<string>();
+      const keys = entries.map((e) => e.key);
+      for (let i = 0; i < keys.length; i += 1000) {
+        const found = await tx.transaction.findMany({ where: { userId, dedupeKey: { in: keys.slice(i, i + 1000) } }, select: { dedupeKey: true } });
+        for (const f of found) if (f.dedupeKey) existing.add(f.dedupeKey);
+      }
+      const fresh = entries.filter((e) => !existing.has(e.key));
+      if (fresh.length === 0) return { imported: 0, duplicates: entries.length };
+
+      for (let i = 0; i < fresh.length; i += 500) {
+        await tx.transaction.createMany({
+          data: fresh.slice(i, i + 500).map((e) => ({
+            userId,
+            ...typeFields(e.type, e.accountId),
+            amount: paiseToDecimalString(e.amountPaise),
+            date: parseISODate(istDateOf(e.occurredAt)),
+            occurredAt: e.occurredAt,
+            description: e.reason || null,
+            categoryId: null,
+            isSplit: false,
+            quickPay: true,
+            dedupeKey: e.key,
+          })),
+          // If the same statement is imported twice at the same moment, the database's unique key keeps one copy.
+          skipDuplicates: true,
+        });
+      }
+      await recomputeBalances(tx, userId, fresh.map((e) => e.accountId));
+      await tx.auditLog.create({ data: { userId, action: "quickpay.import", entity: "transaction", after: { rows: fresh.length, duplicates: entries.length - fresh.length } } });
+      return { imported: fresh.length, duplicates: entries.length - fresh.length };
+    },
+    { timeout: 120_000, maxWait: 15_000 },
+  );
+}
+
+/** Which of these import keys are already saved, so the preview can say "already imported". */
+export async function findImportedKeys(db: PrismaClient, userId: string, keys: readonly string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (let i = 0; i < keys.length; i += 1000) {
+    const found = await db.transaction.findMany({ where: { userId, dedupeKey: { in: keys.slice(i, i + 1000) } }, select: { dedupeKey: true } });
+    for (const f of found) if (f.dedupeKey) out.push(f.dedupeKey);
+  }
+  return out;
 }
 
 function isUniqueViolation(error: unknown): boolean {
