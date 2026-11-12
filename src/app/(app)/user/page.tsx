@@ -1,20 +1,18 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  addPersonAction,
-  changePasswordAction,
-  removePersonAction,
-  renamePersonAction,
-} from "@/features/users/actions";
+import { UsersRound } from "lucide-react";
+import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
+import { changePasswordAction } from "@/features/users/actions";
 import { AccountDetails } from "@/features/users/components/account-details";
 import { ChangePasswordForm } from "@/features/users/components/change-password-form";
-import { PeopleManager } from "@/features/users/components/people-manager";
 import { listPeople } from "@/features/users/server/service";
 import type { PersonRow } from "@/features/users/types";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "User" };
 
@@ -48,24 +46,18 @@ export default async function UserPage() {
           </Card>
         </div>
 
-        {people ? (
-          <PeopleManager
-            initialPeople={people}
-            actions={{ addPerson: addPersonAction, renamePerson: renamePersonAction, removePerson: removePersonAction }}
-          />
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>People</CardTitle>
-              <CardDescription>Can&apos;t reach the database right now, so this list is hidden.</CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Check <code className="rounded bg-muted px-1 py-0.5 text-xs">DATABASE_URL</code> in{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">.env.local</code> and reload. Your account and password
-              settings on the left still work.
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardHeader>
+            <CardTitle>People</CardTitle>
+            <CardDescription>The people you split expenses with are managed in Customized Settings, next to banks, categories and Split settings.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>{people ? `${people.length} ${people.length === 1 ? "person" : "people"} added.` : "Can't reach the database right now."}</p>
+            <Link href="/quick-pay/settings?tab=users" className={cn(buttonVariants({ variant: "outline" }))}>
+              <UsersRound /> Manage users
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     </>
   );

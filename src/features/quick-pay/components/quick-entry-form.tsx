@@ -1,81 +1,25 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, FilePlus2, Landmark, Layers, Loader2, Plus, Settings2, Tag, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { CascadingSelect } from "@/components/shared/cascading-select";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
-import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { QuickPayActions } from "../actions";
-import { groupBanks, groupCategories } from "../cascade";
 import { formatTransactionWhen } from "../datetime";
+import { defaultCreditSelection, emptyState, fromEntry, type FormState } from "../entry-state";
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
-import { MAX_REASON_LENGTH, validateQuickPayInput, type EntryType, type QuickPayErrors } from "../validation";
-
-interface FormState {
-  amount: string;
-  type: EntryType;
-  reason: string;
-  accountId: string | null;
-  categoryId: string | null;
-  splitEnabled: boolean;
-  partyId: string | null;
-  creditsAdded: boolean;
-}
-
-const emptyState = (): FormState => ({ amount: "", type: "DEBIT", reason: "", accountId: null, categoryId: null, splitEnabled: false, partyId: null, creditsAdded: false });
-
-const fromEntry = (e: EntryDetails): FormState => ({
-  amount: (e.amountPaise / 100).toFixed(2),
-  type: e.type,
-  reason: e.reason,
-  accountId: e.accountId,
-  categoryId: e.categoryId,
-  splitEnabled: e.partyId !== null,
-  partyId: e.partyId,
-  creditsAdded: false,
-});
+import { validateQuickPayInput, type QuickPayErrors } from "../validation";
+import { EntryFields } from "./entry-fields";
 
 const newRequestId = () => crypto.randomUUID();
 
-const SETTINGS = {
-  banks: "/quick-pay/settings?tab=banks",
-  categories: "/quick-pay/settings?tab=categories",
-  persons: "/quick-pay/persons",
-};
-
-/** A link at the bottom of a dropdown that opens the right settings page in a new tab (so nothing typed is lost). */
-function AddLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-    >
-      <Plus className="size-3.5" aria-hidden />
-      {children}
-    </a>
-  );
-}
-
-function FieldLabel({ htmlFor, icon: Icon, children }: { htmlFor?: string; icon?: typeof Tag; children: React.ReactNode }) {
-  return (
-    <label htmlFor={htmlFor} className="flex items-center gap-2 text-sm font-semibold">
-      {Icon ? <Icon className="size-4 text-muted-foreground" aria-hidden /> : null}
-      {children}
-    </label>
-  );
-}
-
+/** The Quick Entry form: record a debit or credit. Compact, with the same fields as the edit pop-up in GPay Transactions. */
 export function QuickEntryForm({
   initialOptions,
   initialEntry,
@@ -87,7 +31,7 @@ export function QuickEntryForm({
   actions: QuickPayActions;
 }) {
   const [options, setOptions] = useState(initialOptions);
-  const [form, setForm] = useState<FormState>(initialEntry ? fromEntry(initialEntry) : emptyState());
+  const [form, setFormState] = useState<FormState>(() => (initialEntry ? fromEntry(initialEntry, initialOptions.settings) : emptyState(initialOptions.settings, initialOptions)));
   const [errors, setErrors] = useState<QuickPayErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -103,11 +47,9 @@ export function QuickEntryForm({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const router = useRouter();
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const setForm = useCallback((update: (f: FormState) => FormState) => setFormState((f) => update(f)), []);
+  const clearError = useCallback((key: keyof QuickPayErrors) => setErrors((e) => (e[key] ? { ...e, [key]: undefined } : e)), []);
   const index = current ? ids.indexOf(current.id) : -1;
-
-  const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
-  const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
 
   // ── Loading data the form needs ─────────────────────────────────────────
 
@@ -126,7 +68,7 @@ export function QuickEntryForm({
     };
   }, [actions]);
 
-  /** Pick up banks, categories and people added in another tab as soon as you come back to this one. */
+  /** Pick up banks, categories, people and settings changed in another tab as soon as you come back to this one. */
   useEffect(() => {
     const refresh = async () => {
       if (document.visibilityState !== "visible") return;
@@ -141,7 +83,8 @@ export function QuickEntryForm({
     };
   }, [actions]);
 
-  // The panel only exists for a Debit with "Credits Added" ticked. Recent credits are fetched each time it opens.
+  // The Credits Added panel only exists for a Debit with it ticked. What it lists comes from Customized Settings,
+  // and is fetched each time it opens.
   const showCredits = form.type === "DEBIT" && form.creditsAdded;
   const loadingCredits = showCredits && credits === null;
   useEffect(() => {
@@ -149,8 +92,11 @@ export function QuickEntryForm({
     let cancelled = false;
     void actions.getRecentCredits().then((result) => {
       if (cancelled) return;
-      if (result.ok) setCredits(result.credits);
-      else {
+      if (result.ok) {
+        setCredits(result.credits);
+        // The first time it opens, select what the settings say to select (nothing, the latest, or the newest few).
+        setFormState((f) => (f.creditIds.length > 0 ? f : { ...f, creditIds: defaultCreditSelection(result.credits, options.settings.credits) }));
+      } else {
         setCredits([]);
         toast.error(result.error);
       }
@@ -158,7 +104,12 @@ export function QuickEntryForm({
     return () => {
       cancelled = true;
     };
-  }, [showCredits, credits, actions]);
+  }, [showCredits, credits, actions, options.settings.credits]);
+
+  function toggleCredits(on: boolean) {
+    setFormState((f) => ({ ...f, creditsAdded: on, creditIds: on ? f.creditIds : [] }));
+    if (!on) setCredits(null); // fetched fresh the next time it is opened
+  }
 
   // ── Switching between saved entries ─────────────────────────────────────
 
@@ -169,7 +120,8 @@ export function QuickEntryForm({
 
     if (target < 0) {
       setCurrent(null);
-      setForm(draft.current ?? emptyState());
+      setFormState(draft.current ?? emptyState(options.settings, options));
+      setCredits(null);
       setErrors({});
       setFormError(null);
       return;
@@ -185,7 +137,8 @@ export function QuickEntryForm({
       return;
     }
     setCurrent(result.entry);
-    setForm(fromEntry(result.entry));
+    setFormState(fromEntry(result.entry, options.settings));
+    setCredits(null);
     setErrors({});
     setFormError(null);
   }
@@ -206,13 +159,14 @@ export function QuickEntryForm({
       reason: form.reason,
       accountId: form.accountId,
       categoryId: form.categoryId,
-      split: { enabled: form.splitEnabled, partyId: form.partyId },
+      split: { enabled: form.splitEnabled, partyId: form.partyId, method: form.splitMethod, value: form.splitValue },
+      creditIds: form.type === "DEBIT" ? form.creditIds : [],
     };
     const checked = validateQuickPayInput(input);
     if (!checked.ok) {
       setErrors(checked.errors);
-      const first = (["amount", "bank", "split"] as const).find((k) => checked.errors[k]);
-      if (first) document.getElementById(`field-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const first = (["amount", "bank", "split"] as const).find((k) => checked.errors[k]) ?? (checked.errors.splitValue ? "split" : null);
+      if (first) document.getElementById(`qp-field-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     setErrors({});
@@ -235,16 +189,27 @@ export function QuickEntryForm({
 
     if (result.updated) {
       toast.success("Entry updated.");
-      setCurrent({ ...current!, type: form.type, amountPaise: result.amountPaise, reason: form.reason.trim(), accountId: form.accountId!, categoryId: form.categoryId, partyId: form.splitEnabled ? form.partyId : null });
+      setCurrent({
+        ...current!,
+        type: form.type,
+        amountPaise: result.amountPaise,
+        reason: form.reason.trim(),
+        accountId: form.accountId!,
+        categoryId: form.categoryId,
+        partyId: form.splitEnabled ? form.partyId : null,
+        splitPercent: checked.value.partyId ? checked.value.percent : null,
+        creditIds: input.creditIds,
+      });
     } else {
       toast.success(result.duplicate ? "That entry was already saved." : `${form.type === "CREDIT" ? "Credit" : "Debit"} of ${formatINR(result.amountPaise)} saved.`, {
         description: "It now appears in GPay Transactions.",
         action: { label: "View", onClick: () => router.push("/quick-pay/transactions") },
       });
-      setForm(emptyState());
+      setFormState(emptyState(options.settings, options));
       draft.current = null;
       setRequestId(newRequestId());
       setCredits(null);
+      router.refresh(); // today's summary and recent entries
     }
     void refreshIds();
   }
@@ -255,30 +220,26 @@ export function QuickEntryForm({
     if (!result.ok) return result.error;
     toast.success("Entry deleted.");
     setCurrent(null);
-    setForm(emptyState());
+    setFormState(emptyState(options.settings, options));
     draft.current = null;
     setRequestId(newRequestId());
+    setCredits(null);
     void refreshIds();
+    router.refresh();
     return null;
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  const personOptions = options.persons.map((p) => ({ value: p.id, label: p.name }));
   const when = current ? formatTransactionWhen(new Date(current.occurredAt)) : null;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-              <FilePlus2 className="size-5" aria-hidden />
-            </span>
-            <div className="space-y-0.5">
-              <CardTitle className="text-xl">{current ? "Edit Entry" : "New Entry"}</CardTitle>
-              <CardDescription>{when ? `${when.date} · ${when.timeAndDay}` : "Saved with the date and time you press Save."}</CardDescription>
-            </div>
+    <Card className="gap-3 py-4">
+      <CardHeader className="px-4 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="text-lg">{current ? "Edit Entry" : "Quick Entry"}</CardTitle>
+            {when ? <p className="truncate text-xs text-muted-foreground">{when.date} · {when.timeAndDay}</p> : null}
           </div>
 
           {/* Switch between saved entries */}
@@ -286,8 +247,8 @@ export function QuickEntryForm({
             <Button type="button" variant="outline" size="icon-sm" aria-label="Older entry" disabled={olderDisabled} onClick={() => goTo(current ? index + 1 : 0)}>
               <ChevronLeft />
             </Button>
-            <span className="min-w-20 text-center text-xs text-muted-foreground tabular-nums" aria-live="polite">
-              {loadingEntry ? "Loading…" : current ? (index >= 0 ? `${index + 1} of ${ids.length}` : "Saved entry") : ids.length ? `New · ${ids.length} saved` : "New"}
+            <span className="min-w-16 text-center text-xs text-muted-foreground tabular-nums" aria-live="polite">
+              {loadingEntry ? "Loading…" : current ? (index >= 0 ? `${index + 1} of ${ids.length}` : "Saved") : ids.length ? `New · ${ids.length}` : "New"}
             </span>
             <Button type="button" variant="outline" size="icon-sm" aria-label="Newer entry" disabled={newerDisabled} onClick={() => goTo(index > 0 ? index - 1 : -1)}>
               <ChevronRight />
@@ -301,197 +262,19 @@ export function QuickEntryForm({
         </div>
       </CardHeader>
 
-      <CardContent>
-        <form onSubmit={onSubmit} noValidate method="post" className={cn("space-y-5", loadingEntry && "pointer-events-none opacity-60")} aria-busy={loadingEntry}>
-          {/* Debit / Credit */}
-          <div role="radiogroup" aria-label="Transaction type" className="grid grid-cols-2 gap-2">
-            {(["DEBIT", "CREDIT"] as const).map((t) => {
-              const on = form.type === t;
-              const debit = t === "DEBIT";
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() => set("type", t)}
-                  className={cn(
-                    "flex h-12 items-center justify-center gap-2 rounded-xl border text-base font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                    on
-                      ? debit
-                        ? "border-red-300 bg-red-50 text-red-700"
-                        : "border-green-300 bg-green-50 text-green-700"
-                      : debit
-                        ? "border-transparent bg-red-50/40 text-red-700/60 hover:bg-red-50"
-                        : "border-transparent bg-green-50/40 text-green-700/60 hover:bg-green-50",
-                  )}
-                >
-                  {debit ? <ArrowDown className="size-4" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
-                  {debit ? "Debit" : "Credit"}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Amount */}
-          <div id="field-amount" className="scroll-mt-24 space-y-2">
-            <FieldLabel htmlFor="qp-amount">Amount</FieldLabel>
-            <div className="flex overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 focus-within:ring-3 focus-within:ring-amber-300/40 aria-[invalid=true]:border-destructive" aria-invalid={!!errors.amount}>
-              <span aria-hidden className="flex w-12 items-center justify-center bg-amber-100/60 text-xl">₹</span>
-              <Input
-                id="qp-amount"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="0.00"
-                value={form.amount}
-                aria-invalid={!!errors.amount}
-                aria-describedby={errors.amount ? "error-amount" : undefined}
-                onChange={(e) => {
-                  set("amount", e.target.value);
-                  setErrors((x) => ({ ...x, amount: undefined }));
-                }}
-                className="h-12 rounded-none border-0 bg-transparent text-xl font-semibold tabular-nums shadow-none focus-visible:ring-0"
-              />
-            </div>
-            {errors.amount ? (
-              <p id="error-amount" role="alert" className="text-xs text-destructive">
-                {errors.amount}
-              </p>
-            ) : null}
-          </div>
-
-          {/* Reason */}
-          <div className="space-y-2">
-            <FieldLabel htmlFor="qp-reason" icon={Tag}>Reason</FieldLabel>
-            <Input
-              id="qp-reason"
-              autoComplete="off"
-              placeholder="What was it for?"
-              maxLength={MAX_REASON_LENGTH}
-              value={form.reason}
-              onChange={(e) => set("reason", e.target.value)}
-              className="h-10"
-            />
-          </div>
-
-          {/* Bank through and category, side by side */}
-          <div className="grid gap-5 md:grid-cols-2">
-            <div id="field-bank" className="scroll-mt-24 space-y-2">
-              <FieldLabel htmlFor="qp-bank" icon={Landmark}>Bank Through</FieldLabel>
-              <CascadingSelect
-                id="qp-bank"
-                ariaLabel="Bank through"
-                groups={bankGroups}
-                value={form.accountId}
-                onChange={(v) => {
-                  set("accountId", v);
-                  setErrors((x) => ({ ...x, bank: undefined }));
-                }}
-                placeholder="Choose a bank"
-                searchPlaceholder="Search banks…"
-                emptyText="No bank found. Use Add Details to create one."
-                invalid={!!errors.bank}
-                footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
-              />
-              {errors.bank ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {errors.bank}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <FieldLabel htmlFor="qp-category" icon={Layers}>Category</FieldLabel>
-              <CascadingSelect
-                id="qp-category"
-                ariaLabel="Category"
-                groups={categoryGroups}
-                value={form.categoryId}
-                onChange={(v) => set("categoryId", v)}
-                placeholder="Choose a category (optional)"
-                searchPlaceholder="Search categories…"
-                emptyText="No category found."
-                clearable
-                footer={<AddLink href={SETTINGS.categories}>Add Category</AddLink>}
-              />
-            </div>
-          </div>
-
-          {/* Split and Credits Added */}
-          <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
-            <label className="flex w-fit cursor-pointer items-center gap-3 text-sm font-semibold">
-              <Checkbox
-                checked={form.splitEnabled}
-                onCheckedChange={(next) => {
-                  setForm((f) => ({ ...f, splitEnabled: next === true, partyId: next === true ? f.partyId : null }));
-                  setErrors((x) => ({ ...x, split: undefined }));
-                }}
-              />
-              Split
-            </label>
-            {form.type === "DEBIT" ? (
-              <label className="flex w-fit cursor-pointer items-center gap-3 text-sm font-semibold">
-                <Checkbox
-                  checked={form.creditsAdded}
-                  onCheckedChange={(next) => {
-                    set("creditsAdded", next === true);
-                    if (next !== true) setCredits(null); // fetched fresh the next time it is opened
-                  }}
-                />
-                Credits Added
-              </label>
-            ) : null}
-          </div>
-
-          {/* The person only appears when Split is on */}
-          {form.splitEnabled ? (
-            <div id="field-split" className="scroll-mt-24 space-y-2">
-              <SearchableSelect
-                ariaLabel="Person"
-                options={personOptions}
-                value={form.partyId}
-                onChange={(v) => {
-                  set("partyId", v);
-                  setErrors((x) => ({ ...x, split: undefined }));
-                }}
-                placeholder="Choose a person"
-                searchPlaceholder="Search people…"
-                emptyText="No people yet. Use Add a Person."
-                invalid={!!errors.split}
-                footer={<AddLink href={SETTINGS.persons}>Add a Person</AddLink>}
-              />
-              {errors.split ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {errors.split}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* Credits Added: only for a Debit, and only when ticked */}
-          {showCredits ? (
-            <div className="rounded-xl border bg-muted/30 p-3" aria-live="polite">
-              {loadingCredits ? (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" /> Loading recent credits…
-                </p>
-              ) : credits && credits.length > 0 ? (
-                <ul className="divide-y">
-                  {credits.map((c) => (
-                    <li key={c.id} className="flex items-baseline justify-between gap-3 py-1.5 text-sm first:pt-0 last:pb-0">
-                      <span className="min-w-0 truncate">
-                        <span className="font-semibold tabular-nums text-green-600">{formatINR(c.amountPaise)}</span>
-                        <span className="text-muted-foreground"> – {c.reason || "No reason"}</span>
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">{formatTransactionWhen(new Date(c.occurredAt)).date}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-muted-foreground">No credits saved yet. Credits you save will show up here, newest first.</p>
-              )}
-            </div>
-          ) : null}
+      <CardContent className="px-4 sm:px-5">
+        <form onSubmit={onSubmit} noValidate method="post" className={cn("space-y-3", loadingEntry && "pointer-events-none opacity-60")} aria-busy={loadingEntry}>
+          <EntryFields
+            form={form}
+            setForm={setForm}
+            errors={errors}
+            clearError={clearError}
+            options={options}
+            idPrefix="qp"
+            credits={credits}
+            loadingCredits={loadingCredits}
+            onToggleCredits={toggleCredits}
+          />
 
           {formError ? (
             <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -499,13 +282,13 @@ export function QuickEntryForm({
             </p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button type="submit" size="lg" className="h-12 flex-1 rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving || loadingEntry}>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving || loadingEntry}>
               {saving ? <Loader2 className="animate-spin" /> : <Check />}
               {saving ? "Saving…" : current ? "Update Entry" : "Save Entry"}
             </Button>
             {current ? (
-              <Button type="button" variant="outline" size="lg" className="h-12 rounded-xl text-destructive" onClick={() => setConfirmDelete(true)} disabled={saving}>
+              <Button type="button" variant="outline" size="lg" className="h-11 rounded-xl text-destructive" onClick={() => setConfirmDelete(true)} disabled={saving}>
                 <Trash2 /> Delete
               </Button>
             ) : null}
@@ -514,9 +297,6 @@ export function QuickEntryForm({
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <Link href="/quick-pay/settings" className="inline-flex items-center gap-1 underline-offset-4 hover:text-foreground hover:underline">
               <Settings2 className="size-3" /> Customized Settings
-            </Link>
-            <Link href="/quick-pay/persons" className="underline-offset-4 hover:text-foreground hover:underline">
-              Person Management
             </Link>
             <Link href="/quick-pay/transactions" className="underline-offset-4 hover:text-foreground hover:underline">
               GPay Transactions

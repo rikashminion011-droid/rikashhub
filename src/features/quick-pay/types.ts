@@ -1,5 +1,7 @@
 import type { MethodKind } from "@/features/expenses/types";
 import type { BalanceGroup } from "./balances";
+import type { KeywordEntry } from "./keywords";
+import type { QuickPaySettingsData } from "./settings-model";
 import type { EntryType } from "./validation";
 
 /** Shapes shared by the server and the browser. */
@@ -31,6 +33,10 @@ export interface QuickPayOptions {
   banks: BankOption[];
   categories: CategoryOption[];
   persons: PersonOption[];
+  /** Words that pick a category from the Reason. */
+  keywords: KeywordEntry[];
+  /** Field labels, defaults, Split and Credits Added settings. */
+  settings: QuickPaySettingsData;
 }
 
 export interface BankTreeNode {
@@ -43,7 +49,8 @@ export interface BankTreeNode {
 export interface CategoryTreeNode {
   id: string;
   name: string;
-  subs: { id: string; name: string }[];
+  keywords: string[];
+  subs: { id: string; name: string; keywords: string[] }[];
 }
 
 /** One saved Quick Pay entry, ready to load into the form. */
@@ -55,6 +62,10 @@ export interface EntryDetails {
   accountId: string;
   categoryId: string | null;
   partyId: string | null;
+  /** The person's share as a percentage, when split. */
+  splitPercent: number | null;
+  /** Credits added to this debit, newest first. */
+  creditIds: string[];
   /** ISO instant */
   occurredAt: string;
 }
@@ -66,9 +77,22 @@ export interface TxRow {
   type: EntryType;
   amountPaise: number;
   reason: string;
+  /** What an imported statement said ("Paid to Indian Railways"); empty for entries you typed. */
+  details: string;
+  /** "GPay → Canara" (used in exports and search). */
   bank: string;
+  /** Just "Canara": what the table shows. */
+  bankName: string;
+  bankId: string | null;
   category: string;
+  categoryId: string | null;
   person: string | null;
+  partyId: string | null;
+  /** The person's share in paise and as a percentage, when split. */
+  sharePaise: number | null;
+  splitPercent: number | null;
+  /** Total of the credits added to this debit, in paise (0 when none). */
+  linkedCreditsPaise: number;
 }
 
 export interface TxTotals {
@@ -79,6 +103,8 @@ export interface TxTotals {
 
 export interface RecentCredit {
   id: string;
+  /** CREDIT for money in; DEBIT appears when Credits Added is set to show recent transactions. */
+  type: EntryType;
   amountPaise: number;
   reason: string;
   occurredAt: string;

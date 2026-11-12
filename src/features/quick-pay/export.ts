@@ -33,7 +33,10 @@ const weekdayOf = (instant: Date) => formatTransactionWhen(instant).timeAndDay.s
 
 // ───────────────────────── Excel ─────────────────────────
 
-const COLUMNS = ["Date", "Time", "Day", "Debit", "Credit", "Reason", "Bank", "Category", "Split"] as const;
+const COLUMNS = ["Date", "Time", "Day", "Debit", "Credit", "Transaction details", "Reason", "Bank", "Category", "Split"] as const;
+
+/** "Mukesh" or, with a share, "Mukesh (50%)". */
+const splitLabel = (row: TxRow) => (row.person ? (row.splitPercent !== null && row.splitPercent < 100 ? `${row.person} (${Number(row.splitPercent.toFixed(2))}%)` : row.person) : "");
 
 export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -69,10 +72,11 @@ export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promi
       weekdayOf(instant),
       row.type === "DEBIT" ? rupees(row.amountPaise) : null,
       row.type === "CREDIT" ? rupees(row.amountPaise) : null,
+      row.details,
       row.reason,
-      row.bank,
+      row.bankName || row.bank,
       row.category,
-      row.person ?? "",
+      splitLabel(row),
     ]);
     added.getCell(1).numFmt = "mmmm d, yyyy";
     added.getCell(2).numFmt = "h:mm AM/PM";
@@ -80,12 +84,12 @@ export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promi
     added.getCell(5).numFmt = '"₹"#,##0.00';
   }
 
-  const totalRow = sheet.addRow(["Total", "", "", rupees(meta.totals.debitPaise), rupees(meta.totals.creditPaise), "", "", "", ""]);
+  const totalRow = sheet.addRow(["Total", "", "", rupees(meta.totals.debitPaise), rupees(meta.totals.creditPaise), "", "", "", "", ""]);
   totalRow.font = { bold: true };
   totalRow.getCell(4).numFmt = '"₹"#,##0.00';
   totalRow.getCell(5).numFmt = '"₹"#,##0.00';
 
-  sheet.columns = [{ width: 18 }, { width: 11 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 38 }, { width: 22 }, { width: 22 }, { width: 16 }];
+  sheet.columns = [{ width: 18 }, { width: 11 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 34 }, { width: 30 }, { width: 18 }, { width: 22 }, { width: 18 }];
   sheet.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7 + rows.length, column: COLUMNS.length } };
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
@@ -114,20 +118,21 @@ export function buildPdf(rows: readonly TxRow[], meta: ExportMeta): { bytes: Uin
 
   autoTable(doc, {
     startY: 100,
-    head: [["Date & Time", "Debit", "Credit", "Reason", "Bank", "Category", "Split"]],
+    head: [["Date & Time", "Debit", "Credit", "Transaction details", "Reason", "Bank", "Category", "Split"]],
     body: rows.map((row) => {
       const when = formatTransactionWhen(new Date(row.occurredAt));
       return [
         `${when.date}\n${when.timeAndDay}`,
         row.type === "DEBIT" ? pdfMoney(row.amountPaise) : "",
         row.type === "CREDIT" ? pdfMoney(row.amountPaise) : "",
+        row.details,
         row.reason,
-        row.bank,
+        row.bankName || row.bank,
         row.category,
-        row.person ?? "",
+        splitLabel(row),
       ];
     }),
-    foot: [["Total", pdfMoney(meta.totals.debitPaise), pdfMoney(meta.totals.creditPaise), "", "", "", ""]],
+    foot: [["Total", pdfMoney(meta.totals.debitPaise), pdfMoney(meta.totals.creditPaise), "", "", "", "", ""]],
     showFoot: "lastPage",
     styles: { font: "helvetica", fontSize: 8.5, cellPadding: 4, overflow: "linebreak", valign: "middle" },
     headStyles: { fillColor: [31, 41, 55], textColor: 255 },

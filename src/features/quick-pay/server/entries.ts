@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
 import { recomputeBalances, sinceOpening } from "@/lib/db/balances";
-import { paiseToDecimalString, parseISODate, toPaise } from "@/lib/finance";
+import { paiseToDecimalString, parseAmountInput, parseISODate, toPaise } from "@/lib/finance";
 import { buildBalanceGroups, type AccountBalanceInput } from "../balances";
 import { istDateOf, rangeToInstants } from "../datetime";
+import { resolveSplit, type SplitMethod } from "../split";
+import type { CreditSource } from "../settings-model";
 import type { PlannedEntry } from "../import/plan";
 import { PAGE_SIZE, effectiveRange, type TxFilters } from "../filters";
 import type { BalancesData, EntryDetails, RecentCredit, TxRow, TxTotals } from "../types";
-import type { EntryType, ValidBulkRow, ValidQuickPay } from "../validation";
+import { MAX_REASON_LENGTH, type EntryType, type ValidBulkRow, type ValidQuickPay } from "../validation";
 
 /** Saving, reading, editing and deleting Quick Pay entries (single and bulk), and the bank balances. Every query is scoped to `userId`. */
 
@@ -51,6 +53,56 @@ async function resolvePersons(tx: Prisma.TransactionClient, userId: string, ids:
   if (found !== unique.length) throw new ExpenseError("A selected person no longer exists. Pick another.", "NOT_FOUND");
 }
 
+// ───────────────────────── Splits and credit links ─────────────────────────
+
+const SELF_KEY = "personal";
+
+/** Your own share of a split is kept under the person "Personal" (the one every account starts with). */
+async function selfPartyId(tx: Prisma.TransactionClient, userId: string): Promise<string> {
+  const existing = await tx.expenseParty.findUnique({ where: { userId_nameKey: { userId, nameKey: SELF_KEY } } });
+  if (existing) {
+    if (existing.deletedAt) await tx.expenseParty.update({ where: { id: existing.id }, data: { deletedAt: null } });
+    return existing.id;
+  }
+  return (await tx.expenseParty.create({ data: { userId, name: "Personal", nameKey: SELF_KEY } })).id;
+}
+
+interface SplitWrite {
+  partyId: string | null;
+  sharePaise: number;
+  percent: number;
+}
+
+/**
+ * Replaces the split rows of a transaction. The person gets their share; whatever is left is your own share, saved under
+ * "Personal", so the rows always add up to the amount (the database checks this too). 100% is a single row.
+ */
+async function writeSplits(tx: Prisma.TransactionClient, userId: string, transactionId: string, amountPaise: number, split: SplitWrite | null): Promise<void> {
+  await tx.transactionSplit.deleteMany({ where: { transactionId, userId } });
+  await tx.transaction.update({ where: { id: transactionId }, data: { isSplit: split?.partyId != null } });
+  if (!split || !split.partyId) return;
+
+  const self = await selfPartyId(tx, userId);
+  const share = Math.min(split.sharePaise, amountPaise);
+  const rest = amountPaise - share;
+  if (rest <= 0 || split.partyId === self) {
+    await tx.transactionSplit.create({ data: { userId, transactionId, partyId: split.partyId, amount: paiseToDecimalString(amountPaise), percentage: "100" } });
+    return;
+  }
+  const restPercent = Math.round((rest / amountPaise) * 100 * 10_000) / 10_000;
+  await tx.transactionSplit.create({ data: { userId, transactionId, partyId: split.partyId, amount: paiseToDecimalString(share), percentage: String(split.percent) } });
+  await tx.transactionSplit.create({ data: { userId, transactionId, partyId: self, amount: paiseToDecimalString(rest), percentage: String(restPercent) } });
+}
+
+/** Replaces the credits added to a debit. Only your own saved credit entries can be added. */
+async function writeCreditLinks(tx: Prisma.TransactionClient, userId: string, debitId: string, creditIds: readonly string[]): Promise<void> {
+  await tx.transactionCreditLink.deleteMany({ where: { debitId, userId } });
+  if (creditIds.length === 0) return;
+  const found = await tx.transaction.count({ where: { id: { in: [...creditIds] }, userId, quickPay: true, deletedAt: null, type: "INCOME" } });
+  if (found !== creditIds.length) throw new ExpenseError("A credit you added no longer exists. Pick again.", "NOT_FOUND");
+  await tx.transactionCreditLink.createMany({ data: creditIds.map((creditId) => ({ userId, debitId, creditId })) });
+}
+
 // ───────────────────────── Single entry ─────────────────────────
 
 /**
@@ -84,15 +136,14 @@ export async function createEntry(
           occurredAt,
           description: entry.reason || null,
           categoryId: entry.categoryId,
-          isSplit: entry.partyId !== null,
+          isSplit: false,
           quickPay: true,
           dedupeKey,
         },
         select: { id: true },
       });
-      if (entry.partyId) {
-        await tx.transactionSplit.create({ data: { userId, transactionId: created.id, partyId: entry.partyId, amount } });
-      }
+      await writeSplits(tx, userId, created.id, entry.amountPaise, entry.partyId ? { partyId: entry.partyId, sharePaise: entry.sharePaise, percent: entry.percent } : null);
+      await writeCreditLinks(tx, userId, created.id, entry.type === "DEBIT" ? entry.creditIds : []);
       await recomputeBalances(tx, userId, [entry.accountId]);
       await tx.auditLog.create({
         data: { userId, action: "quickpay.create", entity: "transaction", entityId: created.id, after: { type: entry.type, amountPaise: entry.amountPaise, accountId: entry.accountId } },
@@ -108,8 +159,8 @@ export async function createEntry(
   }
 }
 
-/** Changes a saved entry. Its date and time stay as they were. Balances of the old and new bank are recalculated. */
-export async function updateEntry(db: PrismaClient, userId: string, id: string, entry: ValidQuickPay): Promise<void> {
+/** Changes a saved entry. Its date and time stay as they were unless `occurredAt` is given. Balances of the old and new bank are recalculated. */
+export async function updateEntry(db: PrismaClient, userId: string, id: string, entry: ValidQuickPay, occurredAt?: Date): Promise<void> {
   await db.$transaction(async (tx) => {
     const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null } });
     if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
@@ -121,10 +172,16 @@ export async function updateEntry(db: PrismaClient, userId: string, id: string, 
     const amount = paiseToDecimalString(entry.amountPaise);
     await tx.transaction.update({
       where: { id },
-      data: { ...typeFields(entry.type, entry.accountId), amount, description: entry.reason || null, categoryId: entry.categoryId, isSplit: entry.partyId !== null },
+      data: {
+        ...typeFields(entry.type, entry.accountId),
+        amount,
+        description: entry.reason || null,
+        categoryId: entry.categoryId,
+        ...(occurredAt ? { occurredAt, date: parseISODate(istDateOf(occurredAt)) } : {}),
+      },
     });
-    await tx.transactionSplit.deleteMany({ where: { transactionId: id, userId } });
-    if (entry.partyId) await tx.transactionSplit.create({ data: { userId, transactionId: id, partyId: entry.partyId, amount } });
+    await writeSplits(tx, userId, id, entry.amountPaise, entry.partyId ? { partyId: entry.partyId, sharePaise: entry.sharePaise, percent: entry.percent } : null);
+    await writeCreditLinks(tx, userId, id, entry.type === "DEBIT" ? entry.creditIds : []);
 
     await recomputeBalances(tx, userId, [existing.accountId ?? existing.toAccountId ?? entry.accountId, entry.accountId]);
     await tx.auditLog.create({ data: { userId, action: "quickpay.update", entity: "transaction", entityId: id, after: { type: entry.type, amountPaise: entry.amountPaise, accountId: entry.accountId } } });
@@ -185,7 +242,7 @@ export async function createBulk(
         const withPerson = rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => x.row.partyId !== null);
         if (withPerson.length > 0) {
           await tx.transactionSplit.createMany({
-            data: withPerson.map(({ row, id }) => ({ userId, transactionId: id, partyId: row.partyId!, amount: paiseToDecimalString(row.amountPaise) })),
+            data: withPerson.map(({ row, id }) => ({ userId, transactionId: id, partyId: row.partyId!, amount: paiseToDecimalString(row.amountPaise), percentage: "100" })),
           });
         }
         await recomputeBalances(tx, userId, rows.map((r) => r.accountId));
@@ -206,8 +263,12 @@ export async function createBulk(
 // ───────────────────────── Reading ─────────────────────────
 
 export async function getEntry(db: PrismaClient, userId: string, id: string): Promise<EntryDetails | null> {
-  const row = await db.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null }, include: { splits: true } });
+  const row = await db.transaction.findFirst({
+    where: { id, userId, quickPay: true, deletedAt: null },
+    include: { splits: { include: { party: { select: { nameKey: true } } } }, creditLinksAsDebit: { select: { creditId: true } } },
+  });
   if (!row || !row.occurredAt) return null;
+  const person = personSplit(row.splits);
   return {
     id: row.id,
     type: typeOf(row),
@@ -215,7 +276,9 @@ export async function getEntry(db: PrismaClient, userId: string, id: string): Pr
     reason: row.description ?? "",
     accountId: (row.accountId ?? row.toAccountId)!,
     categoryId: row.categoryId,
-    partyId: row.splits[0]?.partyId ?? null,
+    partyId: person?.partyId ?? null,
+    splitPercent: person ? splitPercentOf(person, paiseOf(row.amount)) : null,
+    creditIds: row.creditLinksAsDebit.map((l) => l.creditId),
     occurredAt: row.occurredAt.toISOString(),
   };
 }
@@ -231,15 +294,28 @@ export async function listEntryIds(db: PrismaClient, userId: string, limit = 500
   return rows.map((r) => r.id);
 }
 
-/** The latest credits (money in), newest first, for the "Credits Added" panel. */
-export async function listRecentCredits(db: PrismaClient, userId: string, limit = 10): Promise<RecentCredit[]> {
+/**
+ * What the "Credits Added" panel offers, newest first. `source` is a Customized Setting:
+ *  recent_credits (money in), recent_transactions (anything), credit_values (each different credit amount once),
+ *  last_transaction (only the latest).
+ */
+export async function listCreditChoices(db: PrismaClient, userId: string, source: CreditSource = "recent_credits", size = 10): Promise<RecentCredit[]> {
+  const creditsOnly = source === "recent_credits" || source === "credit_values";
   const rows = await db.transaction.findMany({
-    where: { userId, quickPay: true, deletedAt: null, type: "INCOME" },
+    where: { userId, quickPay: true, deletedAt: null, ...(creditsOnly ? { type: "INCOME" as const } : {}) },
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
-    take: limit,
+    take: source === "last_transaction" ? 1 : source === "credit_values" ? 400 : size,
   });
-  return rows.map((r) => ({ id: r.id, amountPaise: paiseOf(r.amount), reason: r.description ?? "", occurredAt: (r.occurredAt ?? r.createdAt).toISOString() }));
+  let mapped: RecentCredit[] = rows.map((r) => ({ id: r.id, type: typeOf(r), amountPaise: paiseOf(r.amount), reason: r.description ?? r.details ?? "", occurredAt: (r.occurredAt ?? r.createdAt).toISOString() }));
+  if (source === "credit_values") {
+    const seen = new Set<number>();
+    mapped = mapped.filter((m) => (seen.has(m.amountPaise) ? false : (seen.add(m.amountPaise), true))).slice(0, size);
+  }
+  return mapped;
 }
+
+/** The latest credits, for older callers. */
+export const listRecentCredits = (db: PrismaClient, userId: string, limit = 10) => listCreditChoices(db, userId, "recent_credits", limit);
 
 // ───────────────────────── GPay Transactions ─────────────────────────
 
@@ -247,8 +323,19 @@ const includeForRows = {
   account: { select: { name: true, parent: { select: { name: true } } } },
   toAccount: { select: { name: true, parent: { select: { name: true } } } },
   category: { select: { name: true, parent: { select: { name: true } } } },
-  splits: { include: { party: { select: { name: true } } }, orderBy: { createdAt: "asc" as const } },
+  splits: { include: { party: { select: { name: true, nameKey: true } } }, orderBy: { createdAt: "asc" as const } },
+  creditLinksAsDebit: { select: { credit: { select: { amount: true } } } },
 } satisfies Prisma.TransactionInclude;
+
+/** The split row that belongs to the person (not your own "Personal" remainder), or the only row there is. */
+function personSplit<T extends { party: { nameKey: string } }>(splits: readonly T[]): T | undefined {
+  return splits.find((s) => s.party.nameKey !== SELF_KEY) ?? splits[0];
+}
+
+function splitPercentOf(split: { amount: { toString(): string }; percentage: { toString(): string } | null }, txAmountPaise: number): number {
+  if (split.percentage !== null) return Number(split.percentage.toString());
+  return txAmountPaise > 0 ? Math.round((paiseOf(split.amount) / txAmountPaise) * 100 * 10_000) / 10_000 : 0;
+}
 
 export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "from" | "to" | "q">): Prisma.TransactionWhereInput {
   const { from, to } = effectiveRange(filters);
@@ -261,6 +348,7 @@ export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "f
     const has = { contains: q, mode: "insensitive" as const };
     where.OR = [
       { description: has },
+      { details: has },
       { account: { is: { OR: [{ name: has }, { parent: { is: { name: has } } }] } } },
       { toAccount: { is: { OR: [{ name: has }, { parent: { is: { name: has } } }] } } },
       { category: { is: { OR: [{ name: has }, { parent: { is: { name: has } } }] } } },
@@ -274,15 +362,25 @@ type RowWithRelations = Prisma.TransactionGetPayload<{ include: typeof includeFo
 
 function toRow(row: RowWithRelations): TxRow {
   const bankAccount = row.account ?? row.toAccount;
+  const person = personSplit(row.splits);
+  const amountPaise = paiseOf(row.amount);
   return {
     id: row.id,
     occurredAt: (row.occurredAt ?? row.createdAt).toISOString(),
     type: typeOf(row),
-    amountPaise: paiseOf(row.amount),
+    amountPaise,
     reason: row.description ?? "",
+    details: row.details ?? "",
     bank: bankAccount ? arrow(bankAccount.parent?.name, bankAccount.name) : "",
+    bankName: bankAccount?.name ?? "",
+    bankId: row.accountId ?? row.toAccountId ?? null,
     category: row.category ? arrow(row.category.parent?.name, row.category.name) : "",
-    person: row.splits[0]?.party.name ?? null,
+    categoryId: row.categoryId,
+    person: person?.party.name ?? null,
+    partyId: person?.partyId ?? null,
+    sharePaise: person ? paiseOf(person.amount) : null,
+    splitPercent: person ? splitPercentOf(person, amountPaise) : null,
+    linkedCreditsPaise: row.creditLinksAsDebit.reduce((sum, l) => sum + paiseOf(l.credit.amount), 0),
   };
 }
 
@@ -407,7 +505,8 @@ export async function importEntries(db: PrismaClient, userId: string, entries: r
             amount: paiseToDecimalString(e.amountPaise),
             date: parseISODate(istDateOf(e.occurredAt)),
             occurredAt: e.occurredAt,
-            description: e.reason || null,
+            description: null,
+            details: e.details || null,
             categoryId: null,
             isSplit: false,
             quickPay: true,
@@ -433,6 +532,60 @@ export async function findImportedKeys(db: PrismaClient, userId: string, keys: r
     for (const f of found) if (f.dedupeKey) out.push(f.dedupeKey);
   }
   return out;
+}
+
+// ───────────────────────── Editing one field in place ─────────────────────────
+
+export interface EntryPatch {
+  /** The Reason (an empty string clears it). */
+  reason?: string;
+  categoryId?: string | null;
+  /** A person with their share, or null to remove the split. */
+  split?: { partyId: string; method: SplitMethod; value: string } | null;
+}
+
+/**
+ * Changes some fields of a saved entry without touching the rest: the Reason, the category, or the split. Used by the
+ * table's inline editing. Returns the entry as the table shows it.
+ */
+export async function patchEntry(db: PrismaClient, userId: string, id: string, patch: EntryPatch): Promise<TxRow> {
+  await db.$transaction(async (tx) => {
+    const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null } });
+    if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
+
+    const data: Prisma.TransactionUpdateInput = {};
+    if (patch.reason !== undefined) {
+      const reason = patch.reason.trim().replace(/[ \t]+/g, " ");
+      if (reason.length > MAX_REASON_LENGTH) throw new ExpenseError(`Reason can be at most ${MAX_REASON_LENGTH} characters.`);
+      data.description = reason || null;
+    }
+    if (patch.categoryId !== undefined) {
+      await resolveCategories(tx, userId, [patch.categoryId]);
+      data.category = patch.categoryId ? { connect: { id: patch.categoryId } } : { disconnect: true };
+    }
+    if (Object.keys(data).length > 0) await tx.transaction.update({ where: { id }, data });
+
+    if (patch.split !== undefined) {
+      if (patch.split === null) await writeSplits(tx, userId, id, paiseOf(existing.amount), null);
+      else {
+        await resolvePersons(tx, userId, [patch.split.partyId]);
+        const resolved = resolveSplit(paiseOf(existing.amount), { method: patch.split.method, value: patch.split.value }, parseAmountInput);
+        if (!resolved.ok) throw new ExpenseError(resolved.error);
+        await writeSplits(tx, userId, id, paiseOf(existing.amount), { partyId: patch.split.partyId, sharePaise: resolved.sharePaise, percent: resolved.percent });
+      }
+    }
+    await tx.auditLog.create({ data: { userId, action: "quickpay.patch", entity: "transaction", entityId: id, after: { fields: Object.keys(patch) } } });
+  });
+
+  const row = await db.transaction.findFirst({ where: { id, userId }, include: includeForRows });
+  if (!row) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
+  return toRow(row);
+}
+
+/** Debit and credit totals for one day (India time), for the Today's Summary calendar. */
+export async function getDayTotals(db: PrismaClient, userId: string, date: string): Promise<TxTotals> {
+  const where = buildWhere(userId, { month: null, from: date, to: date, q: "" });
+  return totalsFor(db, where);
 }
 
 function isUniqueViolation(error: unknown): boolean {

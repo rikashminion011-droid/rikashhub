@@ -4,6 +4,7 @@ import { Soup, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
+import { SwipePanels } from "@/features/quick-pay/components/swipe-panels";
 import { FoodEntryForm } from "./food-entry-form";
 
 type Mode = "payment" | "food";
@@ -48,10 +49,7 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
       </div>
 
       <div id="entry-panel-payment" role="tabpanel" aria-labelledby="entry-tab-payment" hidden={mode !== "payment"}>
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          {payment}
-          <div className="space-y-6">{sidePanels}</div>
-        </div>
+        <SwipePanels main={payment} side={sidePanels} sideLabel="Today’s Summary" />
       </div>
 
       <div id="entry-panel-food" role="tabpanel" aria-labelledby="entry-tab-food" hidden={mode !== "food"}>

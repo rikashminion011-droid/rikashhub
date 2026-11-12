@@ -9,9 +9,17 @@ const row = (i: number, over: Partial<TxRow> = {}): TxRow => ({
   type: "DEBIT",
   amountPaise: 12345,
   reason: `Reason ${i}`,
+  details: "",
   bank: "GPay → HDFC",
+  bankName: "HDFC",
+  bankId: null,
   category: "Food → Dosa",
+  categoryId: null,
   person: i % 2 ? "Mukesh" : null,
+  partyId: null,
+  sharePaise: null,
+  splitPercent: null,
+  linkedCreditsPaise: 0,
   ...over,
 });
 
@@ -46,7 +54,7 @@ describe("Excel export", () => {
     expect(sheet.getCell("B2").value).toBe("June 1, 2026 – June 30, 2026");
     expect(sheet.getCell("B4").value).toBe(123.45);
     expect(sheet.getCell("B5").value).toBe(500);
-    expect(sheet.getRow(7).values).toEqual([undefined, "Date", "Time", "Day", "Debit", "Credit", "Reason", "Bank", "Category", "Split"]);
+    expect(sheet.getRow(7).values).toEqual([undefined, "Date", "Time", "Day", "Debit", "Credit", "Transaction details", "Reason", "Bank", "Category", "Split"]);
   });
 
   it("keeps dates and times as real Excel dates and times, in IST, with the weekday", async () => {
@@ -72,7 +80,7 @@ describe("Excel export", () => {
   it("includes reason, bank, category and person, and a totals row", async () => {
     const sheet = await read([row(1)]);
     const r = sheet.getRow(8);
-    expect([6, 7, 8, 9].map((c) => r.getCell(c).value)).toEqual(["Reason 1", "GPay → HDFC", "Food → Dosa", "Mukesh"]);
+    expect([7, 8, 9, 10].map((c) => r.getCell(c).value)).toEqual(["Reason 1", "HDFC", "Food → Dosa", "Mukesh"]);
     const total = sheet.getRow(9);
     expect([total.getCell(1).value, total.getCell(4).value, total.getCell(5).value]).toEqual(["Total", 123.45, 500]);
   });

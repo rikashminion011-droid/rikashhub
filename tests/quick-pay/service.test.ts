@@ -55,7 +55,7 @@ const options = (userId = ME.id) => getQuickPayOptions(db, userId);
 const noFilters = parseTxFilters({});
 
 const entry = (over: Partial<ValidQuickPay> & Pick<ValidQuickPay, "accountId">): ValidQuickPay => ({
-  type: "DEBIT", amountPaise: 10000, reason: "", categoryId: null, partyId: null, ...over,
+  type: "DEBIT", amountPaise: 10000, reason: "", categoryId: null, partyId: null, sharePaise: over.partyId ? (over.amountPaise ?? 10000) : 0, percent: over.partyId ? 100 : 0, creditIds: [], ...over,
 });
 
 const currentOf = async (accountId: string) => Number((await db.account.findUniqueOrThrow({ where: { id: accountId } })).currentBalance.toString());
@@ -248,10 +248,10 @@ describe("balances", () => {
     expect(line).toMatchObject({ debitsPaise: 30000, currentPaise: 70000 });
     expect(line.openingAt).toBe("2026-06-04T18:30:00.000Z");
 
-    // The cut-off is exact to the minute: an entry at 09:00 is excluded by an opening of 09:01.
-    await setOpeningBalance(db, ME.id, { accountId: acc, openingPaise: 100000, openingAt: istInstant("2026-06-10", "09:01") });
-    expect(await currentOf(acc)).toBe(1000);
+    // The balance entered is the balance AT that moment, so an entry at exactly that minute is already in it.
     await setOpeningBalance(db, ME.id, { accountId: acc, openingPaise: 100000, openingAt: istInstant("2026-06-10", "09:00") });
+    expect(await currentOf(acc)).toBe(1000);
+    await setOpeningBalance(db, ME.id, { accountId: acc, openingPaise: 100000, openingAt: istInstant("2026-06-10", "08:59") });
     expect(await currentOf(acc)).toBe(700);
   });
 

@@ -26,7 +26,8 @@ export interface PlannedEntry {
   type: "DEBIT" | "CREDIT";
   amountPaise: number;
   occurredAt: Date;
-  reason: string;
+  /** What the statement said ("Paid to Indian Railways"). Saved as Transaction details; the Reason is left empty to write. */
+  details: string;
   accountId: string;
 }
 
@@ -102,8 +103,8 @@ export function planImport(
         if (from === to) return { state: "skipped", why: "Both banks are the same" };
         const [outKey, inKey] = keys as [string, string];
         const missing: PlannedEntry[] = [];
-        if (!existingKeys.has(outKey)) missing.push({ key: outKey, type: "DEBIT", amountPaise: row.amountPaise, occurredAt: when, reason: clip(row.reason), accountId: from });
-        if (!existingKeys.has(inKey)) missing.push({ key: inKey, type: "CREDIT", amountPaise: row.amountPaise, occurredAt: when, reason: clip(`Self transfer from ${row.bank}`), accountId: to });
+        if (!existingKeys.has(outKey)) missing.push({ key: outKey, type: "DEBIT", amountPaise: row.amountPaise, occurredAt: when, details: clip(row.reason), accountId: from });
+        if (!existingKeys.has(inKey)) missing.push({ key: inKey, type: "CREDIT", amountPaise: row.amountPaise, occurredAt: when, details: clip(`Self transfer from ${row.bank}`), accountId: to });
         if (missing.length === 0) return { state: "duplicate" };
         for (const k of keys) seen.add(k);
         entries.push(...missing);
@@ -115,7 +116,7 @@ export function planImport(
       const [key] = keys as [string];
       if (existingKeys.has(key)) return { state: "duplicate" };
       seen.add(key);
-      entries.push({ key, type: row.kind === "DEBIT" ? "DEBIT" : "CREDIT", amountPaise: row.amountPaise, occurredAt: when, reason: clip(row.reason), accountId: account });
+      entries.push({ key, type: row.kind === "DEBIT" ? "DEBIT" : "CREDIT", amountPaise: row.amountPaise, occurredAt: when, details: clip(row.reason), accountId: account });
       return { state: "new" };
     })();
 

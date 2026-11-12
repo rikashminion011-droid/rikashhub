@@ -1,5 +1,6 @@
 import { parseAmountInput } from "@/lib/finance";
 import { istInstant, isValidTime } from "./datetime";
+import { resolveSplit, type SplitMethod } from "./split";
 
 /** Rules for a Quick Pay entry and for the rows of a bulk entry. Used by the browser and re-checked by the server. */
 
@@ -15,7 +16,16 @@ export interface QuickPayInput {
   reason: string;
   accountId: string | null;
   categoryId: string | null;
-  split: { enabled: boolean; partyId: string | null };
+  split: {
+    enabled: boolean;
+    partyId: string | null;
+    /** How the person's share is given; leave out for 100% (the whole amount). */
+    method?: SplitMethod;
+    /** A percentage ("50") or, for FIXED, an amount ("200"). */
+    value?: string;
+  };
+  /** Credits added to this debit (ids of saved credit entries). */
+  creditIds?: readonly string[];
 }
 
 export interface QuickPayErrors {
@@ -23,6 +33,7 @@ export interface QuickPayErrors {
   reason?: string;
   bank?: string;
   split?: string;
+  splitValue?: string;
 }
 
 export interface ValidQuickPay {
@@ -31,8 +42,13 @@ export interface ValidQuickPay {
   reason: string;
   accountId: string;
   categoryId: string | null;
-  /** The person the entry is for. Only set when Split is on. */
+  /** The person the entry is split with. Only set when Split is on. */
   partyId: string | null;
+  /** The person's share in paise and as a percentage of the amount (0 when not split). */
+  sharePaise: number;
+  percent: number;
+  /** Credits added to this debit. */
+  creditIds: string[];
 }
 
 /** An opening balance typed by hand: "2,000", "₹2000.50" or "-500". Returns paise (may be negative), or null if invalid. */
@@ -63,6 +79,19 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
   if (!input.accountId) errors.bank = "Choose the bank this went through.";
   if (input.split.enabled && !input.split.partyId) errors.split = "Choose the person this is split with.";
 
+  let sharePaise = 0;
+  let percent = 0;
+  if (input.split.enabled && input.split.partyId && !("error" in amount)) {
+    const resolved = resolveSplit(amount.paise, { method: input.split.method ?? "PERCENT", value: input.split.value ?? "100" }, parseAmountInput);
+    if (resolved.ok) {
+      sharePaise = resolved.sharePaise;
+      percent = resolved.percent;
+    } else errors.splitValue = resolved.error;
+  }
+
+  const creditIds = [...new Set(input.creditIds ?? [])];
+  if (input.type === "CREDIT" && creditIds.length > 0) errors.split = "Credits can only be added to a Debit.";
+
   if (Object.keys(errors).length > 0 || "error" in amount) return { ok: false, errors };
   return {
     ok: true,
@@ -73,6 +102,9 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
       accountId: input.accountId!,
       categoryId: input.categoryId,
       partyId: input.split.enabled ? input.split.partyId : null,
+      sharePaise,
+      percent,
+      creditIds,
     },
   };
 }

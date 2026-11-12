@@ -40,6 +40,7 @@ export function CascadingSelect({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const [query, setQuery] = useState("");
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -66,6 +67,9 @@ export function CascadingSelect({
     setQuery("");
     // Start with the group of the current choice open.
     setOpenGroup(groups.find((g) => g.children.some((c) => c.value === value))?.name ?? null);
+    // Open towards the left when the right edge of the screen is too close for the panel.
+    const rect = root.current?.getBoundingClientRect();
+    setAlignRight(!!rect && rect.left + 240 > window.innerWidth - 8);
     setOpen(true);
   }
 
@@ -114,7 +118,7 @@ export function CascadingSelect({
       </button>
 
       {open ? (
-        <div className="absolute z-50 mt-1 w-full min-w-60 rounded-xl border bg-popover text-popover-foreground shadow-lg">
+        <div className={cn("absolute z-50 mt-1 w-full min-w-60 max-w-[calc(100vw-1rem)] rounded-xl border bg-popover text-popover-foreground shadow-lg", alignRight ? "right-0" : "left-0")}>
           <div className="flex items-center gap-2 border-b px-2.5">
             <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
             <input

@@ -373,7 +373,7 @@ function ResultTabs({
             <tr>
               <th scope="col" className="px-3 py-2 text-left font-medium">Date and time</th>
               <th scope="col" className="px-3 py-2 text-left font-medium">Type</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Reason</th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">Transaction details</th>
               <th scope="col" className="px-3 py-2 text-left font-medium">Bank</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">Amount</th>
               <th scope="col" className="px-3 py-2 text-left font-medium">Status</th>

@@ -3,6 +3,7 @@ import { Zap } from "lucide-react";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import {
   deleteEntryAction,
+  getDayTotalsAction,
   getEntryAction,
   getEntryIdsAction,
   getOptionsAction,
@@ -12,7 +13,8 @@ import {
 import { getFoodPricingAction, saveFoodEntryAction } from "@/features/food/actions";
 import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
-import { RecentEntries, TodaySummary } from "@/features/quick-pay/components/quick-side-panels";
+import { DaySummary } from "@/features/quick-pay/components/day-summary";
+import { RecentEntries } from "@/features/quick-pay/components/quick-side-panels";
 import { istDateOf } from "@/features/quick-pay/datetime";
 import { getEntry, listTransactions } from "@/features/quick-pay/server/entries";
 import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
@@ -87,7 +89,7 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
         }
         sidePanels={
           <>
-            <TodaySummary totals={todayTotals} now={now} />
+            <DaySummary today={today} todayTotals={todayTotals} getDayTotals={getDayTotalsAction} />
             <RecentEntries rows={recent} />
           </>
         }

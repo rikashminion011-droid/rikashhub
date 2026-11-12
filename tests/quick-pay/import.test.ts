@@ -197,7 +197,7 @@ describe("planImport", () => {
   });
   it("adds a self transfer as a debit on the source and a credit on the destination when asked", () => {
     const plan = planImport([rows[2]!], { bankMap: map, includeSelfTransfers: true }, new Set());
-    expect(plan.entries.map((e) => [e.key, e.type, e.accountId, e.reason])).toEqual([
+    expect(plan.entries.map((e) => [e.key, e.type, e.accountId, e.details])).toEqual([
       ["gpay-import:3333:out", "DEBIT", "acc-idfc", "Self transfer to Canara Bank 5109"],
       ["gpay-import:3333:in", "CREDIT", "acc-canara", "Self transfer from IDFC FIRST Bank 1960"],
     ]);
@@ -257,8 +257,8 @@ describe("importEntries", () => {
 
     const list = await listTransactions(db, ME.id, parseTxFilters({}));
     expect(list.totals).toMatchObject({ debitPaise: 38725, creditPaise: 40000, count: 2 });
-    const saved = list.rows.find((r) => r.reason === "Paid to Indian Railways")!;
-    expect(saved).toMatchObject({ type: "DEBIT", amountPaise: 38725, occurredAt: "2026-05-01T05:32:00.000Z" });
+    const saved = list.rows.find((r) => r.details === "Paid to Indian Railways")!;
+    expect(saved).toMatchObject({ type: "DEBIT", amountPaise: 38725, occurredAt: "2026-05-01T05:32:00.000Z", reason: "", details: "Paid to Indian Railways" });
     expect(saved.bank).toContain("IDFC");
     expect((await balanceOf(idfc)).currentPaise).toBe(40000 - 38725);
 

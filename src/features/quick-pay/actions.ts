@@ -14,13 +14,19 @@ import {
   createEntry,
   deleteEntry,
   getBalances,
+  getDayTotals,
   getEntry,
   importEntries,
+  listCreditChoices,
   listEntryIds,
-  listRecentCredits,
+  patchEntry,
   setOpeningBalance,
   updateEntry,
 } from "./server/entries";
+import { getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
+import { SECTION_SCHEMAS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
+import type { EntryPatch } from "./server/entries";
+import type { TxRow, TxTotals } from "./types";
 import {
   addBank,
   addMainCategory,
@@ -86,14 +92,19 @@ const entrySchema = z.object({
   reason: z.string().max(1000),
   accountId: id.nullable(),
   categoryId: id.nullable(),
-  split: z.object({ enabled: z.boolean(), partyId: id.nullable() }),
+  split: z.object({ enabled: z.boolean(), partyId: id.nullable(), method: z.enum(["PERCENT", "FIXED"]).optional(), value: z.string().max(20).optional() }),
+  /** Credits added to this debit. */
+  creditIds: z.array(id).max(50).optional(),
+  /** When editing: a new date (YYYY-MM-DD) and time (HH:mm) in India time. */
+  date: z.string().max(10).optional(),
+  time: z.string().max(5).optional(),
 });
 
 export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id: string; updated: boolean; duplicate: boolean; amountPaise: number }>> {
   try {
     const parsed = entrySchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That form could not be read. Reload the page and try again." };
-    const { requestId, entryId, ...input } = parsed.data;
+    const { requestId, entryId, date, time, ...input } = parsed.data;
 
     const checked = validateQuickPayInput(input);
     if (!checked.ok) {
@@ -103,7 +114,16 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
 
     const { user, db } = await context();
     if (entryId) {
-      await updateEntry(db, user.id, entryId, checked.value);
+      let occurredAt: Date | undefined;
+      if (date) {
+        try {
+          occurredAt = istInstant(date, time || "00:00");
+        } catch {
+          return { ok: false, error: "Enter a valid date and time." };
+        }
+        if (occurredAt.getTime() > Date.now() + 5 * 60_000) return { ok: false, error: "The date and time cannot be in the future." };
+      }
+      await updateEntry(db, user.id, entryId, checked.value, occurredAt);
       refresh();
       return { ok: true, id: entryId, updated: true, duplicate: false, amountPaise: checked.value.amountPaise };
     }
@@ -149,12 +169,49 @@ export async function getEntryIdsAction(): Promise<QuickPayResult<{ ids: string[
   }
 }
 
+/** The Credits Added choices, as chosen in Customized Settings (which transactions, and how many). */
 export async function getRecentCreditsAction(): Promise<QuickPayResult<{ credits: RecentCredit[] }>> {
   try {
     const user = await requireUser();
-    return { ok: true, credits: await listRecentCredits(getPrisma(), user.id) };
+    const db = getPrisma();
+    const { credits } = await getSettings(db, user.id);
+    return { ok: true, credits: await listCreditChoices(db, user.id, credits.source, credits.listSize) };
   } catch (error) {
     return failure(error, "load credits");
+  }
+}
+
+const patchSchema = z.object({
+  id,
+  reason: z.string().max(1000).optional(),
+  categoryId: id.nullable().optional(),
+  split: z.object({ partyId: id, method: z.enum(["PERCENT", "FIXED"]), value: z.string().max(20) }).nullable().optional(),
+});
+
+/** Changes one field of a saved entry in place (Reason, category or split) and returns the row as the table shows it. */
+export async function patchEntryAction(raw: unknown): Promise<QuickPayResult<{ row: TxRow }>> {
+  try {
+    const parsed = patchSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That change could not be read." };
+    const { id: entryId, ...patch } = parsed.data;
+    const { user, db } = await context();
+    const row = await patchEntry(db, user.id, entryId, patch as EntryPatch);
+    refresh();
+    return { ok: true, row };
+  } catch (error) {
+    return failure(error, "patch entry");
+  }
+}
+
+/** Debit and credit totals for one day, for the Today's Summary calendar. */
+export async function getDayTotalsAction(raw: unknown): Promise<QuickPayResult<{ totals: TxTotals }>> {
+  try {
+    const parsed = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Choose a valid date." };
+    const user = await requireUser();
+    return { ok: true, totals: await getDayTotals(getPrisma(), user.id, parsed.data.date) };
+  } catch (error) {
+    return failure(error, "day totals");
   }
 }
 
@@ -301,6 +358,45 @@ export async function importGpayAction(raw: unknown): Promise<QuickPayResult<{ r
   } catch (error) {
     return failure(error, "import");
   }
+}
+
+// ───────────────────────── Customized settings: labels, split, credits, keywords ─────────────────────────
+
+/** Saves one section of the settings ("fields", "split" or "credits"). The server checks it again and returns what is saved. */
+export async function saveSettingsAction(raw: unknown): Promise<QuickPayResult<{ settings: QuickPaySettingsData }>> {
+  try {
+    const parsed = z.object({ section: z.enum(["fields", "split", "credits"]), value: z.unknown() }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Those settings could not be read." };
+    const section = parsed.data.section as SettingsSection;
+    const checked = SECTION_SCHEMAS[section].safeParse(parsed.data.value);
+    if (!checked.success) return { ok: false, error: checked.error.issues[0]?.message ?? "Check the settings and try again." };
+    const { user, db } = await context();
+    const settings = await saveSettingsSection(db, user.id, section, checked.data);
+    refresh();
+    return { ok: true, settings };
+  } catch (error) {
+    return failure(error, "save settings");
+  }
+}
+
+export async function resetSettingsAction(raw: unknown): Promise<QuickPayResult<{ settings: QuickPaySettingsData }>> {
+  try {
+    const parsed = z.object({ section: z.enum(["fields", "split", "credits"]) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That section could not be found." };
+    const { user, db } = await context();
+    const settings = await resetSettingsSection(db, user.id, parsed.data.section);
+    refresh();
+    return { ok: true, settings };
+  } catch (error) {
+    return failure(error, "reset settings");
+  }
+}
+
+/** Sets the keywords of one category (replacing its list) and returns the refreshed category tree. */
+export async function setKeywordsAction(raw: unknown): Promise<QuickPayResult<{ tree: CategoryTreeNode[] }>> {
+  const parsed = z.object({ categoryId: id, keywords: z.array(z.string().max(80)).max(200) }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Those keywords could not be read." };
+  return categoryTree((db, uid) => setCategoryKeywords(db, uid, parsed.data), "set keywords");
 }
 
 // ───────────────────────── Customized settings: banks and categories ─────────────────────────

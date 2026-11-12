@@ -73,12 +73,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     title: "Debt Management",
     href: "/debt",
     icon: HandCoins,
-    description: "Money you owe and money owed to you.",
-    planned: [
-      "Loans, borrowed and lent money, with interest",
-      "Partial payments, remaining principal and repayment progress",
-      "Separate Money I Owe and Money Owed to Me sections",
-    ],
+    description: "What each person owes from splits, what they have paid and what remains.",
+    planned: [],
   },
   {
     title: "Card Management",

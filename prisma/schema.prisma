@@ -207,6 +207,9 @@ model User {
   foodMealPrices         FoodMealPrice[]
   foodItems              FoodItem[]
   foodEntries            FoodEntry[]
+  quickPaySettings       QuickPaySettings?
+  splitPayments          SplitPayment[]
+  creditLinks            TransactionCreditLink[]
   transactionSplits      TransactionSplit[]
   attachments            Attachment[]
   recurringPayments      RecurringPayment[]
@@ -393,6 +396,8 @@ model Transaction {
   monthlyDueId     String?         @db.Uuid
   categoryId       String?         @db.Uuid
   description      String?
+  /// What an imported statement said about the payment ("Paid to Indian Railways"), kept apart from the Reason you write.
+  details          String?
   notes            String?
   /// True when the expense was split between several people (see transaction_splits).
   isSplit          Boolean         @default(false)
@@ -422,6 +427,8 @@ model Transaction {
   debtPayment         DebtPayment?
   savingsTransaction  SavingsTransaction?
   splits              TransactionSplit[]
+  creditLinksAsDebit  TransactionCreditLink[] @relation("CreditLinkDebit")
+  creditLinksAsCredit TransactionCreditLink[] @relation("CreditLinkCredit")
 
   @@unique([userId, dedupeKey])
   @@index([userId, quickPay, occurredAt])
@@ -778,6 +785,7 @@ model ExpenseParty {
 
   user   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   splits TransactionSplit[]
+  payments SplitPayment[]
 
   @@unique([userId, nameKey])
   @@map("expense_parties")
@@ -792,6 +800,8 @@ model TransactionSplit {
   transactionId String   @db.Uuid
   partyId       String   @db.Uuid
   amount        Decimal  @db.Decimal(14, 2)
+  /// This person's share of the transaction as a percentage (50 for half). Null on older rows.
+  percentage    Decimal? @db.Decimal(7, 4)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -861,4 +871,54 @@ model FoodEntry {
   @@unique([userId, dedupeKey])
   @@index([userId, deletedAt, occurredAt])
   @@map("food_entries")
+}
+
+
+// ───────────────────────── Customized Settings, split payments, credit links ─────────────────────────
+
+/// One row per user: field labels and defaults, split settings and Credits Added settings, as validated JSON.
+model QuickPaySettings {
+  userId    String   @id @db.Uuid
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("quick_pay_settings")
+}
+
+/// Money a person has paid back towards what they owe from splits (shown in Debt Management).
+model SplitPayment {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  partyId   String    @db.Uuid
+  amount    Decimal   @db.Decimal(14, 2)
+  paidAt    DateTime  @db.Timestamptz(3)
+  note      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  party ExpenseParty @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@index([userId, partyId, deletedAt])
+  @@map("split_payments")
+}
+
+/// A credit that was added to a debit entry with "Credits Added".
+model TransactionCreditLink {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  debitId   String   @db.Uuid
+  creditId  String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debit  Transaction @relation("CreditLinkDebit", fields: [debitId], references: [id], onDelete: Cascade)
+  credit Transaction @relation("CreditLinkCredit", fields: [creditId], references: [id], onDelete: Cascade)
+
+  @@unique([debitId, creditId])
+  @@index([userId, debitId])
+  @@map("transaction_credit_links")
 }

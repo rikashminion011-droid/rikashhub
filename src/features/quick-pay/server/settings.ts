@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError, addAccount, addCategory, addPaymentMethod, archiveOption, kindOfAccount } from "@/features/expenses/server/service";
 import type { MethodKind } from "@/features/expenses/types";
+import { getKeywordEntries, getSettings } from "./prefs";
 import type { BankOption, BankTreeNode, CategoryOption, CategoryTreeNode, PersonOption, QuickPayOptions } from "../types";
 
 /** Banks (main files and the accounts under them), categories (main and sub), and the choices built from them. */
@@ -73,7 +74,7 @@ export async function getCategoryTree(db: PrismaClient, userId: string): Promise
     include: { children: { where: { deletedAt: null }, orderBy: [{ createdAt: "asc" }, { name: "asc" }] } },
     orderBy: [{ createdAt: "asc" }, { name: "asc" }],
   });
-  return mains.map((m) => ({ id: m.id, name: m.name, subs: m.children.map((c) => ({ id: c.id, name: c.name })) }));
+  return mains.map((m) => ({ id: m.id, name: m.name, keywords: m.keywords, subs: m.children.map((c) => ({ id: c.id, name: c.name, keywords: c.keywords })) }));
 }
 
 /** Every main category and every sub-category is selectable ("Food", "Food → Dosa"). */
@@ -142,5 +143,6 @@ export async function getQuickPayOptions(db: PrismaClient, userId: string): Prom
     db.expenseParty.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: "asc" } }),
   ]);
   const persons: PersonOption[] = people.map((p) => ({ id: p.id, name: p.name }));
-  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), persons };
+  const [settings, keywords] = await Promise.all([getSettings(db, userId), getKeywordEntries(db, userId)]);
+  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), persons, settings, keywords };
 }

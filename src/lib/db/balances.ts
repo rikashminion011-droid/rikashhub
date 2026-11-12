@@ -3,13 +3,13 @@ import { currentBalance } from "@/features/quick-pay/balances";
 import { paiseToDecimalString, toPaise } from "@/lib/finance";
 
 /**
- * Limits transactions to those at or after an account's opening moment. Entries without an exact
+ * Limits transactions to those after an account's opening moment (the balance entered is the balance at that moment, so entries up to and including it are already in it). Entries without an exact
  * time (other modules) are compared by calendar date in IST.
  */
 export function sinceOpening(openingAt: Date | null): Prisma.TransactionWhereInput {
   if (!openingAt) return {};
   const istDate = new Date(openingAt.getTime() + 330 * 60_000).toISOString().slice(0, 10);
-  return { OR: [{ occurredAt: { gte: openingAt } }, { occurredAt: null, date: { gte: new Date(`${istDate}T00:00:00.000Z`) } }] };
+  return { OR: [{ occurredAt: { gt: openingAt } }, { occurredAt: null, date: { gt: new Date(`${istDate}T00:00:00.000Z`) } }] };
 }
 
 /**

@@ -5,7 +5,17 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { deleteEntryAction, getBalancesAction, getOptionsAction, importGpayAction, setOpeningBalanceAction } from "@/features/quick-pay/actions";
+import {
+  deleteEntryAction,
+  getBalancesAction,
+  getEntryAction,
+  getOptionsAction,
+  getRecentCreditsAction,
+  importGpayAction,
+  patchEntryAction,
+  saveEntryAction,
+  setOpeningBalanceAction,
+} from "@/features/quick-pay/actions";
 import { BalancesDialog } from "@/features/quick-pay/components/balances-dialog";
 import { ImportDialog } from "@/features/quick-pay/components/import-dialog";
 import { ExportMenu } from "@/features/quick-pay/components/export-menu";
@@ -14,6 +24,8 @@ import { TransactionsTable } from "@/features/quick-pay/components/transactions-
 import { istDateOf } from "@/features/quick-pay/datetime";
 import { PAGE_SIZE, effectiveRange, filtersToQuery, hasActiveFilters, parseTxFilters } from "@/features/quick-pay/filters";
 import { listTransactions } from "@/features/quick-pay/server/entries";
+import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
+import type { QuickPayOptions } from "@/features/quick-pay/types";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
@@ -27,10 +39,11 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
   const filters = parseTxFilters(await searchParams);
 
   let result: Awaited<ReturnType<typeof listTransactions>>;
+  let options: QuickPayOptions;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    result = await listTransactions(db, user.id, filters);
+    [result, options] = await Promise.all([listTransactions(db, user.id, filters), getQuickPayOptions(db, user.id)]);
   } catch (error) {
     console.error("[quick-pay] could not load transactions", error);
     return (
@@ -97,7 +110,12 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
           {filters.q ? ` matching “${filters.q}”` : ""}.
         </p>
 
-        <TransactionsTable rows={rows} filtered={hasActiveFilters(filters)} deleteEntry={deleteEntryAction} />
+        <TransactionsTable
+          rows={rows}
+          filtered={hasActiveFilters(filters)}
+          options={options}
+          actions={{ patchEntry: patchEntryAction, deleteEntry: deleteEntryAction, saveEntry: saveEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction }}
+        />
 
         {pageCount > 1 ? (
           <nav aria-label="Pages" className="flex items-center justify-between gap-3 text-sm">

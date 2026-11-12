@@ -18,6 +18,9 @@ export interface TreeNode {
   badge?: string;
 }
 
+/** "account" gives "accounts", "sub-category" gives "sub-categories". */
+const plural = (noun: string) => (/[^aeiou]y$/i.test(noun) ? `${noun.slice(0, -1)}ies` : `${noun}s`);
+
 export type TreeResult = { ok: true; nodes: TreeNode[] } | { ok: false; error: string };
 
 export interface TreeActions {
@@ -126,7 +129,7 @@ export function TreeEditor({
                     <p className="min-w-0 flex-1 truncate font-medium">{node.name}</p>
                     {node.badge ? <Badge variant="secondary">{node.badge}</Badge> : null}
                     <Badge variant="outline" className="tabular-nums">
-                      {node.children.length} {node.children.length === 1 ? nouns.sub : `${nouns.sub}s`}
+                      {node.children.length} {node.children.length === 1 ? nouns.sub : plural(nouns.sub)}
                     </Badge>
                     <Button variant="outline" size="sm" onClick={() => setDialog({ type: "addSub", main: node })}>
                       <Plus /> Add {nouns.sub}
@@ -145,7 +148,7 @@ export function TreeEditor({
                     </Button>
                   </div>
                   {node.children.length === 0 ? (
-                    <p className="px-4 py-3 text-xs text-muted-foreground">No {nouns.sub}s yet.</p>
+                    <p className="px-4 py-3 text-xs text-muted-foreground">No {plural(nouns.sub)} yet.</p>
                   ) : (
                     <ul className="divide-y">
                       {node.children.map((child) => (
@@ -196,7 +199,7 @@ export function TreeEditor({
         title={dialog?.type === "remove" ? `Delete "${dialog.name}"?` : ""}
         description={
           dialog?.type === "remove" && dialog.isMain
-            ? `It disappears from the lists, together with its ${nouns.sub}s. Entries you already saved keep their details.`
+            ? `It disappears from the lists, together with its ${plural(nouns.sub)}. Entries you already saved keep their details.`
             : "It disappears from the lists. Entries you already saved keep their details."
         }
         confirmLabel="Delete"

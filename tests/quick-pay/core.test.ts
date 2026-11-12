@@ -156,7 +156,7 @@ describe("validateQuickPayInput", () => {
   it("accepts a debit and a credit, trimming the reason", () => {
     expect(validateQuickPayInput(base)).toEqual({
       ok: true,
-      value: { type: "DEBIT", amountPaise: 25050, reason: "Lunch", accountId: "a1", categoryId: "c1", partyId: null },
+      value: { type: "DEBIT", amountPaise: 25050, reason: "Lunch", accountId: "a1", categoryId: "c1", partyId: null, sharePaise: 0, percent: 0, creditIds: [] },
     });
     const credit = validateQuickPayInput({ ...base, type: "CREDIT" });
     expect(credit.ok && credit.value.type).toBe("CREDIT");
