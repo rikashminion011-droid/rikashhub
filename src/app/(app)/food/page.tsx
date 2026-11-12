@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Settings2, Soup } from "lucide-react";
+import { FilePlus2, Settings2, Soup } from "lucide-react";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { deleteFoodEntryAction } from "@/features/food/actions";
+import { FoodExportMenu } from "@/features/food/components/food-export-menu";
 import { FoodFilters } from "@/features/food/components/food-filters";
 import { FoodRowActions } from "@/features/food/components/food-row-actions";
 import { addMonths, formatDateTime, formatMonth, formatWeekday, monthOf } from "@/features/food/format";
@@ -68,9 +69,15 @@ export default async function FoodPage({ searchParams }: PageProps<"/food">) {
         title="Monthly Food Tracking"
         description="Every meal saved from Quick Entry, with its price, month by month."
         actions={
-          <Link href="/food/settings" aria-label="Customize food items and prices" title="Customize" className={cn(buttonVariants({ variant: "outline" }))}>
+          <>
+            <Link href="/food/bulk" className={cn(buttonVariants({ variant: "outline" }))}>
+              <FilePlus2 /> <span className="hidden sm:inline">Add Bulk</span>
+            </Link>
+            <FoodExportMenu from={from} to={to} disabled={rows.length === 0} />
+            <Link href="/food/settings" aria-label="Customize food items and prices" title="Customize" className={cn(buttonVariants({ variant: "outline" }))}>
             <Settings2 /> <span className="hidden sm:inline">Customize</span>
-          </Link>
+            </Link>
+          </>
         }
       />
 

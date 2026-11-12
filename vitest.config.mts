@@ -8,5 +8,8 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
+    // Each database test file starts its own in-memory Postgres and applies every migration; give that time when many run at once.
+    hookTimeout: 60_000,
+    testTimeout: 30_000,
   },
 });

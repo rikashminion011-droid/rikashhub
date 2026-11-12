@@ -7,9 +7,11 @@ import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { parseOpeningBalance } from "@/features/quick-pay/validation";
 import { RateLimiter } from "@/lib/security/rate-limit";
+import { MAX_FOOD_BULK_ROWS, validateFoodBulk, type FoodBulkRowErrors, type FoodBulkRowInput } from "./bulk";
 import { MEALS, validateFoodEntry, type Meal } from "./pricing";
 import {
   addFoodItem,
+  createFoodBulk,
   createFoodEntry,
   deleteFoodEntry,
   deleteFoodItem,
@@ -73,6 +75,31 @@ export async function saveFoodEntryAction(raw: unknown): Promise<FoodResult<{ en
     return { ok: true, ...saved };
   } catch (error) {
     return failure(error, "save entry");
+  }
+}
+
+const bulkSchema = z.object({
+  requestId: id,
+  rows: z
+    .array(z.object({ key: z.string().max(64), date: z.string().max(10), time: z.string().max(5), meal: z.string().max(10), notes: z.string().max(2000) }))
+    .max(MAX_FOOD_BULK_ROWS * 2),
+});
+
+export async function saveFoodBulkAction(
+  raw: unknown,
+): Promise<FoodResult<{ count: number; duplicate: boolean; totalPaise: number }> | { ok: false; error: string; rowErrors: Record<string, FoodBulkRowErrors> }> {
+  try {
+    const parsed = bulkSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That sheet could not be read. Reload the page and try again." };
+    const checked = validateFoodBulk(parsed.data.rows as FoodBulkRowInput[], new Date());
+    if (!checked.ok) return { ok: false, error: checked.message, rowErrors: checked.errors };
+
+    const { user, db } = await context();
+    const saved = await createFoodBulk(db, user.id, parsed.data.requestId, checked.rows);
+    refresh();
+    return { ok: true, ...saved };
+  } catch (error) {
+    return failure(error, "save bulk");
   }
 }
 

@@ -12,6 +12,7 @@ import {
   priceNotes,
   type Meal,
 } from "../pricing";
+import type { ValidFoodBulkRow } from "../bulk";
 import type { FoodEntriesData, FoodEntryRow, FoodItemRow, FoodPricing } from "../types";
 
 /** The food service layer. Every query is scoped to `userId`. */
@@ -157,6 +158,45 @@ export async function createFoodEntry(
     }
     throw error;
   }
+}
+
+/**
+ * Saves many meals at once, each under its own date and time. The sheet is all-or-nothing, and one `requestId`
+ * means pressing Save All twice (or a retry) saves it once. Prices are worked out here from the saved prices.
+ */
+export async function createFoodBulk(
+  db: PrismaClient,
+  userId: string,
+  requestId: string,
+  rows: readonly ValidFoodBulkRow[],
+): Promise<{ count: number; duplicate: boolean; totalPaise: number }> {
+  const keyOf = (row: ValidFoodBulkRow) => `food-bulk:${requestId}:${row.key}`;
+  const pricing = await getFoodPricing(db, userId);
+  const priced = rows.map((row) => {
+    const meal = pricing.meals[row.meal];
+    const custom = new Map(meal.items.map((i) => [foodKey(i.name), i.pricePaise]));
+    return { row, amountPaise: priceNotes(row.notes, custom, meal.defaultPaise).totalPaise };
+  });
+  const totalPaise = priced.reduce((s, p) => s + p.amountPaise, 0);
+
+  return db.$transaction(
+    async (tx) => {
+      const existing = await tx.foodEntry.count({ where: { userId, dedupeKey: { in: rows.map(keyOf) } } });
+      if (existing > 0) return { count: existing, duplicate: true, totalPaise };
+      await tx.foodEntry.createMany({
+        data: priced.map(({ row, amountPaise }) => ({
+          userId,
+          meal: row.meal,
+          notes: row.notes,
+          amount: paiseToDecimalString(amountPaise),
+          occurredAt: row.occurredAt,
+          dedupeKey: keyOf(row),
+        })),
+      });
+      return { count: rows.length, duplicate: false, totalPaise };
+    },
+    { timeout: 30_000, maxWait: 10_000 },
+  );
 }
 
 export async function deleteFoodEntry(db: PrismaClient, userId: string, id: string): Promise<void> {

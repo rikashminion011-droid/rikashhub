@@ -18,9 +18,12 @@ import { MAX_BULK_ROWS, isBlankBulkRow, validateBulk, type BulkRowErrors, type B
 const newKey = () => crypto.randomUUID();
 const newRequestId = () => crypto.randomUUID();
 
-const blankRow = (date: string, time: string): BulkRowInput => ({
-  key: newKey(), date, time, debit: "", credit: "", reason: "", accountId: null, categoryId: null, partyId: null,
+const blankRow = (date: string, time: string, key = newKey()): BulkRowInput => ({
+  key, date, time, debit: "", credit: "", reason: "", accountId: null, categoryId: null, partyId: null,
 });
+
+/** The five starting rows. Their keys are fixed (not random) so the server-rendered page and the browser agree. */
+const startingRows = (date: string, time: string) => Array.from({ length: 5 }, (_, i) => blankRow(date, time, `start-${i}`));
 
 /**
  * Spreadsheet-style entry: one row per transaction with its own date and time. Debit and Credit
@@ -38,7 +41,7 @@ export function BulkEntry({
   nowTime: string;
   saveBulk: typeof saveBulkAction;
 }) {
-  const [rows, setRows] = useState<BulkRowInput[]>(() => Array.from({ length: 5 }, () => blankRow(today, nowTime)));
+  const [rows, setRows] = useState<BulkRowInput[]>(() => startingRows(today, nowTime));
   const [errors, setErrors] = useState<Record<string, BulkRowErrors>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -116,7 +119,7 @@ export function BulkEntry({
     toast.success(result.duplicate ? "That sheet was already saved." : `${result.count} transaction${result.count === 1 ? "" : "s"} saved.`, {
       description: "Totals, the table and bank balances are updated.",
     });
-    setRows(Array.from({ length: 5 }, () => blankRow(today, nowTime)));
+    setRows(startingRows(today, nowTime));
     setRequestId(newRequestId());
   }
 
