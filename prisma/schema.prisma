@@ -14,6 +14,12 @@ datasource db {
 
 // ───────────────────────── Enums ─────────────────────────
 
+enum FoodMeal {
+  TIFFIN
+  LUNCH
+  DINNER
+}
+
 enum AccountType {
   BANK
   CASH
@@ -198,6 +204,9 @@ model User {
   categories             TransactionCategory[]
   transactions           Transaction[]
   expenseParties         ExpenseParty[]
+  foodMealPrices         FoodMealPrice[]
+  foodItems              FoodItem[]
+  foodEntries            FoodEntry[]
   transactionSplits      TransactionSplit[]
   attachments            Attachment[]
   recurringPayments      RecurringPayment[]
@@ -793,4 +802,63 @@ model TransactionSplit {
   @@unique([transactionId, partyId])
   @@index([userId, partyId])
   @@map("transaction_splits")
+}
+
+
+// ───────────────────────── Monthly Food Tracking ─────────────────────────
+
+/// The default price of a meal (Tiffin 40, Lunch 50, Dinner 40), used when a food item has no price of its own.
+model FoodMealPrice {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  meal      FoodMeal
+  price     Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, meal])
+  @@map("food_meal_prices")
+}
+
+/// A food item with its own price under one meal ("Lunch → Fish Gravy ₹60").
+model FoodItem {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  meal      FoodMeal
+  name      String
+  /// Lower-cased, space-collapsed name, so "fish  gravy" matches "Fish Gravy".
+  nameKey   String
+  price     Decimal   @db.Decimal(10, 2)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, meal, nameKey])
+  @@map("food_items")
+}
+
+/// One saved Food Entry. `amount` is fixed when the entry is saved, so later price changes never rewrite history.
+model FoodEntry {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  meal       FoodMeal
+  /// The items as typed ("Fish Gravy" or "Idli, Dosa").
+  notes      String
+  amount     Decimal   @db.Decimal(10, 2)
+  occurredAt DateTime  @db.Timestamptz(3)
+  /// Stops a retried or double-clicked save from creating the entry twice.
+  dedupeKey  String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, deletedAt, occurredAt])
+  @@map("food_entries")
 }

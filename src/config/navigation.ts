@@ -9,6 +9,7 @@ import {
   PiggyBank,
   ReceiptText,
   UserRound,
+  UtensilsCrossed,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -132,6 +133,17 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
   },
 ];
 
+/** Monthly Food Tracking, in its own group under Quick Pay. */
+export const FOOD_ITEMS: readonly NavItem[] = [
+  {
+    title: "Monthly Food Tracking",
+    href: "/food",
+    icon: UtensilsCrossed,
+    description: "Meals saved from Quick Entry, month by month, with prices.",
+    planned: [],
+  },
+];
+
 /** Shown below the modules, under "Account". */
 export const ACCOUNT_ITEM: NavItem = {
   title: "User",
@@ -141,7 +153,7 @@ export const ACCOUNT_ITEM: NavItem = {
   planned: [],
 };
 
-const ALL_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ACCOUNT_ITEM];
+const ALL_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ...FOOD_ITEMS, ACCOUNT_ITEM];
 
 /** The item for a path. When several match (/quick-pay and /quick-pay/transactions) the most specific one wins. */
 export function findNavItem(pathname: string): NavItem | undefined {

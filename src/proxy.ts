@@ -28,7 +28,7 @@ export async function proxy(request: NextRequest) {
     return redirectTo("/login", pathname === "/" ? undefined : { next: `${pathname}${search}` });
   }
   if (isAuthenticated && matches(pathname, AUTH_PAGES)) {
-    return redirectTo("/dashboard");
+    return redirectTo("/quick-pay");
   }
   return response();
 }

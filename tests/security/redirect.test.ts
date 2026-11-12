@@ -8,9 +8,9 @@ describe("safeNextPath", () => {
   });
 
   it("falls back when empty", () => {
-    expect(safeNextPath(null)).toBe("/dashboard");
-    expect(safeNextPath(undefined)).toBe("/dashboard");
-    expect(safeNextPath("")).toBe("/dashboard");
+    expect(safeNextPath(null)).toBe("/quick-pay");
+    expect(safeNextPath(undefined)).toBe("/quick-pay");
+    expect(safeNextPath("")).toBe("/quick-pay");
     expect(safeNextPath(null, "/x")).toBe("/x");
   });
 
@@ -23,11 +23,11 @@ describe("safeNextPath", () => {
     "evil.example/path",
     "http://localhost:3000/dashboard",
   ])("rejects an off-site redirect: %s", (value) => {
-    expect(safeNextPath(value)).toBe("/dashboard");
+    expect(safeNextPath(value)).toBe("/quick-pay");
   });
 
   it("never redirects back to the sign-in pages (avoids loops)", () => {
-    expect(safeNextPath("/login")).toBe("/dashboard");
-    expect(safeNextPath("/signup?x=1")).toBe("/dashboard");
+    expect(safeNextPath("/login")).toBe("/quick-pay");
+    expect(safeNextPath("/signup?x=1")).toBe("/quick-pay");
   });
 });

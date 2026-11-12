@@ -10,8 +10,8 @@ export default function NotFound() {
       <p className="max-w-sm text-sm text-muted-foreground">
         The link may be broken, or the page may have moved.
       </p>
-      <Link href="/dashboard" className={cn(buttonVariants({ size: "lg" }))}>
-        Go to dashboard
+      <Link href="/quick-pay" className={cn(buttonVariants({ size: "lg" }))}>
+        Go to Quick Entry
       </Link>
     </main>
   );

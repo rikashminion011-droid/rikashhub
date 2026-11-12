@@ -9,6 +9,8 @@ import {
   getRecentCreditsAction,
   saveEntryAction,
 } from "@/features/quick-pay/actions";
+import { getFoodPricingAction, saveFoodEntryAction } from "@/features/food/actions";
+import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
 import { RecentEntries, TodaySummary } from "@/features/quick-pay/components/quick-side-panels";
 import { istDateOf } from "@/features/quick-pay/datetime";
@@ -61,30 +63,35 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
         </span>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Quick Entry</h1>
-          <p className="text-sm text-muted-foreground">Record a credit or debit. Entries show up in GPay Transactions straight away.</p>
+          <p className="text-sm text-muted-foreground">Record a payment or a meal. Payments show up in GPay Transactions and meals in Monthly Food Tracking straight away.</p>
         </div>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <QuickEntryForm
-          // A different entry means a fresh form (keeps the switcher and the fields in step with the URL).
-          key={entry?.id ?? "new"}
-          initialOptions={options}
-          initialEntry={entry}
-          actions={{
-            saveEntry: saveEntryAction,
-            deleteEntry: deleteEntryAction,
-            getEntry: getEntryAction,
-            getEntryIds: getEntryIdsAction,
-            getRecentCredits: getRecentCreditsAction,
-            getOptions: getOptionsAction,
-          }}
-        />
-        <div className="space-y-6">
-          <TodaySummary totals={todayTotals} now={now} />
-          <RecentEntries rows={recent} />
-        </div>
-      </div>
+      <EntryModeSwitch
+        foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction }}
+        payment={
+          <QuickEntryForm
+            // A different entry means a fresh form (keeps the switcher and the fields in step with the URL).
+            key={entry?.id ?? "new"}
+            initialOptions={options}
+            initialEntry={entry}
+            actions={{
+              saveEntry: saveEntryAction,
+              deleteEntry: deleteEntryAction,
+              getEntry: getEntryAction,
+              getEntryIds: getEntryIdsAction,
+              getRecentCredits: getRecentCreditsAction,
+              getOptions: getOptionsAction,
+            }}
+          />
+        }
+        sidePanels={
+          <>
+            <TodaySummary totals={todayTotals} now={now} />
+            <RecentEntries rows={recent} />
+          </>
+        }
+      />
     </>
   );
 }

@@ -83,7 +83,7 @@ export async function signup(input: unknown): Promise<ActionResult> {
     password,
     options: {
       data: { full_name: fullName },
-      emailRedirectTo: `${await siteOrigin()}/auth/confirm?next=/dashboard`,
+      emailRedirectTo: `${await siteOrigin()}/auth/confirm?next=/quick-pay`,
     },
   });
 
@@ -98,7 +98,7 @@ export async function signup(input: unknown): Promise<ActionResult> {
   }
 
   // Email confirmation off: the account is signed in straight away.
-  if (data.session) redirect("/dashboard");
+  if (data.session) redirect("/quick-pay");
 
   // Email confirmation on. The same message is shown whether or not the address already exists.
   return {
@@ -152,7 +152,7 @@ export async function updatePassword(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "We could not update your password. Please try again." };
   }
 
-  redirect("/dashboard");
+  redirect("/quick-pay");
 }
 
 export async function logout(): Promise<void> {

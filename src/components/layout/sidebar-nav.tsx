@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/logo";
-import { ACCOUNT_ITEM, NAV_ITEMS, QUICK_PAY_ITEMS, findNavItem, type NavItem } from "@/config/navigation";
+import { ACCOUNT_ITEM, FOOD_ITEMS, NAV_ITEMS, QUICK_PAY_ITEMS, findNavItem, type NavItem } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 
 function NavLink({ item, pathname, onNavigate }: { item: NavItem; pathname: string; onNavigate?: () => void }) {
@@ -37,7 +37,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 shrink-0 items-center px-5">
-        <Link href="/dashboard" onClick={onNavigate} aria-label="Rikash Hub home">
+        <Link href="/quick-pay" onClick={onNavigate} aria-label="Rikash Hub home">
           <Logo />
         </Link>
       </div>
@@ -52,6 +52,13 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <p className="mt-5 mb-1 px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">Quick Pay</p>
         <ul className="space-y-0.5">
           {QUICK_PAY_ITEMS.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+          ))}
+        </ul>
+
+        <p className="mt-5 mb-1 px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">Food</p>
+        <ul className="space-y-0.5">
+          {FOOD_ITEMS.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
           ))}
         </ul>

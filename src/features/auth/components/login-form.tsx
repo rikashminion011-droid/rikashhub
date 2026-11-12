@@ -19,7 +19,7 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
     formState: { errors },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "", remember: false },
+    defaultValues: { email: "", password: "", remember: true },
   });
 
   const onSubmit = handleSubmit((values) => {

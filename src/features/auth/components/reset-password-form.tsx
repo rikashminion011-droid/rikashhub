@@ -26,7 +26,7 @@ export function ResetPasswordForm() {
     setServerError(null);
     startTransition(async () => {
       const result = await updatePassword(values);
-      // On success the action redirects to the dashboard.
+      // On success the action redirects to Quick Entry.
       if (result && !result.ok) setServerError(result.error);
     });
   });
