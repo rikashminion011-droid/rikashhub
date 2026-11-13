@@ -533,3 +533,26 @@ describe("self transfer", () => {
     expect([await currentOf(from), await currentOf(to)]).toEqual([a, b]);
   });
 });
+
+describe("GPay Transactions: several filters at once", () => {
+  it("matches any of the chosen banks, categories, kinds and people, and combines the filters", async () => {
+    const o = await options();
+    const canara = bank(o, "GPay → Canara");
+    const hdfc = bank(o, "HDFC");
+    const food = cat(o, "Food");
+    const at = istInstant("2026-12-05", "10:00");
+    const a = await createEntry(db, ME.id, rid(), entry({ accountId: canara, amountPaise: 1000, categoryId: food, reason: "mf-a" }), at);
+    const b = await createEntry(db, ME.id, rid(), entry({ accountId: hdfc, amountPaise: 2000, type: "CREDIT", reason: "mf-b" }), at);
+    const c = await createEntry(db, ME.id, rid(), entry({ accountId: bank(o, "GPay → DBS"), amountPaise: 3000, reason: "mf-c", partyId: person(o, "Mukesh") }), at);
+    const day = { from: "2026-12-05", to: "2026-12-05" };
+    const ids = async (extra: Record<string, string>) => (await listForExport(db, ME.id, parseTxFilters({ ...day, ...extra }))).rows.map((r) => r.id).sort();
+
+    expect(await ids({})).toEqual([a.id, b.id, c.id].sort());
+    expect(await ids({ banks: `${canara},${hdfc}` })).toEqual([a.id, b.id].sort());
+    expect(await ids({ cats: food })).toEqual([a.id]);
+    expect(await ids({ types: "CREDIT" })).toEqual([b.id]);
+    expect(await ids({ types: "CREDIT,DEBIT" })).toEqual([a.id, b.id, c.id].sort());
+    expect(await ids({ people: person(o, "Mukesh") })).toEqual([c.id]);
+    expect(await ids({ banks: `${canara},${hdfc}`, types: "DEBIT" })).toEqual([a.id]); // filters combine
+  });
+});

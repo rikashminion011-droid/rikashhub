@@ -1,16 +1,18 @@
 "use client";
 
-import { Landmark, Loader2, Save } from "lucide-react";
+import { Landmark, Loader2, Pencil, Save, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DatePicker, TimePicker } from "@/components/shared/date-picker";
 import { Input } from "@/components/ui/input";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { getBalancesAction, setOpeningBalanceAction } from "../actions";
 import type { BalanceLine } from "../balances";
 import { istDateOf, istTimeOf } from "../datetime";
+import { formatClock, formatLongDate } from "../date-format";
 import type { BalancesData } from "../types";
 import { parseOpeningBalance } from "../validation";
 
@@ -34,8 +36,9 @@ function flatten(data: BalancesData): Line[] {
 }
 
 /**
- * "View Balances": one row per bank. Enter the balance a bank had at a date and time; its current balance is then worked out
- * as that balance plus every credit and minus every debit after that moment, and it follows your transactions from then on.
+ * "View Balances": one row per bank, showing the balance it had at a date and time and its balance now. Press the pencil beside
+ * a bank to change its balance, date or time (nothing can be typed until then). Its current balance is worked out as that balance
+ * plus every credit and minus every debit after that moment, and it follows your transactions from then on.
  */
 export function BalancesDialog({ actions }: { actions: BalanceActions }) {
   const [open, setOpen] = useState(false);
@@ -48,7 +51,7 @@ export function BalancesDialog({ actions }: { actions: BalanceActions }) {
         <DialogHeader>
           <DialogTitle>Bank balances</DialogTitle>
           <DialogDescription>
-            Enter a bank&apos;s balance at a date and time and press Save. Its balance now is that amount plus the credits and minus the debits after it, and updates by itself whenever transactions are added, edited, deleted or imported.
+            Press the pencil beside a bank to change its balance at a date and time. Its balance now is that amount plus the credits and minus the debits after it, and updates by itself whenever transactions are added, edited, deleted or imported.
           </DialogDescription>
         </DialogHeader>
         {/* Mounted only while open: it loads fresh each time. */}
@@ -112,6 +115,8 @@ function BalanceRow({ line, name, actions, onChange }: { line: BalanceLine; name
   const savedDate = savedAt ? istDateOf(savedAt) : "";
   const savedTime = savedAt ? istTimeOf(savedAt) : "";
 
+  // The balance can only be changed after the pencil is pressed.
+  const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(savedAmount);
   const [date, setDate] = useState(savedDate);
   const [time, setTime] = useState(savedTime);
@@ -121,6 +126,14 @@ function BalanceRow({ line, name, actions, onChange }: { line: BalanceLine; name
   const amountDirty = amount.trim() !== savedAmount && parseOpeningBalance(amount) !== line.openingPaise;
   const dirty = amountDirty || date !== savedDate || (date !== "" && time !== savedTime);
 
+  function startEditing() {
+    setAmount(savedAmount);
+    setDate(savedDate);
+    setTime(savedTime);
+    setError(null);
+    setEditing(true);
+  }
+
   async function save() {
     if (parseOpeningBalance(amount) === null) return setError("Enter an amount like 2000 or -500.");
     setSaving(true);
@@ -129,8 +142,15 @@ function BalanceRow({ line, name, actions, onChange }: { line: BalanceLine; name
     setSaving(false);
     if (!result.ok) return setError(result.error);
     onChange(result.balances);
+    setEditing(false);
     toast.success(`${name} updated. Its balance now follows your transactions.`);
   }
+
+  const pencil = (
+    <Button type="button" size="icon-sm" variant="ghost" aria-label={`Edit the balance of ${name}`} onClick={startEditing} className="text-muted-foreground">
+      <Pencil />
+    </Button>
+  );
 
   return (
     <li className="space-y-2 px-3 py-3 md:grid md:grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)_9rem_8rem] md:items-start md:gap-3 md:space-y-0">
@@ -140,59 +160,66 @@ function BalanceRow({ line, name, actions, onChange }: { line: BalanceLine; name
         <p className={cn("font-semibold tabular-nums md:hidden", line.currentPaise < 0 && "text-destructive")}>{formatINR(line.currentPaise)}</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Input
-          type="date"
-          aria-label={`Date of the balance of ${name}`}
-          value={date}
-          max={istDateOf(new Date())}
-          onChange={(e) => {
-            setDate(e.target.value);
-            if (e.target.value && !time) setTime("00:00");
-            setError(null);
-          }}
-          className="h-9 w-36 text-base sm:text-sm"
-        />
-        <Input
-          type="time"
-          aria-label={`Time of the balance of ${name}`}
-          value={time}
-          disabled={!date}
-          onChange={(e) => {
-            setTime(e.target.value);
-            setError(null);
-          }}
-          className="h-9 w-28 text-base sm:text-sm"
-        />
-      </div>
+      {editing ? (
+        <>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <DatePicker
+              ariaLabel={`Date of the balance of ${name}`}
+              value={date}
+              max={istDateOf(new Date())}
+              compact
+              className="w-52"
+              onChange={(d) => {
+                setDate(d);
+                if (d && !time) setTime("00:00");
+                setError(null);
+              }}
+            />
+            <TimePicker ariaLabel={`Time of the balance of ${name}`} value={time} disabled={!date} compact className="w-32" onChange={(t) => { setTime(t); setError(null); }} />
+          </div>
 
-      <div className="flex items-center gap-1.5">
-        <div className="relative min-w-0 flex-1">
-          <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">
-            ₹
-          </span>
-          <Input
-            inputMode="decimal"
-            aria-label={`Balance of ${name} at that date and time`}
-            aria-invalid={!!error}
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && dirty) {
-                e.preventDefault();
-                void save();
-              }
-            }}
-            className="h-9 pl-6 text-right text-base tabular-nums sm:text-sm"
-          />
-        </div>
-        <Button type="button" size="icon-sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || saving} aria-label={`Save the balance of ${name}`} onClick={save}>
-          {saving ? <Loader2 className="animate-spin" /> : <Save />}
-        </Button>
-      </div>
+          <div className="flex items-center gap-1.5">
+            <div className="relative min-w-0 flex-1">
+              <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">
+                ₹
+              </span>
+              <Input
+                inputMode="decimal"
+                autoFocus
+                aria-label={`Balance of ${name} at that date and time`}
+                aria-invalid={!!error}
+                value={amount}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && dirty) {
+                    e.preventDefault();
+                    void save();
+                  }
+                  if (e.key === "Escape") setEditing(false);
+                }}
+                className="h-9 pl-6 text-right text-base tabular-nums sm:text-sm"
+              />
+            </div>
+            <Button type="button" size="icon-sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || saving} aria-label={`Save the balance of ${name}`} onClick={save}>
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            </Button>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Cancel" disabled={saving} onClick={() => setEditing(false)}>
+              <X />
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">{savedAt ? `As of ${formatLongDate(savedDate)}, ${formatClock(savedTime)}` : "No date set"}</p>
+          <div className="flex items-center justify-between gap-1.5 md:justify-end">
+            <p className="font-medium tabular-nums">{formatINR(line.openingPaise)}</p>
+            {pencil}
+          </div>
+        </>
+      )}
 
       <div className="hidden text-right md:block">
         <p className={cn("font-semibold tabular-nums", line.currentPaise < 0 && "text-destructive")}>{formatINR(line.currentPaise)}</p>

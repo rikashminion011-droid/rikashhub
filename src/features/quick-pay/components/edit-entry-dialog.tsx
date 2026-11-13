@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { DatePicker, TimePicker } from "@/components/shared/date-picker";
 import type { QuickAddActions, QuickPayActions } from "../actions";
 import { istDateOf, istTimeOf } from "../datetime";
 import { defaultCreditSelection, fromEntry, toQuickPayInput, type FormState } from "../entry-state";
@@ -151,16 +151,16 @@ function EditBody({ entryId, options: initialOptions, actions, onClose, onSaved 
           />
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label htmlFor="edit-date" className="text-xs font-semibold text-muted-foreground">
+              <label className="text-xs font-semibold text-muted-foreground">
                 Date
               </label>
-              <Input id="edit-date" type="date" value={date} max={istDateOf(new Date())} onChange={(e) => setDate(e.target.value)} className="h-10 text-base sm:text-sm" />
+              <DatePicker ariaLabel="Date" value={date} max={istDateOf(new Date())} onChange={setDate} className="h-10" />
             </div>
             <div className="space-y-1">
-              <label htmlFor="edit-time" className="text-xs font-semibold text-muted-foreground">
+              <label className="text-xs font-semibold text-muted-foreground">
                 Time
               </label>
-              <Input id="edit-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-10 text-base sm:text-sm" />
+              <TimePicker ariaLabel="Time" value={time} onChange={setTime} className="h-10" />
             </div>
           </div>
           {formError ? (

@@ -1,3 +1,4 @@
+import { shiftDate } from "./date-format";
 import type { BulkRowInput } from "./validation";
 
 /**
@@ -77,4 +78,25 @@ export function nextCell(
     col += dCol;
   }
   return null;
+}
+
+/**
+ * Adds one empty row at the end for the day after the last row: if the last row is 2nd October, the new row is 3rd October.
+ * It keeps the last row's time. A day after `today` is refused, because a transaction cannot be in the future.
+ */
+export function addNextDay(rows: readonly BulkRowInput[], blank: (date: string, time: string) => BulkRowInput, today: string, limit: number): RowChange | { error: string } {
+  if (rows.length + 1 > limit) return { error: `A sheet can hold at most ${limit} rows.` };
+  const last = rows.at(-1);
+  if (!last) return { error: "There is no row to continue from." };
+  const date = shiftDate(last.date, 1);
+  if (date > today) return { error: "The next day is in the future. A transaction cannot be dated after today." };
+  const fresh = blank(date, last.time);
+  return { rows: [...rows, fresh], added: [fresh.key] };
+}
+
+/** How many rows "Add rows" adds, from what was typed: 5 when empty or invalid, at most what still fits. */
+export function rowsToAdd(text: string, room: number): number {
+  const n = Number.parseInt(text.trim(), 10);
+  const wanted = Number.isFinite(n) && n > 0 ? n : 5;
+  return Math.max(0, Math.min(wanted, room));
 }

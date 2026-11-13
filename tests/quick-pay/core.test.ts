@@ -116,7 +116,7 @@ describe("balances", () => {
 
 describe("filters", () => {
   it("reads a month, a search and a page", () => {
-    expect(parseTxFilters({ month: "2026-06", q: "  petrol ", page: "3" })).toEqual({ month: "2026-06", from: null, to: null, q: "petrol", page: 3 });
+    expect(parseTxFilters({ month: "2026-06", q: "  petrol ", page: "3" })).toMatchObject({ month: "2026-06", from: null, to: null, q: "petrol", page: 3, banks: [], types: [] });
   });
 
   it("a custom range replaces the month", () => {
@@ -134,7 +134,7 @@ describe("filters", () => {
   });
 
   it("drops invalid values instead of failing", () => {
-    expect(parseTxFilters({ month: "June", from: "2026-02-30", to: "x", page: "-4" })).toEqual({ month: null, from: null, to: null, q: "", page: 1 });
+    expect(parseTxFilters({ month: "June", from: "2026-02-30", to: "x", page: "-4" })).toMatchObject({ month: null, from: null, to: null, q: "", page: 1 });
   });
 
   it("turns a month into the first and last day", () => {
@@ -237,5 +237,32 @@ describe("validateTransfer", () => {
     expect(validateTransfer({ ...ok, toId: "a" })).toMatchObject({ ok: false, errors: { to: "Choose two different banks." } });
     expect(validateTransfer({ ...ok, amount: "0" })).toMatchObject({ ok: false });
     expect(validateTransfer({ ...ok, reason: "x".repeat(201) })).toMatchObject({ ok: false, errors: { reason: expect.any(String) } });
+  });
+});
+
+describe("GPay Transactions filters: current month by default and several choices at once", () => {
+  const ID1 = "11111111-1111-4111-8111-111111111111";
+  const ID2 = "22222222-2222-4222-8222-222222222222";
+
+  it("opens on the current month when no period is chosen, and not when one is", () => {
+    const opts = { defaultMonth: "2026-11" };
+    expect(parseTxFilters({}, opts).month).toBe("2026-11");
+    expect(effectiveRange(parseTxFilters({}, opts))).toEqual({ from: "2026-11-01", to: "2026-11-30" });
+    expect(parseTxFilters({ month: "2026-10" }, opts).month).toBe("2026-10");
+    expect(parseTxFilters({ from: "2026-10-01", to: "2026-10-05" }, opts)).toMatchObject({ month: null, from: "2026-10-01" });
+    expect(parseTxFilters({ all: "1" }, opts)).toMatchObject({ month: null, all: true });
+    expect(parseTxFilters({})).toMatchObject({ month: null }); // no default asked for: nothing is assumed
+  });
+
+  it("reads banks, categories, people and kinds, dropping anything invalid", () => {
+    const f = parseTxFilters({ banks: `${ID1},${ID2},${ID1},nonsense`, cats: ID2, people: ID1, types: "DEBIT,TRANSFER,bogus" });
+    expect(f).toMatchObject({ banks: [ID1, ID2], categories: [ID2], people: [ID1], types: ["DEBIT", "TRANSFER"] });
+    expect(hasActiveFilters(f)).toBe(true);
+  });
+
+  it("writes the choices back into the address", () => {
+    const f = parseTxFilters({ banks: `${ID1},${ID2}`, types: "CREDIT", all: "1" });
+    const q = new URLSearchParams(filtersToQuery(f));
+    expect([q.get("banks"), q.get("types"), q.get("all")]).toEqual([`${ID1},${ID2}`, "CREDIT", "1"]);
   });
 });

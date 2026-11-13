@@ -407,7 +407,7 @@ function splitPercentOf(split: { amount: { toString(): string }; percentage: { t
   return txAmountPaise > 0 ? Math.round((paiseOf(split.amount) / txAmountPaise) * 100 * 10_000) / 10_000 : 0;
 }
 
-export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "from" | "to" | "q">): Prisma.TransactionWhereInput {
+export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "from" | "to" | "q"> & Partial<Pick<TxFilters, "banks" | "categories" | "people" | "types">>): Prisma.TransactionWhereInput {
   const { from, to } = effectiveRange(filters);
   const bounds = rangeToInstants(from, to);
   const where: Prisma.TransactionWhereInput = { userId, quickPay: true, deletedAt: null };
@@ -425,6 +425,17 @@ export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "f
       { splits: { some: { party: { name: has } } } },
     ];
   }
+
+  // Several choices at once: a transaction matches a filter when it fits any one of the choices in it.
+  const and: Prisma.TransactionWhereInput[] = [];
+  if (filters.banks?.length) and.push({ OR: [{ accountId: { in: filters.banks } }, { toAccountId: { in: filters.banks } }] });
+  if (filters.categories?.length) and.push({ OR: [{ categoryId: { in: filters.categories } }, { category: { is: { parentId: { in: filters.categories } } } }] });
+  if (filters.people?.length) and.push({ splits: { some: { partyId: { in: filters.people } } } });
+  if (filters.types?.length) {
+    const kinds = filters.types.map((t) => (t === "DEBIT" ? "EXPENSE" : t === "CREDIT" ? "INCOME" : "TRANSFER")) as ("EXPENSE" | "INCOME" | "TRANSFER")[];
+    and.push({ type: { in: kinds } });
+  }
+  if (and.length > 0) where.AND = and;
   return where;
 }
 

@@ -1,9 +1,9 @@
 "use client";
 
-import { MoreVertical, Pencil, Receipt, Trash2 } from "lucide-react";
+import { Eye, EyeOff, MoreVertical, Pencil, Receipt, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CascadingSelect } from "@/components/shared/cascading-select";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
@@ -56,6 +56,14 @@ export function TransactionsTable({
   const [editing, setEditing] = useState<string | null>(null);
   const [splitting, setSplitting] = useState<TxRow | null>(null);
   const [deleting, setDeleting] = useState<TxRow | null>(null);
+  // Transaction details are hidden to begin with; the ⋮ menu shows them for one row. A refresh hides them again.
+  const [shownDetails, setShownDetails] = useState<ReadonlySet<string>>(new Set());
+  const toggleDetails = (id: string) =>
+    setShownDetails((s) => {
+      const next = new Set(s);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   const view = useMemo(() => rows.map((r) => patched[r.id] ?? r), [rows, patched]);
   const labels = options.settings.fields.labels;
@@ -135,7 +143,7 @@ export function TransactionsTable({
           reason: <span className="px-1 text-sm">{row.reason || "—"}</span>,
           category: <span className="px-1 text-muted-foreground">—</span>,
           split: <span className="px-1 text-muted-foreground">—</span>,
-          menu: <RowMenu onEdit={null} onDelete={() => setDeleting(row)} />,
+          menu: <RowMenu onEdit={null} onDelete={() => setDeleting(row)} details={null} />,
         }
       : {
     reason: <ReasonCell value={row.reason} onCommit={(text) => commitReason(row, text)} />,
@@ -152,7 +160,7 @@ export function TransactionsTable({
       />
     ),
     split: <SplitCell row={row} label={labels.split} onOpen={() => setSplitting(row)} onRemove={() => void removeSplit(row)} />,
-    menu: <RowMenu onEdit={() => setEditing(row.id)} onDelete={() => setDeleting(row)} />,
+    menu: <RowMenu onEdit={() => setEditing(row.id)} onDelete={() => setDeleting(row)} details={row.details ? { shown: shownDetails.has(row.id), toggle: () => toggleDetails(row.id) } : null} />,
   };
 
   return (
@@ -165,7 +173,6 @@ export function TransactionsTable({
               <th scope="col" className="px-3 py-2.5 text-left font-medium">Date &amp; Time</th>
               <th scope="col" className="px-3 py-2.5 text-right font-medium">Debit</th>
               <th scope="col" className="px-3 py-2.5 text-right font-medium">Credit</th>
-              <th scope="col" className="px-3 py-2.5 text-left font-medium">Transaction details</th>
               <th scope="col" className="px-3 py-2.5 text-left font-medium">{labels.reason}</th>
               <th scope="col" className="px-3 py-2.5 text-left font-medium">Bank</th>
               <th scope="col" className="w-44 px-3 py-2.5 text-left font-medium">{labels.category}</th>
@@ -180,22 +187,29 @@ export function TransactionsTable({
               const when = formatTransactionWhen(new Date(row.occurredAt));
               const c = cells(row);
               return (
-                <tr key={row.id} className="align-top hover:bg-muted/30">
+                <Fragment key={row.id}>
+                <tr className="align-top hover:bg-muted/30">
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     <p className="font-medium">{when.date}</p>
                     <p className="text-xs text-muted-foreground">{when.timeAndDay}</p>
                   </td>
-                  <td className="px-3 py-2.5 text-right font-medium text-destructive tabular-nums">{row.type === "DEBIT" && !row.transfer ? formatINR(row.amountPaise) : ""}</td>
+                  <td className={cn("px-3 py-2.5 text-right font-medium tabular-nums", row.transfer ? "text-sky-600" : "text-destructive")}>{row.type === "DEBIT" ? `${row.transfer ? "⇄ " : ""}${formatINR(row.amountPaise)}` : ""}</td>
                   <td className="px-3 py-2.5 text-right font-medium text-success tabular-nums">{row.type === "CREDIT" && !row.transfer ? formatINR(row.amountPaise) : ""}</td>
-                  <td className="max-w-56 px-3 py-2.5 break-words text-muted-foreground">
-                    {row.transfer ? <span className="font-medium text-sky-600">Self transfer · {formatINR(row.amountPaise)}</span> : row.details || "—"}
-                  </td>
                   <td className="max-w-56 px-3 py-1.5">{c.reason}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">{row.bankName || <span className="text-muted-foreground">—</span>}</td>
                   <td className="px-3 py-1.5">{c.category}</td>
                   <td className="px-3 py-2">{c.split}</td>
                   <td className="px-2 py-1.5 text-right">{c.menu}</td>
                 </tr>
+                {shownDetails.has(row.id) && row.details ? (
+                  <tr className="bg-muted/30">
+                    <td colSpan={8} className="px-3 py-2 text-xs break-words text-muted-foreground">
+                      <span className="font-medium text-foreground">Transaction details: </span>
+                      {row.details}
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>
@@ -225,7 +239,7 @@ export function TransactionsTable({
                   {c.menu}
                 </div>
               </div>
-              {row.details ? <p className="text-xs break-words text-muted-foreground">{row.details}</p> : null}
+              {row.details && shownDetails.has(row.id) ? <p className="text-xs break-words text-muted-foreground">{row.details}</p> : null}
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">{labels.reason}</p>
                 {c.reason}
@@ -356,16 +370,21 @@ function SplitCell({ row, label, onOpen, onRemove }: { row: TxRow; label: string
 }
 
 /** ⋮ menu: Edit (opens the pop-up) and Delete. */
-function RowMenu({ onEdit, onDelete }: { onEdit: (() => void) | null; onDelete: () => void }) {
+function RowMenu({ onEdit, onDelete, details }: { onEdit: (() => void) | null; onDelete: () => void; details: { shown: boolean; toggle: () => void } | null }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Row actions" />}>
         <MoreVertical />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-36">
+      <DropdownMenuContent align="end" className="w-56">
         {onEdit ? (
           <DropdownMenuItem onClick={onEdit}>
             <Pencil /> Edit
+          </DropdownMenuItem>
+        ) : null}
+        {details ? (
+          <DropdownMenuItem onClick={details.toggle}>
+            {details.shown ? <EyeOff /> : <Eye />} {details.shown ? "Hide transaction details" : "Show transaction details"}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneRows, deleteRows, insertRow, nextCell } from "@/features/quick-pay/bulk-rows";
+import { addNextDay, cloneRows, deleteRows, insertRow, nextCell, rowsToAdd } from "@/features/quick-pay/bulk-rows";
 import type { BulkRowInput } from "@/features/quick-pay/validation";
 
 const row = (key: string, over: Partial<BulkRowInput> = {}): BulkRowInput => ({ key, date: "2026-06-01", time: "10:00", debit: "", credit: "", reason: "", accountId: null, categoryId: null, partyId: null, ...over });
@@ -100,5 +100,34 @@ describe("nextCell (arrow keys)", () => {
     expect(nextCell(size, { row: 3, col: 4 }, "down", usable)).toBeNull();
     expect(nextCell(size, { row: 3, col: 4 }, "right", usable)).toBeNull();
     expect(nextCell(size, { row: 2, col: 1 }, "right", (r, c) => c <= 1)).toBeNull();
+  });
+});
+
+describe("Add Next Day and Add rows", () => {
+  const blank = (date: string, time: string): BulkRowInput => ({ key: `n-${date}`, date, time, debit: "", credit: "", reason: "", accountId: null, categoryId: null, partyId: null });
+  const row = (date: string, time = "18:00"): BulkRowInput => ({ ...blank(date, time), key: `r-${date}` });
+
+  it("adds a row for the day after the last row: 2nd October gives 3rd October", () => {
+    const out = addNextDay([row("2026-10-01"), row("2026-10-02")], blank, "2026-11-13", 1000);
+    expect("error" in out).toBe(false);
+    if ("error" in out) return;
+    expect(out.rows.map((r) => r.date)).toEqual(["2026-10-01", "2026-10-02", "2026-10-03"]);
+    expect(out.rows.at(-1)!.time).toBe("18:00");
+    expect(out.added).toEqual(["n-2026-10-03"]);
+  });
+  it("crosses a month end and refuses a day after today or a full sheet", () => {
+    const out = addNextDay([row("2026-10-31")], blank, "2026-11-13", 1000);
+    expect("error" in out ? null : out.rows.at(-1)!.date).toBe("2026-11-01");
+    expect(addNextDay([row("2026-11-13")], blank, "2026-11-13", 1000)).toMatchObject({ error: expect.stringContaining("future") });
+    expect(addNextDay([row("2026-10-01")], blank, "2026-11-13", 1)).toMatchObject({ error: expect.stringContaining("at most") });
+  });
+  it("adds 5 rows unless another number is typed, and never more than fits", () => {
+    expect(rowsToAdd("", 100)).toBe(5);
+    expect(rowsToAdd("abc", 100)).toBe(5);
+    expect(rowsToAdd("10", 100)).toBe(10);
+    expect(rowsToAdd(" 3 ", 100)).toBe(3);
+    expect(rowsToAdd("0", 100)).toBe(5);
+    expect(rowsToAdd("500", 8)).toBe(8);
+    expect(rowsToAdd("5", 0)).toBe(0);
   });
 });

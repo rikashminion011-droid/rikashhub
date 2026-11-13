@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ChevronLeft, ChevronRight, FilePlus2, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
 import Link from "next/link";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
@@ -38,7 +38,9 @@ export const metadata: Metadata = { title: "GPay Transactions" };
 
 export default async function TransactionsPage({ searchParams }: PageProps<"/quick-pay/transactions">) {
   const user = await requireUser();
-  const filters = parseTxFilters(await searchParams);
+  const todayIst = istDateOf(new Date());
+  // Opens on the current month unless a period was chosen.
+  const filters = parseTxFilters(await searchParams, { defaultMonth: todayIst.slice(0, 7) });
 
   let result: Awaited<ReturnType<typeof listTransactions>>;
   let options: QuickPayOptions;
@@ -73,9 +75,6 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
         description="Every Quick Pay entry, newest first."
         actions={
           <>
-            <Link href="/quick-pay" className={cn(buttonVariants())}>
-              <Plus /> Add Entry
-            </Link>
             <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))}>
               <FilePlus2 /> Add Bulk
             </Link>
@@ -86,7 +85,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
       />
 
       <div className="space-y-5">
-        <TransactionsFilterBar today={istDateOf(new Date())} />
+        <TransactionsFilterBar today={todayIst} defaultMonth={todayIst.slice(0, 7)} options={options} />
 
         {/* Summary for the selected period */}
         <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">

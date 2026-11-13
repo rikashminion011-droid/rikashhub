@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowDownToLine, ArrowUpToLine, Copy, ListChecks, Loader2, MoreVertical, Plus, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, CalendarPlus, Copy, Loader2, MoreVertical, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CascadingSelect } from "@/components/shared/cascading-select";
+import { DatePicker, TimePicker } from "@/components/shared/date-picker";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { saveBulkAction } from "../actions";
-import { cloneRows, deleteRows, insertRow, nextCell, type Direction, type RowChange } from "../bulk-rows";
+import { addNextDay, cloneRows, deleteRows, insertRow, nextCell, rowsToAdd, type Direction, type RowChange } from "../bulk-rows";
 import { groupBanks, groupCategories } from "../cascade";
 import type { QuickPayOptions } from "../types";
 import { MAX_BULK_ROWS, isBlankBulkRow, validateBulk, type BulkRowErrors, type BulkRowInput } from "../validation";
@@ -30,7 +31,7 @@ const startingRows = (date: string, time: string) => Array.from({ length: 5 }, (
 
 /** The columns the arrow keys move through, left to right. */
 const COLS = 8;
-const CONTROL = "input:not(:disabled), button[role=combobox]";
+const CONTROL = "input:not(:disabled), button[role=combobox], button[data-grid-control]:not(:disabled)";
 
 const controlIn = (row: Element | null | undefined, col: number): HTMLElement | null => row?.querySelector<HTMLElement>(`td[data-col="${col}"]`)?.querySelector<HTMLElement>(CONTROL) ?? null;
 
@@ -75,6 +76,8 @@ export function BulkEntry({
   const [errors, setErrors] = useState<Record<string, BulkRowErrors>>({});
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [formError, setFormError] = useState<string | null>(null);
+  // How many rows "Add rows" adds. It starts at 5; type another number to add that many.
+  const [howMany, setHowMany] = useState("5");
   const [saving, setSaving] = useState(false);
   // One id per sheet: sending the same sheet again (retry, double click) can never save it twice.
   const [requestId, setRequestId] = useState(newRequestId);
@@ -110,12 +113,19 @@ export function BulkEntry({
     if (errors[key]) setErrors((e) => ({ ...e, [key]: {} }));
   }
 
-  function addRows(count: number) {
+  function addRows() {
+    const count = rowsToAdd(howMany, MAX_BULK_ROWS - rows.length);
+    if (count === 0) return void toast.error(`A sheet can hold at most ${MAX_BULK_ROWS} rows.`);
     setRows((all) => {
       const last = all.at(-1);
       // New rows start from the previous row's date and time, which is what you want when typing a day's entries.
       return [...all, ...Array.from({ length: count }, () => blankRow(last?.date ?? today, last?.time ?? nowTime))];
     });
+  }
+
+  /** One new row for the day after the last row, ready to type into. */
+  function nextDay() {
+    apply(addNextDay(rows, (d, t) => blankRow(d, t), today, MAX_BULK_ROWS), 2);
   }
 
   // ── Selecting rows ──
@@ -186,12 +196,9 @@ export function BulkEntry({
     if (!cell || !tr) return;
 
     const isInput = target instanceof HTMLInputElement;
-    const picker = isInput && (target.type === "date" || target.type === "time");
     const horizontal = direction === "left" || direction === "right";
     if (horizontal) {
-      // Date and time boxes use left and right to move between day, month and year: hold Ctrl to leave the cell.
-      if (picker && !event.ctrlKey) return;
-      if (!picker && event.ctrlKey) return;
+      if (event.ctrlKey) return;
       // In a text box the arrows move the cursor until it reaches the end, then they move to the next cell.
       if (isInput && target.type === "text") {
         const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
@@ -256,10 +263,8 @@ export function BulkEntry({
       <RowMenu
         label={`Row ${index + 1} actions`}
         count={n}
-        allSelected={allSelected}
         onInsert={(where) => insert(key, where)}
         onClone={() => clone(key)}
-        onSelectAll={() => selectAll(!allSelected)}
         onDelete={() => remove(key)}
       />
     );
@@ -294,14 +299,14 @@ export function BulkEntry({
       </div>
 
       <div className="rounded-xl border bg-card max-md:border-0 max-md:bg-transparent md:overflow-x-auto">
-        <table className="w-full text-sm md:min-w-[74rem]" onKeyDown={onGridKeyDown}>
+        <table className="w-full text-sm md:min-w-[82rem]" onKeyDown={onGridKeyDown}>
           <thead className="hidden border-b bg-muted/50 text-xs text-muted-foreground md:table-header-group">
             <tr>
               <th scope="col" className="w-16 px-2 py-2 text-left font-medium">
                 <span className="sr-only">Select and row number</span>#
               </th>
-              <th scope="col" className="w-36 px-1.5 py-2 text-left font-medium">Date</th>
-              <th scope="col" className="w-24 px-1.5 py-2 text-left font-medium">Time</th>
+              <th scope="col" className="w-52 px-1.5 py-2 text-left font-medium">Date</th>
+              <th scope="col" className="w-32 px-1.5 py-2 text-left font-medium">Time</th>
               <th scope="col" className="w-28 px-1.5 py-2 text-left font-medium">Debit</th>
               <th scope="col" className="w-28 px-1.5 py-2 text-left font-medium">Credit</th>
               <th scope="col" className="min-w-44 px-1.5 py-2 text-left font-medium">Reason</th>
@@ -340,11 +345,11 @@ export function BulkEntry({
                     <span className="md:hidden">{menu(row.key, index)}</span>
                   </td>
                   <Cell col={0} label="Date">
-                    <Input type="date" aria-label={`Row ${index + 1} date`} value={row.date} max={today} aria-invalid={bad(row.key, "date")} onChange={(ev) => update(row.key, { date: ev.target.value })} className={field} />
+                    <DatePicker compact ariaLabel={`Row ${index + 1} date`} value={row.date} max={today} invalid={bad(row.key, "date")} onChange={(d) => update(row.key, { date: d })} />
                     {e.date ? <p className="mt-0.5 text-[11px] text-destructive">{e.date}</p> : null}
                   </Cell>
                   <Cell col={1} label="Time">
-                    <Input type="time" aria-label={`Row ${index + 1} time`} value={row.time} aria-invalid={bad(row.key, "time")} onChange={(ev) => update(row.key, { time: ev.target.value })} className={field} />
+                    <TimePicker compact ariaLabel={`Row ${index + 1} time`} value={row.time} invalid={bad(row.key, "time")} onChange={(t) => update(row.key, { time: t })} />
                     {e.time ? <p className="mt-0.5 text-[11px] text-destructive">{e.time}</p> : null}
                   </Cell>
                   <Cell col={2} label="Debit">
@@ -395,12 +400,29 @@ export function BulkEntry({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" onClick={() => addRows(1)} disabled={rows.length >= MAX_BULK_ROWS}>
-          <Plus /> Add row
+        <Button type="button" variant="outline" onClick={nextDay} disabled={rows.length >= MAX_BULK_ROWS}>
+          <CalendarPlus /> Add Next Day
         </Button>
-        <Button type="button" variant="outline" onClick={() => addRows(5)} disabled={rows.length + 5 > MAX_BULK_ROWS}>
-          <Plus /> Add 5 rows
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button type="button" variant="outline" onClick={addRows} disabled={rows.length >= MAX_BULK_ROWS}>
+            <Plus /> Add rows
+          </Button>
+          <Input
+            inputMode="numeric"
+            aria-label="How many rows to add"
+            title="How many rows to add"
+            value={howMany}
+            onChange={(e) => setHowMany(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+            onBlur={() => setHowMany((v) => (v.trim() === "" || Number(v) < 1 ? "5" : v))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addRows();
+              }
+            }}
+            className="h-9 w-16 text-center text-base tabular-nums sm:text-sm"
+          />
+        </div>
         <p className="ml-auto text-xs text-muted-foreground tabular-nums" aria-live="polite">
           {totals.filled} row{totals.filled === 1 ? "" : "s"} · Debit {formatINR(totals.debit)} · Credit {formatINR(totals.credit)}
         </p>
@@ -425,23 +447,19 @@ export function BulkEntry({
   );
 }
 
-/** ⋮ menu for one row: Insert row above or below, Clone, Select all, Delete. */
+/** ⋮ menu for one row: Insert row above or below, Clone, Delete. */
 function RowMenu({
   label,
   count,
-  allSelected,
   onInsert,
   onClone,
-  onSelectAll,
   onDelete,
 }: {
   label: string;
   /** How many rows Clone and Delete will act on. */
   count: number;
-  allSelected: boolean;
   onInsert: (where: "above" | "below") => void;
   onClone: () => void;
-  onSelectAll: () => void;
   onDelete: () => void;
 }) {
   const many = count > 1;
@@ -460,9 +478,6 @@ function RowMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onClone}>
           <Copy /> {many ? `Clone ${count} rows` : "Clone"}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onSelectAll}>
-          <ListChecks /> {allSelected ? "Deselect all" : "Select all"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
