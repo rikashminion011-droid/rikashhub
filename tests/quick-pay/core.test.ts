@@ -185,7 +185,7 @@ describe("validateQuickPayInput", () => {
 describe("bulk rows", () => {
   const now = new Date("2026-11-10T10:00:00Z");
   const row = (over: Partial<BulkRowInput> = {}): BulkRowInput => ({
-    key: "r1", date: "2026-11-09", time: "14:30", debit: "100", credit: "", reason: "Tea", accountId: "a1", categoryId: null, partyId: null, ...over,
+    key: "r1", date: "2026-11-09", time: "14:30", debit: "100", credit: "", reason: "Tea", accountId: "a1", categoryId: null, shares: [], ...over,
   });
 
   it("accepts a debit row and a credit row, each under its own date and time", () => {
@@ -264,5 +264,24 @@ describe("GPay Transactions filters: current month by default and several choice
     const f = parseTxFilters({ banks: `${ID1},${ID2}`, types: "CREDIT", all: "1" });
     const q = new URLSearchParams(filtersToQuery(f));
     expect([q.get("banks"), q.get("types"), q.get("all")]).toEqual([`${ID1},${ID2}`, "CREDIT", "1"]);
+  });
+});
+
+describe("bulk rows with a split", () => {
+  const now = new Date("2026-11-10T10:00:00Z");
+  const base: BulkRowInput = { key: "r1", date: "2026-11-09", time: "14:30", debit: "50", credit: "", reason: "Lunch", accountId: "a1", categoryId: "c1", shares: [] };
+  const shares = [{ partyId: "p1", method: "PERCENT" as const, value: "50" }, { partyId: "p2", method: "PERCENT" as const, value: "50" }];
+
+  it("divides the amount between the chosen people: ₹50 between two is ₹25 each", () => {
+    const out = validateBulkRow({ ...base, shares }, now);
+    expect(out.ok && out.value.shares.map((s) => [s.partyId, s.sharePaise])).toEqual([["p1", 2500], ["p2", 2500]]);
+  });
+  it("refuses shares above the amount, and keeps a credit free of a category", () => {
+    expect(validateBulkRow({ ...base, shares: [{ partyId: "p1", method: "PERCENT", value: "70" }, { partyId: "p2", method: "PERCENT", value: "60" }] }, now)).toMatchObject({ ok: false, errors: { split: expect.any(String) } });
+    const credit = validateBulkRow({ ...base, debit: "", credit: "50" }, now);
+    expect(credit.ok && credit.value.categoryId).toBeNull();
+  });
+  it("a row with only people chosen is not blank", () => {
+    expect(isBlankBulkRow({ ...base, debit: "", reason: "", accountId: null, categoryId: null, shares })).toBe(false);
   });
 });

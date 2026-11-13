@@ -125,17 +125,22 @@ export function defaultCreditSelection(choices: readonly RecentCredit[], setting
  */
 export function withPeople(form: FormState, ids: readonly string[], settings: QuickPaySettingsData): FormState {
   if (!form.splitKind) return form;
-  const kind = form.splitKind;
-  const existing = new Map(form.shares.map((s) => [s.partyId, s]));
+  return { ...form, shares: peopleShares(form.shares, ids, form.splitKind, settings) };
+}
+
+/** The shares for a chosen group of people (see withPeople). Also used by the Add Bulk sheet, one row at a time. */
+export function peopleShares(current: readonly FormShare[], ids: readonly string[], kind: SplitKind, settings: QuickPaySettingsData): FormShare[] {
+  const existing = new Map(current.map((s) => [s.partyId, s]));
   const people = ids.map((id) => existing.get(id) ?? ({ partyId: id, method: "PERCENT", value: "", edited: false } satisfies FormShare));
   const single = singlePercent(kind, settings.split.defaultPercent, settings.debt.defaultPercent);
   // Several people share equally (50% each for two); with "equal" turned off each one starts at the default percentage.
   const autos = settings.split.equalDivide || people.length === 1 ? evenPercents(people.length, single) : people.map(() => single);
-  return {
-    ...form,
-    shares: people.map((p, i) => (p.edited ? p : { ...p, method: "PERCENT", value: String(autos[i]) })),
-  };
+  return people.map((p, i) => (p.edited ? p : { ...p, method: "PERCENT" as const, value: String(autos[i]) }));
 }
+
+/** A person's share typed by hand, on a list of shares. */
+export const shareValueOf = (shares: readonly FormShare[], partyId: string, method: SplitMethod, value: string): FormShare[] =>
+  shares.map((s) => (s.partyId === partyId ? { ...s, method, value, edited: true } : s));
 
 /** Switches between Split and Debt (or off), keeping the chosen people and working their shares out again. */
 export function withKind(form: FormState, kind: SplitKind | null, settings: QuickPaySettingsData, defaultPartyId: string | null): FormState {

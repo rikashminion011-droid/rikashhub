@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
-import { saveBulkAction } from "@/features/quick-pay/actions";
+import { addCategoryAction, getOptionsAction, saveBulkAction } from "@/features/quick-pay/actions";
+import { addPersonAction } from "@/features/users/actions";
 import { BulkEntry } from "@/features/quick-pay/components/bulk-entry";
 import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
 import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
@@ -33,8 +34,8 @@ export default async function BulkPage() {
   const now = new Date();
   return (
     <>
-      <PageHeader title="Add Bulk" description="Enter many transactions at once. Each row is saved as its own entry under its own date and time." />
-      <BulkEntry options={options} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveBulkAction} />
+      <PageHeader title="Add Bulk" />
+      <BulkEntry options={options} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveBulkAction} quickActions={{ addCategory: addCategoryAction, addPerson: addPersonAction, getOptions: getOptionsAction }} />
     </>
   );
 }

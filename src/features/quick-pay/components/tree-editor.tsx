@@ -47,7 +47,10 @@ export function TreeEditor({
   nouns,
   mainExtra,
   initialVisible,
+  allowSubs = true,
 }: {
+  /** False hides everything about the items under a main item (used for categories, which have no sub-categories). */
+  allowSubs?: boolean;
   /** Show only this many main items to begin with, with a See more button for the rest. */
   initialVisible?: number;
   initialNodes: TreeNode[];
@@ -134,12 +137,16 @@ export function TreeEditor({
                     <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
                     <p className="min-w-0 flex-1 truncate font-medium">{node.name}</p>
                     {node.badge ? <Badge variant="secondary">{node.badge}</Badge> : null}
-                    <Badge variant="outline" className="tabular-nums">
-                      {node.children.length} {node.children.length === 1 ? nouns.sub : plural(nouns.sub)}
-                    </Badge>
-                    <Button variant="outline" size="sm" onClick={() => setDialog({ type: "addSub", main: node })}>
-                      <Plus /> Add {nouns.sub}
-                    </Button>
+                    {allowSubs ? (
+                      <>
+                        <Badge variant="outline" className="tabular-nums">
+                          {node.children.length} {node.children.length === 1 ? nouns.sub : plural(nouns.sub)}
+                        </Badge>
+                        <Button variant="outline" size="sm" onClick={() => setDialog({ type: "addSub", main: node })}>
+                          <Plus /> Add {nouns.sub}
+                        </Button>
+                      </>
+                    ) : null}
                     <Button variant="ghost" size="icon-sm" aria-label={`Edit ${node.name}`} onClick={() => setDialog({ type: "rename", id: node.id, name: node.name, isMain: true })}>
                       <Pencil />
                     </Button>
@@ -153,7 +160,7 @@ export function TreeEditor({
                       <Trash2 />
                     </Button>
                   </div>
-                  {node.children.length === 0 ? (
+                  {!allowSubs ? null : node.children.length === 0 ? (
                     <p className="px-4 py-3 text-xs text-muted-foreground">No {plural(nouns.sub)} yet.</p>
                   ) : (
                     <ul className="divide-y">

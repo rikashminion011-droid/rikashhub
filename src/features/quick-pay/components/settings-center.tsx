@@ -168,13 +168,14 @@ export function SettingsCenter({
                 <Card className="overflow-visible">
                   <CardHeader>
                     <CardTitle>Categories</CardTitle>
-                    <CardDescription>Add as many categories and sub-categories as you like, for example Food → Dosa, Idli, Tiffin; Travel → Petrol, Rapido, Porter. The first three are shown; use See more for the rest.</CardDescription>
+                    <CardDescription>Add as many categories as you like, for example Food, Travel, Office. Give each its reasons below. The first three are shown; use See more for the rest.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
                     <DefaultChoice kind="category" settings={settings.fields} options={liveOptions} actions={actions} onSaved={setSettings} />
                     <TreeEditor
                       key="categories"
                       initialVisible={3}
+                      allowSubs={false}
                       initialNodes={categoryNodes(categories)}
                       nouns={{ main: "category", sub: "sub-category" }}
                       actions={{
@@ -196,7 +197,7 @@ export function SettingsCenter({
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <KeywordEditor tree={categories} setKeywords={actions.setKeywords} onTree={setCategories} initialVisible={3} />
+                    <KeywordEditor tree={categories} setKeywords={actions.setKeywords} onTree={setCategories} initialVisible={3} mainOnly />
                   </CardContent>
                 </Card>
               </>

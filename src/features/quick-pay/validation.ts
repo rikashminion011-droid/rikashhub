@@ -148,7 +148,8 @@ export interface BulkRowInput {
   reason: string;
   accountId: string | null;
   categoryId: string | null;
-  partyId: string | null;
+  /** The people this row is split with and their shares (empty when it is not split). */
+  shares: readonly ShareInput[];
 }
 
 export interface BulkRowErrors {
@@ -157,6 +158,7 @@ export interface BulkRowErrors {
   amount?: string;
   bank?: string;
   reason?: string;
+  split?: string;
 }
 
 export interface ValidBulkRow {
@@ -167,12 +169,13 @@ export interface ValidBulkRow {
   reason: string;
   accountId: string;
   categoryId: string | null;
-  partyId: string | null;
+  /** Each person's share in paise and as a percentage (empty when not split). What is left is yours. */
+  shares: ResolvedShare[];
 }
 
 /** A row nobody has typed anything into (the date and time are pre-filled, so they do not count). */
 export function isBlankBulkRow(row: BulkRowInput): boolean {
-  return !row.debit.trim() && !row.credit.trim() && !row.reason.trim() && !row.accountId && !row.categoryId && !row.partyId;
+  return !row.debit.trim() && !row.credit.trim() && !row.reason.trim() && !row.accountId && !row.categoryId && row.shares.length === 0;
 }
 
 export function validateBulkRow(row: BulkRowInput, now: Date): { ok: true; value: ValidBulkRow } | { ok: false; errors: BulkRowErrors } {
@@ -210,10 +213,18 @@ export function validateBulkRow(row: BulkRowInput, now: Date): { ok: true; value
   if (reason.length > MAX_REASON_LENGTH) errors.reason = `Reason can be at most ${MAX_REASON_LENGTH} characters.`;
   if (!row.accountId) errors.bank = "Choose a bank.";
 
+  let shares: ResolvedShare[] = [];
+  if (row.shares.length > 0 && !errors.amount) {
+    const resolved = resolveShares(amountPaise, row.shares);
+    if (resolved.ok) shares = resolved.shares;
+    else errors.split = resolved.error;
+  }
+
   if (Object.keys(errors).length > 0 || !occurredAt) return { ok: false, errors };
+  // A credit has no category, as in Quick Entry.
   return {
     ok: true,
-    value: { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.accountId!, categoryId: row.categoryId, partyId: row.partyId },
+    value: { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.accountId!, categoryId: type === "DEBIT" ? row.categoryId : null, shares },
   };
 }
 

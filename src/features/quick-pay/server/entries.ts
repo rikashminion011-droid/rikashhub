@@ -276,7 +276,7 @@ export async function createBulk(
 
         await resolveBanks(tx, userId, rows.map((r) => r.accountId));
         await resolveCategories(tx, userId, rows.map((r) => r.categoryId));
-        await resolvePersons(tx, userId, rows.map((r) => r.partyId));
+        await resolvePersons(tx, userId, rows.flatMap((r) => r.shares.map((s) => s.partyId)));
 
         const ids = rows.map(() => randomUUID());
         await tx.transaction.createMany({
@@ -289,16 +289,26 @@ export async function createBulk(
             occurredAt: row.occurredAt,
             description: row.reason || null,
             categoryId: row.categoryId,
-            isSplit: row.partyId !== null,
+            isSplit: row.shares.length > 0,
+            splitKind: row.shares.length > 0 ? "SPLIT" : null,
             quickPay: true,
             dedupeKey: keyOf(row),
           })),
         });
-        const withPerson = rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => x.row.partyId !== null);
-        if (withPerson.length > 0) {
-          await tx.transactionSplit.createMany({
-            data: withPerson.map(({ row, id }) => ({ userId, transactionId: id, partyId: row.partyId!, amount: paiseToDecimalString(row.amountPaise), percentage: "100" })),
-          });
+        // Each split row gives its people their shares, and what is left stays with you under "Personal".
+        const withPeople = rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => x.row.shares.length > 0);
+        if (withPeople.length > 0) {
+          const self = await selfPartyId(tx, userId);
+          const data: Prisma.TransactionSplitCreateManyInput[] = [];
+          for (const { row, id } of withPeople) {
+            const people = row.shares.filter((s) => s.sharePaise > 0 && s.partyId !== self);
+            const given = people.reduce((sum, s) => sum + s.sharePaise, 0);
+            if (given > row.amountPaise) throw new ExpenseError("The shares add up to more than the amount.");
+            for (const s of people) data.push({ userId, transactionId: id, partyId: s.partyId, amount: paiseToDecimalString(s.sharePaise), percentage: String(s.percent) });
+            const rest = row.amountPaise - given;
+            if (rest > 0) data.push({ userId, transactionId: id, partyId: self, amount: paiseToDecimalString(rest), percentage: String(Math.round((rest / row.amountPaise) * 100 * 10_000) / 10_000) });
+          }
+          await tx.transactionSplit.createMany({ data });
         }
         await recomputeBalances(tx, userId, rows.map((r) => r.accountId));
         await tx.auditLog.create({ data: { userId, action: "quickpay.bulk", entity: "transaction", after: { rows: rows.length } } });

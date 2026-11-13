@@ -18,7 +18,11 @@ export function PeoplePicker({
   onAddPerson,
   invalid = false,
   ariaLabel,
+  bare = false,
+  compact = false,
 }: {
+  bare?: boolean;
+  compact?: boolean;
   people: readonly PersonOption[];
   selected: readonly string[];
   onChange: (ids: string[]) => void;
@@ -60,15 +64,16 @@ export function PeoplePicker({
         type="button"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
+        data-grid-control=""
         aria-expanded={open}
         data-invalid={invalid || undefined}
         onClick={() => {
           setQuery("");
           setOpen((o) => !o);
         }}
-        className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-2.5 text-left text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-invalid:border-destructive sm:text-sm"
+        className={cn("flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-2.5 text-left text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-invalid:border-destructive sm:text-sm", compact ? "h-8" : "h-10", bare && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background")}
       >
-        <span className={cn("truncate", names.length === 0 && "text-muted-foreground")}>{names.length > 0 ? names.join(", ") : "Choose people"}</span>
+        <span className={cn("truncate", names.length === 0 && "text-muted-foreground")}>{names.length > 0 ? names.join(", ") : bare ? "Person" : "Choose people"}</span>
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
           {names.length > 1 ? <span className="rounded-full bg-muted px-1.5 text-xs font-medium text-foreground">{names.length}</span> : null}
           <ChevronsUpDown className="size-3.5" aria-hidden />

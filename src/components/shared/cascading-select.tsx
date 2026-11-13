@@ -24,7 +24,10 @@ export function CascadingSelect({
   footer,
   className,
   compact = false,
+  bare = false,
 }: {
+  /** No box around it until hovered or focused (for spreadsheet-style rows). */
+  bare?: boolean;
   groups: readonly CascadeGroup[];
   value: string | null;
   onChange: (value: string | null) => void;
@@ -95,6 +98,7 @@ export function CascadingSelect({
         className={cn(
           "flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-left text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive",
           compact ? "h-8" : "h-10",
+          bare && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background dark:bg-transparent",
         )}
       >
         <span className={cn("truncate", !selected && "text-muted-foreground")}>{selected ? selected.label.replace(/ → /g, " › ") : placeholder}</span>

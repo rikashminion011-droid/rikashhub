@@ -139,8 +139,8 @@ export function SplitControl({
   );
 }
 
-/** A person's percentage list and amount (typed or calculated). */
-function ShareFields({
+/** A person's percentage list and amount (typed or calculated). Also used by the Add Bulk sheet. */
+export function ShareFields({
   share,
   name,
   amountPaise,
@@ -148,8 +148,11 @@ function ShareFields({
   savedPaise,
   showPercent,
   showAmount,
+  compact = false,
   onChange,
 }: {
+  /** A smaller version for the Add Bulk sheet. */
+  compact?: boolean;
   showPercent: boolean;
   showAmount: boolean;
   savedPaise: number | null;
@@ -173,7 +176,7 @@ function ShareFields({
         onChange={(e) => {
           if (e.target.value !== CUSTOM) onChange("PERCENT", e.target.value);
         }}
-        className="h-10 w-[5.25rem] shrink-0 rounded-lg border border-input bg-background px-1.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+        className={cn("shrink-0 rounded-lg border border-input bg-background px-1.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm", compact ? "h-8 w-[4.75rem]" : "h-10 w-[5.25rem]")}
       >
         {percentOptions.map((p) => (
           <option key={p} value={String(p)}>
@@ -184,7 +187,7 @@ function ShareFields({
       </select>
       ) : null}
       {showAmount ? (
-      <div className="relative w-24 shrink-0">
+      <div className={cn("relative shrink-0", compact ? "w-[5.25rem]" : "w-24")}>
         <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">
           ₹
         </span>
@@ -195,7 +198,7 @@ function ShareFields({
           value={shown}
           placeholder="0"
           onChange={(e) => onChange("FIXED", e.target.value)}
-          className="h-10 w-full rounded-lg border border-input bg-background pr-2 pl-6 text-right text-base tabular-nums outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+          className={cn("w-full rounded-lg border border-input bg-background pr-2 pl-6 text-right text-base tabular-nums outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm", compact ? "h-8" : "h-10")}
         />
       </div>
       ) : null}

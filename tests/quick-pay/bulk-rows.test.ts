@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { addNextDay, cloneRows, deleteRows, insertRow, nextCell, rowsToAdd } from "@/features/quick-pay/bulk-rows";
+import { addNextDay, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type BulkRow } from "@/features/quick-pay/bulk-rows";
 import type { BulkRowInput } from "@/features/quick-pay/validation";
 
-const row = (key: string, over: Partial<BulkRowInput> = {}): BulkRowInput => ({ key, date: "2026-06-01", time: "10:00", debit: "", credit: "", reason: "", accountId: null, categoryId: null, partyId: null, ...over });
+const row = (key: string, over: Partial<BulkRowInput> = {}): BulkRowInput => ({ key, date: "2026-06-01", time: "10:00", debit: "", credit: "", reason: "", accountId: null, categoryId: null, shares: [], ...over });
 let n = 0;
 const fresh = () => `new-${++n}`;
 const blank = (date = "2026-06-01", time = "10:00") => row(fresh(), { date, time });
 
 describe("cloneRows", () => {
-  const rows = [row("a", { debit: "100", reason: "Tea", accountId: "b1", categoryId: "c1", partyId: "p1", date: "2026-06-02", time: "08:30" }), row("b"), row("c", { credit: "50" })];
+  const rows = [row("a", { debit: "100", reason: "Tea", accountId: "b1", categoryId: "c1", shares: [{ partyId: "p1", method: "PERCENT", value: "50" }], date: "2026-06-02", time: "08:30" }), row("b"), row("c", { credit: "50" })];
 
   it("puts a copy directly under the row it was copied from, with every field and a new key", () => {
     const out = cloneRows(rows, ["a"], fresh, 1000);
@@ -104,7 +104,7 @@ describe("nextCell (arrow keys)", () => {
 });
 
 describe("Add Next Day and Add rows", () => {
-  const blank = (date: string, time: string): BulkRowInput => ({ key: `n-${date}`, date, time, debit: "", credit: "", reason: "", accountId: null, categoryId: null, partyId: null });
+  const blank = (date: string, time: string): BulkRowInput => ({ key: `n-${date}`, date, time, debit: "", credit: "", reason: "", accountId: null, categoryId: null, shares: [] });
   const row = (date: string, time = "18:00"): BulkRowInput => ({ ...blank(date, time), key: `r-${date}` });
 
   it("adds a row for the day after the last row: 2nd October gives 3rd October", () => {
@@ -129,5 +129,29 @@ describe("Add Next Day and Add rows", () => {
     expect(rowsToAdd("0", 100)).toBe(5);
     expect(rowsToAdd("500", 8)).toBe(8);
     expect(rowsToAdd("5", 0)).toBe(0);
+  });
+});
+
+describe("category rules on a sheet row (as in Quick Entry)", () => {
+  const keywords = [{ keyword: "tiffin", categoryId: "food" }, { keyword: "petrol", categoryId: "travel" }];
+  const r = (over: Partial<BulkRow> = {}): BulkRow => ({ ...row("x"), debit: "40", ...over });
+
+  it("a keyword in the reason picks the category, follows the reason, and never replaces your own choice", () => {
+    let one = rowWithReason(r(), "Tiffin", keywords);
+    expect(one).toMatchObject({ categoryId: "food", categoryAuto: true });
+    one = rowWithReason(one, "Petrol", keywords);
+    expect(one.categoryId).toBe("travel");
+    one = rowWithReason(one, "something else", keywords); // no longer matches: cleared again
+    expect(one).toMatchObject({ categoryId: null, categoryAuto: false });
+    const chosen = rowWithReason(r({ categoryId: "office", categoryManual: true }), "Tiffin", keywords);
+    expect(chosen.categoryId).toBe("office");
+  });
+  it("a credit has no category: none is picked, and typing a credit drops the one it had", () => {
+    expect(rowWithReason(r({ debit: "", credit: "50" }), "Tiffin", keywords).categoryId).toBeNull();
+    const dropped = rowWithAmounts(r({ categoryId: "food", categoryAuto: true }), { debit: "", credit: "50" });
+    expect(dropped).toMatchObject({ categoryId: null, categoryAuto: false });
+    expect(rowWithAmounts(r({ categoryId: "food" }), { debit: "60" }).categoryId).toBe("food");
+    expect(isCreditRow({ debit: "", credit: "5" })).toBe(true);
+    expect(isCreditRow({ debit: "1", credit: "" })).toBe(false);
   });
 });

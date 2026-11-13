@@ -1,4 +1,5 @@
 import { shiftDate } from "./date-format";
+import { matchCategory, type KeywordEntry } from "./keywords";
 import type { BulkRowInput } from "./validation";
 
 /**
@@ -99,4 +100,29 @@ export function rowsToAdd(text: string, room: number): number {
   const n = Number.parseInt(text.trim(), 10);
   const wanted = Number.isFinite(n) && n > 0 ? n : 5;
   return Math.max(0, Math.min(wanted, room));
+}
+
+/** A sheet row as it is on screen: the row itself plus whether its category was picked by a keyword or by you. */
+export type BulkRow = BulkRowInput & { categoryManual?: boolean; categoryAuto?: boolean };
+
+/** True when the row is a credit (money in): only a Credit amount is typed. */
+export const isCreditRow = (row: Pick<BulkRowInput, "debit" | "credit">) => row.credit.trim() !== "" && row.debit.trim() === "";
+
+/**
+ * The row after its Reason changes, with the same rules as Quick Entry: a keyword in the Reason picks the category unless you
+ * chose it yourself; if a keyword picked it and no longer matches it is cleared; a credit never has a category.
+ */
+export function rowWithReason<T extends BulkRow>(row: T, reason: string, keywords: readonly KeywordEntry[]): T {
+  const next = { ...row, reason };
+  if (isCreditRow(row) || row.categoryManual) return next;
+  const matched = matchCategory(reason, keywords);
+  if (matched) return { ...next, categoryId: matched, categoryAuto: true };
+  if (row.categoryAuto) return { ...next, categoryId: null, categoryAuto: false };
+  return next;
+}
+
+/** The row after an amount is typed: when it turns into a credit its category is dropped, as in Quick Entry. */
+export function rowWithAmounts<T extends BulkRow>(row: T, changes: Partial<Pick<BulkRowInput, "debit" | "credit">>): T {
+  const next = { ...row, ...changes };
+  return isCreditRow(next) ? { ...next, categoryId: null, categoryAuto: false, categoryManual: false } : next;
 }

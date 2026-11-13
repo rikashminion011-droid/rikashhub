@@ -16,6 +16,8 @@ export interface ShareInput {
   partyId: string;
   method: SplitMethod;
   value: string;
+  /** Screen only: true once the share was typed by hand, so choosing more people never changes it. */
+  edited?: boolean;
 }
 
 export interface ResolvedShare {

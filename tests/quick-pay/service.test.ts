@@ -324,7 +324,24 @@ describe("editing and deleting", () => {
 
 describe("bulk entry", () => {
   const row = (key: string, over: Partial<ValidBulkRow> & Pick<ValidBulkRow, "accountId">): ValidBulkRow => ({
-    key, type: "DEBIT", amountPaise: 1000, occurredAt: istInstant("2026-08-01", "12:00"), reason: "", categoryId: null, partyId: null, ...over,
+    key, type: "DEBIT", amountPaise: 1000, occurredAt: istInstant("2026-08-01", "12:00"), reason: "", categoryId: null, shares: [], ...over,
+  });
+
+  it("splits a row between several people, keeping what is left as your own share", async () => {
+    const o = await options();
+    const hdfc = bank(o, "HDFC");
+    const mukesh = person(o, "Mukesh");
+    const balan = person(o, "Balan");
+    const res = await createBulk(db, ME.id, rid(), [
+      row("s1", { accountId: hdfc, amountPaise: 5000, occurredAt: istInstant("2026-09-20", "12:00"), reason: "shared-two", shares: [{ partyId: mukesh, sharePaise: 2500, percent: 50 }, { partyId: balan, sharePaise: 2500, percent: 50 }] }),
+      row("s2", { accountId: hdfc, amountPaise: 10000, occurredAt: istInstant("2026-09-20", "12:01"), reason: "shared-one", shares: [{ partyId: mukesh, sharePaise: 3000, percent: 30 }] }),
+    ]);
+    expect(res.count).toBe(2);
+    const rows = await db.transaction.findMany({ where: { userId: ME.id, description: { in: ["shared-two", "shared-one"] } }, include: { splits: { include: { party: true } } } });
+    const by = (d: string) => rows.find((r) => r.description === d)!;
+    expect(by("shared-two").splits.map((s) => [s.party.name, Number(s.amount)]).sort()).toEqual([["Balan", 25], ["Mukesh", 25]]);
+    expect(by("shared-one").splits.map((s) => [s.party.name, Number(s.amount)]).sort()).toEqual([["Mukesh", 30], ["Personal", 70]]);
+    expect(by("shared-two")).toMatchObject({ isSplit: true, splitKind: "SPLIT" });
   });
 
   it("saves every row as its own entry under its own date and time, and updates balances", async () => {
@@ -333,7 +350,7 @@ describe("bulk entry", () => {
     const before = await currentOf(hdfc);
     const result = await createBulk(db, ME.id, rid(), [
       row("a", { accountId: hdfc, amountPaise: 5000, occurredAt: istInstant("2026-08-01", "08:00"), reason: "bulk-one" }),
-      row("b", { accountId: hdfc, amountPaise: 20000, type: "CREDIT", occurredAt: istInstant("2026-08-02", "17:45"), reason: "bulk-two", partyId: person(o, "Mukesh") }),
+      row("b", { accountId: hdfc, amountPaise: 20000, type: "CREDIT", occurredAt: istInstant("2026-08-02", "17:45"), reason: "bulk-two", shares: [{ partyId: person(o, "Mukesh"), sharePaise: 20000, percent: 100 }] }),
       row("c", { accountId: hdfc, amountPaise: 700, occurredAt: istInstant("2026-08-03", "23:59"), reason: "bulk-three", categoryId: cat(o, "Food") }),
     ]);
     expect(result).toEqual({ count: 3, duplicate: false });
@@ -467,7 +484,7 @@ describe("GPay Transactions: filters, search, totals, paging", () => {
 function row2(opts: QuickPayOptions, i: number): ValidBulkRow {
   return {
     key: `r${i}`, type: "DEBIT", amountPaise: 100, occurredAt: new Date(Date.UTC(2026, 7, 1, 0, i)), reason: `row ${i}`,
-    accountId: opts.banks.find((b) => b.label === "HDFC")!.id, categoryId: null, partyId: null,
+    accountId: opts.banks.find((b) => b.label === "HDFC")!.id, categoryId: null, shares: [],
   };
 }
 

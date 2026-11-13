@@ -23,9 +23,11 @@ const rowsOf = (tree: readonly CategoryTreeNode[]): Row[] =>
  * Words that pick a category from the Reason in Quick Entry. For example Food: dosa, idli, lunch; Travel: petrol, rapido.
  * Add, edit (click a word) and remove words for any category. A word can belong to one category only.
  */
-export function KeywordEditor({ tree, setKeywords, onTree, initialVisible }: { tree: readonly CategoryTreeNode[]; setKeywords: typeof setKeywordsAction; onTree: (tree: CategoryTreeNode[]) => void; initialVisible?: number }) {
+export function KeywordEditor({ tree, setKeywords, onTree, initialVisible, mainOnly = false }: {
+  /** Leave out sub-categories (Customized Settings has no sub-categories). */
+  mainOnly?: boolean; tree: readonly CategoryTreeNode[]; setKeywords: typeof setKeywordsAction; onTree: (tree: CategoryTreeNode[]) => void; initialVisible?: number }) {
   const [expanded, setExpanded] = useState(false);
-  const all = rowsOf(tree);
+  const all = rowsOf(tree).filter((r) => !mainOnly || !r.sub);
   const rows = initialVisible && !expanded ? all.slice(0, initialVisible) : all;
   if (rows.length === 0) return <p className="text-sm text-muted-foreground">Add a category first, then give it keywords here.</p>;
   return (

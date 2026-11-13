@@ -40,7 +40,10 @@ export function DatePicker({
   disabled = false,
   className,
   compact = false,
+  bare = false,
 }: {
+  /** No box around it: it looks like plain text until hovered or focused (for spreadsheet-style rows). */
+  bare?: boolean;
   value: string;
   onChange: (value: string) => void;
   min?: string;
@@ -79,7 +82,7 @@ export function DatePicker({
         data-grid-control=""
         aria-invalid={invalid || undefined}
         disabled={disabled}
-        className={cn(triggerClass, compact && "h-8", className)}
+        className={cn(triggerClass, compact && "h-8", bare && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background dark:bg-transparent", className)}
       >
         <span className={cn("truncate", !value && "text-muted-foreground")}>{value ? formatLongDate(value) : placeholder}</span>
         <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
@@ -238,7 +241,9 @@ export function TimePicker({
   disabled = false,
   className,
   compact = false,
+  bare = false,
 }: {
+  bare?: boolean;
   value: string;
   onChange: (value: string) => void;
   ariaLabel: string;
@@ -281,7 +286,7 @@ export function TimePicker({
 
   return (
     <Popover.Root open={open} onOpenChange={onOpen}>
-      <Popover.Trigger type="button" aria-label={`${ariaLabel}${value ? `: ${formatClock(value)}` : ""}`} data-grid-control="" aria-invalid={invalid || undefined} disabled={disabled} className={cn(triggerClass, compact && "h-8", className)}>
+      <Popover.Trigger type="button" aria-label={`${ariaLabel}${value ? `: ${formatClock(value)}` : ""}`} data-grid-control="" aria-invalid={invalid || undefined} disabled={disabled} className={cn(triggerClass, compact && "h-8", bare && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background dark:bg-transparent", className)}>
         <span className={cn("truncate", !value && "text-muted-foreground")}>{value ? formatClock(value) : placeholder}</span>
         <Clock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </Popover.Trigger>

@@ -298,7 +298,7 @@ const bulkSchema = z.object({
         reason: z.string().max(1000),
         accountId: id.nullable(),
         categoryId: id.nullable(),
-        partyId: id.nullable(),
+        shares: z.array(shareSchema).max(30),
       }),
     )
     .max(MAX_BULK_ROWS + 200),
