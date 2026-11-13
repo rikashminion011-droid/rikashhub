@@ -36,6 +36,9 @@ const weekdayOf = (instant: Date) => formatTransactionWhen(instant).timeAndDay.s
 const COLUMNS = ["Date", "Time", "Day", "Debit", "Credit", "Transaction details", "Reason", "Bank", "Category", "Split"] as const;
 
 /** "Mukesh" or, with a share, "Mukesh (50%)". */
+/** A self transfer is neither a debit nor a credit: it is written as one line saying where the money went. */
+const transferNote = (row: TxRow) => (row.transfer ? `Self transfer ${formatINR(row.amountPaise)}: ${row.transfer.from} → ${row.transfer.to}` : row.details);
+
 const splitLabel = (row: TxRow) =>
   row.shares.map((s) => (s.percent < 100 ? `${s.name} (${Number(s.percent.toFixed(2))}%)` : s.name)).join(", ");
 
@@ -71,9 +74,9 @@ export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promi
       parseISODate(istDateOf(instant)), // a real date cell
       (h * 60 + m) / 1440, // a real time cell
       weekdayOf(instant),
-      row.type === "DEBIT" ? rupees(row.amountPaise) : null,
-      row.type === "CREDIT" ? rupees(row.amountPaise) : null,
-      row.details,
+      row.type === "DEBIT" && !row.transfer ? rupees(row.amountPaise) : null,
+      row.type === "CREDIT" && !row.transfer ? rupees(row.amountPaise) : null,
+      transferNote(row),
       row.reason,
       row.bankName || row.bank,
       row.category,
@@ -124,9 +127,9 @@ export function buildPdf(rows: readonly TxRow[], meta: ExportMeta): { bytes: Uin
       const when = formatTransactionWhen(new Date(row.occurredAt));
       return [
         `${when.date}\n${when.timeAndDay}`,
-        row.type === "DEBIT" ? pdfMoney(row.amountPaise) : "",
-        row.type === "CREDIT" ? pdfMoney(row.amountPaise) : "",
-        row.details,
+        row.type === "DEBIT" && !row.transfer ? pdfMoney(row.amountPaise) : "",
+        row.type === "CREDIT" && !row.transfer ? pdfMoney(row.amountPaise) : "",
+        transferNote(row),
         row.reason,
         row.bankName || row.bank,
         row.category,

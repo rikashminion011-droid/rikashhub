@@ -104,11 +104,17 @@ export function withReason(form: FormState, reason: string, keywords: QuickPayOp
 /** You chose (or cleared) the category: keywords stop changing it for this entry. */
 export const withCategory = (form: FormState, categoryId: string | null): FormState => ({ ...form, categoryId, categoryManual: true, categoryAuto: false });
 
-/** Which of the newest `choices` are selected when Credits Added first opens, per Customized Settings. */
+/** The item after `current` in `ids`, wrapping to the first after the last (or the first when nothing is chosen yet). */
+export function cycleId(ids: readonly string[], current: string | null): string | null {
+  if (ids.length === 0) return null;
+  const at = current === null ? -1 : ids.indexOf(current);
+  return ids[(at + 1) % ids.length]!;
+}
+
+/** Which credit is chosen when Credit History first opens, per Customized Settings. Only one credit can be chosen. */
 export function defaultCreditSelection(choices: readonly RecentCredit[], settings: QuickPaySettingsData["credits"]): string[] {
   const credits = choices.filter((c) => c.type === "CREDIT");
-  if (settings.defaultSelection === "latest") return credits.slice(0, 1).map((c) => c.id);
-  if (settings.defaultSelection === "custom") return credits.slice(0, settings.customCount).map((c) => c.id);
+  if (settings.defaultSelection === "latest" || settings.defaultSelection === "custom") return credits.slice(0, 1).map((c) => c.id);
   return [];
 }
 

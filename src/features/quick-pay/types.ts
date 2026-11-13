@@ -97,6 +97,8 @@ export interface TxRow {
   bankId: string | null;
   category: string;
   categoryId: string | null;
+  /** Set for a self transfer: the bank the money left and the bank it went to. Such a row is neither a debit nor a credit. */
+  transfer: { from: string; to: string } | null;
   /** Split or Debt when shared with people, otherwise null. */
   splitKind: SplitKind | null;
   /** The people it is shared with, each with their share. */

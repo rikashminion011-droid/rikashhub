@@ -65,3 +65,17 @@ describe("monthsBetween", () => {
     expect(monthsBetween("2026-13", "2026-01")).toEqual([]);
   });
 });
+
+describe("mealForTime", () => {
+  const at = (hhmm: string) => new Date(`2026-06-10T${hhmm}:00+05:30`);
+  it("is Tiffin until noon, Lunch until 5:30 pm, then Dinner (India time)", async () => {
+    const { mealForTime } = await import("@/features/food/pricing");
+    expect(mealForTime(at("09:00"))).toBe("TIFFIN");
+    expect(mealForTime(at("11:59"))).toBe("TIFFIN");
+    expect(mealForTime(at("12:00"))).toBe("LUNCH");
+    expect(mealForTime(at("17:29"))).toBe("LUNCH");
+    expect(mealForTime(at("17:30"))).toBe("DINNER");
+    expect(mealForTime(at("22:15"))).toBe("DINNER");
+    expect(mealForTime(at("06:00"))).toBe("TIFFIN");
+  });
+});

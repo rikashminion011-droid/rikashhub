@@ -18,6 +18,20 @@ export const MAX_NOTES_LENGTH = 200;
 export const MAX_ITEM_NAME_LENGTH = 60;
 export const MAX_PRICE_PAISE = 10_000_000; // ₹1,00,000
 
+const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/**
+ * The meal that belongs to the time of day (India time): before 12 noon Tiffin (9 am to 12 pm, and anything earlier),
+ * 12 noon to 5:30 pm Lunch, 5:30 pm onwards Dinner.
+ */
+export function mealForTime(at: Date): Meal {
+  const [h, m] = clock.format(at).split(":").map(Number) as [number, number];
+  const minutes = h * 60 + m;
+  if (minutes < 12 * 60) return "TIFFIN";
+  if (minutes < 17 * 60 + 30) return "LUNCH";
+  return "DINNER";
+}
+
 export function isMeal(value: unknown): value is Meal {
   return typeof value === "string" && (MEALS as readonly string[]).includes(value);
 }

@@ -16,6 +16,7 @@ import {
   deleteFoodEntry,
   deleteFoodItem,
   getFoodPricing,
+  getFoodTotal,
   listFoodEntries,
   setMealPrice,
   updateFoodItem,
@@ -64,13 +65,20 @@ export async function getFoodPricingAction(): Promise<FoodResult<{ pricing: Food
 
 export async function saveFoodEntryAction(raw: unknown): Promise<FoodResult<{ entry: FoodEntryRow; duplicate: boolean }>> {
   try {
-    const parsed = z.object({ requestId: id, meal: z.string(), notes: z.string().max(2000) }).safeParse(raw);
+    const parsed = z.object({ requestId: id, meal: z.string(), notes: z.string().max(2000), amount: z.string().max(20).optional() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That entry could not be read." };
     const checked = validateFoodEntry(parsed.data);
     if (!checked.ok) return { ok: false, error: Object.values(checked.errors)[0] ?? "Check the entry.", fieldErrors: checked.errors as Record<string, string> };
 
+    let amountPaise: number | undefined;
+    if (parsed.data.amount !== undefined && parsed.data.amount.trim() !== "") {
+      const typed = priceToPaise(parsed.data.amount);
+      if (typed === null) return { ok: false, error: "Enter the amount like 60 or 60.50.", fieldErrors: { amount: "Invalid amount" } };
+      amountPaise = typed;
+    }
+
     const { user, db } = await context();
-    const saved = await createFoodEntry(db, user.id, parsed.data.requestId, { meal: checked.meal, notes: checked.notes });
+    const saved = await createFoodEntry(db, user.id, parsed.data.requestId, { meal: checked.meal, notes: checked.notes, amountPaise });
     refresh();
     return { ok: true, ...saved };
   } catch (error) {
@@ -124,6 +132,18 @@ export async function listFoodEntriesAction(raw: unknown): Promise<FoodResult<{ 
     return { ok: true, data: await listFoodEntries(getPrisma(), user.id, parsed.data.from, parsed.data.to) };
   } catch (error) {
     return failure(error, "list entries");
+  }
+}
+
+/** Total food expenses between two days, for the Food Rent tab. */
+export async function getFoodTotalAction(raw: unknown): Promise<FoodResult<{ totalPaise: number; count: number }>> {
+  try {
+    const parsed = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Choose a valid period." };
+    const user = await requireUser();
+    return { ok: true, ...(await getFoodTotal(getPrisma(), user.id, parsed.data.from, parsed.data.to)) };
+  } catch (error) {
+    return failure(error, "food total");
   }
 }
 
@@ -190,4 +210,5 @@ export async function setMealPriceAction(raw: unknown): Promise<PricingResult> {
 export interface FoodActions {
   getPricing: typeof getFoodPricingAction;
   saveEntry: typeof saveFoodEntryAction;
+  getTotal: typeof getFoodTotalAction;
 }

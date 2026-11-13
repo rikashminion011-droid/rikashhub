@@ -42,7 +42,7 @@ const FIELD_NAME: Record<(typeof FIELD_KEYS)[number], string> = {
   category: "Category",
   bank: "Bank Through",
   split: "Split",
-  creditsAdded: "Credits Added",
+  creditsAdded: "Credit History",
 };
 
 function SectionCard({ title, description, children, footer }: { title: string; description: string; children: ReactNode; footer: ReactNode }) {

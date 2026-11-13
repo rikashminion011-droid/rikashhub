@@ -166,7 +166,7 @@ export async function createEntry(
 /** Changes a saved entry. Its date and time stay as they were unless `occurredAt` is given. Balances of the old and new bank are recalculated. */
 export async function updateEntry(db: PrismaClient, userId: string, id: string, entry: ValidQuickPay, occurredAt?: Date): Promise<void> {
   await db.$transaction(async (tx) => {
-    const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null } });
+    const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null, type: { not: "TRANSFER" } } });
     if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
 
     await resolveBanks(tx, userId, [entry.accountId]);
@@ -192,14 +192,65 @@ export async function updateEntry(db: PrismaClient, userId: string, id: string, 
   });
 }
 
+/**
+ * Moves money from one bank to another as a single transaction: the first bank goes down and the second goes up by the same
+ * amount, and it appears once in GPay Transactions. `requestId` makes a double click save it once.
+ */
+export async function createTransfer(
+  db: PrismaClient,
+  userId: string,
+  requestId: string,
+  input: { fromId: string; toId: string; amountPaise: number; reason: string },
+  occurredAt: Date = new Date(),
+): Promise<{ id: string; duplicate: boolean }> {
+  const dedupeKey = `quick-transfer:${requestId}`;
+  if (input.fromId === input.toId) throw new ExpenseError("Choose two different banks.");
+  try {
+    return await db.$transaction(async (tx) => {
+      const already = await tx.transaction.findUnique({ where: { userId_dedupeKey: { userId, dedupeKey } }, select: { id: true } });
+      if (already) return { id: already.id, duplicate: true };
+
+      await resolveBanks(tx, userId, [input.fromId, input.toId]);
+      const created = await tx.transaction.create({
+        data: {
+          userId,
+          type: "TRANSFER",
+          accountId: input.fromId,
+          toAccountId: input.toId,
+          amount: paiseToDecimalString(input.amountPaise),
+          date: parseISODate(istDateOf(occurredAt)),
+          occurredAt,
+          description: input.reason || null,
+          isSplit: false,
+          quickPay: true,
+          dedupeKey,
+        },
+        select: { id: true },
+      });
+      await recomputeBalances(tx, userId, [input.fromId, input.toId]);
+      await tx.auditLog.create({
+        data: { userId, action: "quickpay.transfer", entity: "transaction", entityId: created.id, after: { amountPaise: input.amountPaise, fromId: input.fromId, toId: input.toId } },
+      });
+      return { id: created.id, duplicate: false };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const winner = await db.transaction.findUnique({ where: { userId_dedupeKey: { userId, dedupeKey } }, select: { id: true } });
+      if (winner) return { id: winner.id, duplicate: true };
+    }
+    throw error;
+  }
+}
+
 /** Deletes an entry (kept in the database, hidden everywhere) and recalculates its bank. */
 export async function deleteEntry(db: PrismaClient, userId: string, id: string): Promise<void> {
   await db.$transaction(async (tx) => {
     const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null } });
     if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
     await tx.transaction.update({ where: { id }, data: { deletedAt: new Date() } });
-    const accountId = existing.accountId ?? existing.toAccountId;
-    if (accountId) await recomputeBalances(tx, userId, [accountId]);
+    // A self transfer touches two banks; both are recalculated.
+    const accountIds = [existing.accountId, existing.toAccountId].filter((x): x is string => x !== null);
+    if (accountIds.length > 0) await recomputeBalances(tx, userId, accountIds);
     await tx.auditLog.create({ data: { userId, action: "quickpay.delete", entity: "transaction", entityId: id } });
   });
 }
@@ -268,7 +319,7 @@ export async function createBulk(
 
 export async function getEntry(db: PrismaClient, userId: string, id: string): Promise<EntryDetails | null> {
   const row = await db.transaction.findFirst({
-    where: { id, userId, quickPay: true, deletedAt: null },
+    where: { id, userId, quickPay: true, deletedAt: null, type: { not: "TRANSFER" } },
     include: { splits: { include: { party: { select: { name: true, nameKey: true } } }, orderBy: { createdAt: "asc" } }, creditLinksAsDebit: { select: { creditId: true } } },
   });
   if (!row || !row.occurredAt) return null;
@@ -382,6 +433,8 @@ type RowWithRelations = Prisma.TransactionGetPayload<{ include: typeof includeFo
 function toRow(row: RowWithRelations): TxRow {
   const bankAccount = row.account ?? row.toAccount;
   const amountPaise = paiseOf(row.amount);
+  const nameOf = (a: { name: string; parent: { name: string } | null } | null) => (a ? arrow(a.parent?.name, a.name) : "");
+  const transfer = row.type === "TRANSFER" ? { from: nameOf(row.account), to: nameOf(row.toAccount), fromShort: row.account?.name ?? "", toShort: row.toAccount?.name ?? "" } : null;
   const shares = sharesOf(row.splits, amountPaise);
   return {
     id: row.id,
@@ -390,8 +443,9 @@ function toRow(row: RowWithRelations): TxRow {
     amountPaise,
     reason: row.description ?? "",
     details: row.details ?? "",
-    bank: bankAccount ? arrow(bankAccount.parent?.name, bankAccount.name) : "",
-    bankName: bankAccount?.name ?? "",
+    bank: transfer ? `${transfer.from} → ${transfer.to}` : bankAccount ? arrow(bankAccount.parent?.name, bankAccount.name) : "",
+    bankName: transfer ? `${transfer.fromShort} → ${transfer.toShort}` : (bankAccount?.name ?? ""),
+    transfer: transfer ? { from: transfer.from, to: transfer.to } : null,
     bankId: row.accountId ?? row.toAccountId ?? null,
     category: row.category ? arrow(row.category.parent?.name, row.category.name) : "",
     categoryId: row.categoryId,
@@ -457,8 +511,8 @@ export async function getBalances(db: PrismaClient, userId: string): Promise<Bal
     accounts.map(async (a) => {
       const since = sinceOpening(a.openingAt);
       const [credit, debit] = await Promise.all([
-        db.transaction.aggregate({ where: { userId, deletedAt: null, type: "INCOME", toAccountId: a.id, ...since }, _sum: { amount: true } }),
-        db.transaction.aggregate({ where: { userId, deletedAt: null, type: "EXPENSE", accountId: a.id, ...since }, _sum: { amount: true } }),
+        db.transaction.aggregate({ where: { userId, deletedAt: null, type: { in: ["INCOME", "TRANSFER"] }, toAccountId: a.id, ...since }, _sum: { amount: true } }),
+        db.transaction.aggregate({ where: { userId, deletedAt: null, type: { in: ["EXPENSE", "TRANSFER"] }, accountId: a.id, ...since }, _sum: { amount: true } }),
       ]);
       creditOf.set(a.id, credit._sum.amount ? paiseOf(credit._sum.amount) : 0);
       debitOf.set(a.id, debit._sum.amount ? paiseOf(debit._sum.amount) : 0);
@@ -567,7 +621,7 @@ export interface EntryPatch {
  */
 export async function patchEntry(db: PrismaClient, userId: string, id: string, patch: EntryPatch): Promise<TxRow> {
   await db.$transaction(async (tx) => {
-    const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null } });
+    const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null, type: { not: "TRANSFER" } } });
     if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
 
     const data: Prisma.TransactionUpdateInput = {};

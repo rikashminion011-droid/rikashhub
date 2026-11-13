@@ -1,28 +1,26 @@
 import type { Metadata } from "next";
-import { Zap } from "lucide-react";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
+import { ensureUserSetup } from "@/features/expenses/server/service";
 import {
   addCategoryAction,
   deleteEntryAction,
-  getDayTotalsAction,
   getEntryAction,
-  getEntryIdsAction,
   getOptionsAction,
   getRecentCreditsAction,
+  listPeriodAction,
   saveEntryAction,
+  saveTransferAction,
 } from "@/features/quick-pay/actions";
-import { addPersonAction } from "@/features/users/actions";
-import { getFoodPricingAction, saveFoodEntryAction } from "@/features/food/actions";
+import { getFoodPricingAction, getFoodTotalAction, saveFoodEntryAction } from "@/features/food/actions";
 import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
-import { DaySummary } from "@/features/quick-pay/components/day-summary";
-import { RecentEntries } from "@/features/quick-pay/components/quick-side-panels";
+import { TransactionsPanel } from "@/features/quick-pay/components/transactions-panel";
+import { TransferForm } from "@/features/quick-pay/components/transfer-form";
 import { istDateOf } from "@/features/quick-pay/datetime";
-import { getEntry, listTransactions } from "@/features/quick-pay/server/entries";
+import { getEntry } from "@/features/quick-pay/server/entries";
 import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
-import type { EntryDetails, QuickPayOptions, TxRow, TxTotals } from "@/features/quick-pay/types";
-import { parseTxFilters } from "@/features/quick-pay/filters";
-import { ensureUserSetup } from "@/features/expenses/server/service";
+import type { EntryDetails, QuickPayOptions } from "@/features/quick-pay/types";
+import { addPersonAction } from "@/features/users/actions";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 
@@ -34,70 +32,49 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
   const user = await requireUser();
   const params = await searchParams;
   const entryId = typeof params.entry === "string" && UUID.test(params.entry) ? params.entry : null;
-  const now = new Date();
-  const today = istDateOf(now);
+  const today = istDateOf(new Date());
 
   let options: QuickPayOptions;
   let entry: EntryDetails | null = null;
-  let todayTotals: TxTotals;
-  let recent: TxRow[];
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    const [loadedOptions, todayResult, recentResult, loadedEntry] = await Promise.all([
-      getQuickPayOptions(db, user.id),
-      listTransactions(db, user.id, parseTxFilters({ from: today, to: today }), { pageSize: 1 }),
-      listTransactions(db, user.id, parseTxFilters({}), { pageSize: 5 }),
-      entryId ? getEntry(db, user.id, entryId) : Promise.resolve(null),
-    ]);
-    options = loadedOptions;
-    todayTotals = todayResult.totals;
-    recent = recentResult.rows;
-    entry = loadedEntry;
+    [options, entry] = await Promise.all([getQuickPayOptions(db, user.id), entryId ? getEntry(db, user.id, entryId) : Promise.resolve(null)]);
   } catch (error) {
     console.error("[quick-pay] could not load from the database", error);
     return <DatabaseUnavailable />;
   }
 
-  return (
-    <>
-      <div className="mb-6 flex items-center gap-4">
-        <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
-          <Zap className="size-7 fill-current" aria-hidden />
-        </span>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Quick Entry</h1>
-          <p className="text-sm text-muted-foreground">Record a payment or a meal. Payments show up in GPay Transactions and meals in Monthly Food Tracking straight away.</p>
-        </div>
-      </div>
+  const adders = { addCategory: addCategoryAction, addPerson: addPersonAction };
 
-      <EntryModeSwitch
-        foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction }}
-        payment={
-          <QuickEntryForm
-            // A different entry means a fresh form (keeps the switcher and the fields in step with the URL).
-            key={entry?.id ?? "new"}
-            initialOptions={options}
-            initialEntry={entry}
-            actions={{
-              saveEntry: saveEntryAction,
-              deleteEntry: deleteEntryAction,
-              getEntry: getEntryAction,
-              getEntryIds: getEntryIdsAction,
-              getRecentCredits: getRecentCreditsAction,
-              getOptions: getOptionsAction,
-              addCategory: addCategoryAction,
-              addPerson: addPersonAction,
-            }}
-          />
-        }
-        sidePanels={
-          <>
-            <DaySummary today={today} todayTotals={todayTotals} getDayTotals={getDayTotalsAction} />
-            <RecentEntries rows={recent} />
-          </>
-        }
-      />
-    </>
+  return (
+    <EntryModeSwitch
+      foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction, getTotal: getFoodTotalAction }}
+      transactions={
+        <TransactionsPanel
+          today={today}
+          options={options}
+          actions={{
+            listPeriod: listPeriodAction,
+            deleteEntry: deleteEntryAction,
+            saveEntry: saveEntryAction,
+            getEntry: getEntryAction,
+            getRecentCredits: getRecentCreditsAction,
+            getOptions: getOptionsAction,
+            ...adders,
+          }}
+        />
+      }
+      payment={
+        <QuickEntryForm
+          // A different entry means a fresh form (keeps the switcher and the fields in step with the URL).
+          key={entry?.id ?? "new"}
+          initialOptions={options}
+          initialEntry={entry}
+          actions={{ saveEntry: saveEntryAction, deleteEntry: deleteEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction, getOptions: getOptionsAction, ...adders }}
+        />
+      }
+      transfer={<TransferForm options={options} saveTransfer={saveTransferAction} />}
+    />
   );
 }

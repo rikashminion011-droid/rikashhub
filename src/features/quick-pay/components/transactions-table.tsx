@@ -128,7 +128,16 @@ export function TransactionsTable({
     );
   }
 
-  const cells = (row: TxRow) => ({
+  const cells = (row: TxRow) =>
+    row.transfer
+      ? {
+          // A self transfer is one transaction between two banks: it can be deleted, but not edited like a payment.
+          reason: <span className="px-1 text-sm">{row.reason || "—"}</span>,
+          category: <span className="px-1 text-muted-foreground">—</span>,
+          split: <span className="px-1 text-muted-foreground">—</span>,
+          menu: <RowMenu onEdit={null} onDelete={() => setDeleting(row)} />,
+        }
+      : {
     reason: <ReasonCell value={row.reason} onCommit={(text) => commitReason(row, text)} />,
     category: (
       <CascadingSelect
@@ -144,7 +153,7 @@ export function TransactionsTable({
     ),
     split: <SplitCell row={row} label={labels.split} onOpen={() => setSplitting(row)} onRemove={() => void removeSplit(row)} />,
     menu: <RowMenu onEdit={() => setEditing(row.id)} onDelete={() => setDeleting(row)} />,
-  });
+  };
 
   return (
     <>
@@ -176,9 +185,11 @@ export function TransactionsTable({
                     <p className="font-medium">{when.date}</p>
                     <p className="text-xs text-muted-foreground">{when.timeAndDay}</p>
                   </td>
-                  <td className="px-3 py-2.5 text-right font-medium text-destructive tabular-nums">{row.type === "DEBIT" ? formatINR(row.amountPaise) : ""}</td>
-                  <td className="px-3 py-2.5 text-right font-medium text-success tabular-nums">{row.type === "CREDIT" ? formatINR(row.amountPaise) : ""}</td>
-                  <td className="max-w-56 px-3 py-2.5 break-words text-muted-foreground">{row.details || "—"}</td>
+                  <td className="px-3 py-2.5 text-right font-medium text-destructive tabular-nums">{row.type === "DEBIT" && !row.transfer ? formatINR(row.amountPaise) : ""}</td>
+                  <td className="px-3 py-2.5 text-right font-medium text-success tabular-nums">{row.type === "CREDIT" && !row.transfer ? formatINR(row.amountPaise) : ""}</td>
+                  <td className="max-w-56 px-3 py-2.5 break-words text-muted-foreground">
+                    {row.transfer ? <span className="font-medium text-sky-600">Self transfer · {formatINR(row.amountPaise)}</span> : row.details || "—"}
+                  </td>
                   <td className="max-w-56 px-3 py-1.5">{c.reason}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">{row.bankName || <span className="text-muted-foreground">—</span>}</td>
                   <td className="px-3 py-1.5">{c.category}</td>
@@ -201,8 +212,8 @@ export function TransactionsTable({
             <li key={row.id} className="space-y-2 rounded-xl border bg-card p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className={cn("text-lg font-semibold tabular-nums", debit ? "text-destructive" : "text-success")}>
-                    {debit ? "−" : "+"}
+                  <p className={cn("text-lg font-semibold tabular-nums", row.transfer ? "text-sky-600" : debit ? "text-destructive" : "text-success")}>
+                    {row.transfer ? "⇄ " : debit ? "−" : "+"}
                     {formatINR(row.amountPaise)}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -345,16 +356,18 @@ function SplitCell({ row, label, onOpen, onRemove }: { row: TxRow; label: string
 }
 
 /** ⋮ menu: Edit (opens the pop-up) and Delete. */
-function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function RowMenu({ onEdit, onDelete }: { onEdit: (() => void) | null; onDelete: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Row actions" />}>
         <MoreVertical />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36">
-        <DropdownMenuItem onClick={onEdit}>
-          <Pencil /> Edit
-        </DropdownMenuItem>
+        {onEdit ? (
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil /> Edit
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
           <Trash2 /> Delete
         </DropdownMenuItem>

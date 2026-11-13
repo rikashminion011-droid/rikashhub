@@ -7,10 +7,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { groupBanks, groupCategories } from "../cascade";
-import { withCategory, withKind, withReason, type FormState } from "../entry-state";
+import { cycleId, withCategory, withKind, withReason, type FormState } from "../entry-state";
 import type { QuickPayOptions, RecentCredit } from "../types";
 import { MAX_REASON_LENGTH, type QuickPayErrors } from "../validation";
 import { CreditsPanel } from "./credits-panel";
+import { CycleButton } from "./cycle-button";
 import { InlineAdd, type AddResult } from "./inline-add";
 import { SplitControl } from "./split-control";
 
@@ -30,12 +31,17 @@ function AddLink({ href, children }: { href: string; children: React.ReactNode }
 
 const labelClass = "text-xs font-semibold text-muted-foreground";
 
+/** Older saved settings still call it "Credits Added"; it is now Credit History. */
+const creditLabel = (label: string) => (label === "Credits Added" ? "Credit History" : label);
+
 /**
  * The fields of an entry, laid out compactly so they fit a phone without scrolling:
  *   Amount · Debit · Credit             (one line)
  *   Reason · Category                   (one line)
- *   Bank Through · Split · Credits      (one line)
- * then the Split and Credits Added panels when ticked. Used by Quick Entry and by the edit pop-up.
+ *   Bank Through (with its switch icon)
+ *   Split · Debt · Credit History       (one line)
+ * then the Split and Credit History sections when ticked. No boxes: the form is plain fields on the page.
+ * Used by Quick Entry and by the edit pop-up.
  */
 export function EntryFields({
   form,
@@ -201,21 +207,32 @@ export function EntryFields({
         <label htmlFor={id("bank")} className={labelClass}>
           {labels.bank}
         </label>
-        <CascadingSelect
-          id={id("bank")}
-          ariaLabel={labels.bank}
-          groups={bankGroups}
-          value={form.accountId}
-          onChange={(v) => {
-            setForm((f) => ({ ...f, accountId: v }));
-            clearError("bank");
-          }}
-          placeholder="Choose a bank"
-          searchPlaceholder="Search banks…"
-          emptyText="No bank found. Use Add Details to create one."
-          invalid={!!errors.bank}
-          footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
-        />
+        <div className="flex items-center gap-2">
+          <CascadingSelect
+            id={id("bank")}
+            ariaLabel={labels.bank}
+            groups={bankGroups}
+            value={form.accountId}
+            onChange={(v) => {
+              setForm((f) => ({ ...f, accountId: v }));
+              clearError("bank");
+            }}
+            placeholder="Choose a bank"
+            searchPlaceholder="Search banks…"
+            emptyText="No bank found. Use Add Details to create one."
+            invalid={!!errors.bank}
+            footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
+            className="min-w-0 flex-1"
+          />
+          <CycleButton
+            label="Switch to the next bank"
+            disabled={options.banks.length < 2}
+            onClick={() => {
+              setForm((f) => ({ ...f, accountId: cycleId(options.banks.map((b) => b.id), f.accountId) }));
+              clearError("bank");
+            }}
+          />
+        </div>
       </div>
       {errors.bank ? (
         <p role="alert" className="-mt-2 text-xs text-destructive">
@@ -254,7 +271,7 @@ export function EntryFields({
         {isDebit ? (
           <label className="flex h-9 cursor-pointer items-center gap-2 text-sm font-semibold">
             <Checkbox checked={form.creditsAdded} onCheckedChange={(next) => onToggleCredits(next === true)} />
-            <span className="whitespace-nowrap">{labels.creditsAdded}</span>
+            <span className="whitespace-nowrap">{creditLabel(labels.creditsAdded)}</span>
           </label>
         ) : null}
       </div>
@@ -266,8 +283,13 @@ export function EntryFields({
           credits={credits}
           loading={loadingCredits}
           selected={form.creditIds}
-          onToggle={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [...new Set([...f.creditIds, creditId])] : f.creditIds.filter((x) => x !== creditId) }))}
-          onSetAll={(on) => setForm((f) => ({ ...f, creditIds: on ? (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id) : [] }))}
+          onChoose={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [creditId] : [] }))}
+          onCycle={() =>
+            setForm((f) => {
+              const next = cycleId((credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), f.creditIds[0] ?? null);
+              return next ? { ...f, creditIds: [next] } : f;
+            })
+          }
           source={options.settings.credits.source}
           debitAmount={form.amount}
         />

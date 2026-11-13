@@ -8,10 +8,13 @@ import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { RateLimiter } from "@/lib/security/rate-limit";
 import { istInstant } from "./datetime";
+import { parseTxFilters } from "./filters";
 import { MAX_IMPORT_ROWS, banksNeeded, planImport, type ImportRow } from "./import/plan";
 import {
   createBulk,
   createEntry,
+  createTransfer,
+  listForExport,
   deleteEntry,
   getBalances,
   getDayTotals,
@@ -46,6 +49,7 @@ import {
   parseOpeningBalance,
   validateBulk,
   validateQuickPayInput,
+  validateTransfer,
   type BulkRowErrors,
   type BulkRowInput,
 } from "./validation";
@@ -223,6 +227,46 @@ export async function getOptionsAction(): Promise<QuickPayResult<{ options: Quic
     return { ok: true, options: await getQuickPayOptions(db, user.id) };
   } catch (error) {
     return failure(error, "load options");
+  }
+}
+
+// ───────────────────────── Self transfer and the period list ─────────────────────────
+
+const transferSchema = z.object({ requestId: id, fromId: id.nullable(), toId: id.nullable(), amount: z.string().max(20), reason: z.string().max(1000) });
+
+/** Moves money from one bank to another. Both balances change and it shows once in GPay Transactions. */
+export async function saveTransferAction(raw: unknown): Promise<QuickPayResult<{ id: string; duplicate: boolean; amountPaise: number }>> {
+  try {
+    const parsed = transferSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That transfer could not be read. Reload the page and try again." };
+    const { requestId, ...input } = parsed.data;
+    const checked = validateTransfer(input);
+    if (!checked.ok) {
+      const [first] = Object.values(checked.errors);
+      return { ok: false, error: first ?? "Check the transfer and try again.", fieldErrors: checked.errors as Record<string, string> };
+    }
+    const { user, db } = await context();
+    const saved = await createTransfer(db, user.id, requestId, checked.value);
+    refresh();
+    return { ok: true, id: saved.id, duplicate: saved.duplicate, amountPaise: checked.value.amountPaise };
+  } catch (error) {
+    return failure(error, "save transfer");
+  }
+}
+
+const periodSchema = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+
+/** Every transaction in a period (newest first) with its debit and credit totals, for the Transactions tab. */
+export async function listPeriodAction(raw: unknown): Promise<QuickPayResult<{ rows: TxRow[]; totals: TxTotals; truncated: boolean }>> {
+  try {
+    const parsed = periodSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Choose a valid period." };
+    const user = await requireUser();
+    const filters = parseTxFilters({ from: parsed.data.from, to: parsed.data.to });
+    const result = await listForExport(getPrisma(), user.id, filters, 500);
+    return { ok: true, ...result };
+  } catch (error) {
+    return failure(error, "list period");
   }
 }
 
@@ -478,7 +522,6 @@ export interface QuickPayActions {
   saveEntry: typeof saveEntryAction;
   deleteEntry: typeof deleteEntryAction;
   getEntry: typeof getEntryAction;
-  getEntryIds: typeof getEntryIdsAction;
   getRecentCredits: typeof getRecentCreditsAction;
   getOptions: typeof getOptionsAction;
 }

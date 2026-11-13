@@ -16,7 +16,7 @@ export const DEFAULT_LABELS: Record<FieldKey, string> = {
   category: "Category",
   bank: "Bank Through",
   split: "Split",
-  creditsAdded: "Credits Added",
+  creditsAdded: "Credit History",
 };
 
 export const CREDIT_SOURCES = ["recent_credits", "recent_transactions", "credit_values", "last_transaction"] as const;

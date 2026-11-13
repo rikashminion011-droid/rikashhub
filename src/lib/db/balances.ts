@@ -28,8 +28,8 @@ export async function recomputeBalances(tx: Prisma.TransactionClient, userId: st
   for (const account of accounts) {
     const since = sinceOpening(account.openingAt);
     const [credit, debit] = await Promise.all([
-      tx.transaction.aggregate({ where: { userId, deletedAt: null, type: "INCOME", toAccountId: account.id, ...since }, _sum: { amount: true } }),
-      tx.transaction.aggregate({ where: { userId, deletedAt: null, type: "EXPENSE", accountId: account.id, ...since }, _sum: { amount: true } }),
+      tx.transaction.aggregate({ where: { userId, deletedAt: null, type: { in: ["INCOME", "TRANSFER"] }, toAccountId: account.id, ...since }, _sum: { amount: true } }),
+      tx.transaction.aggregate({ where: { userId, deletedAt: null, type: { in: ["EXPENSE", "TRANSFER"] }, accountId: account.id, ...since }, _sum: { amount: true } }),
     ]);
     const creditOf = new Map([[account.id, credit._sum.amount ? toPaise(credit._sum.amount.toString()) : 0]]);
     const debitOf = new Map([[account.id, debit._sum.amount ? toPaise(debit._sum.amount.toString()) : 0]]);

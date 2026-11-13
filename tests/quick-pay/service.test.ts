@@ -5,6 +5,7 @@ import { parseTxFilters } from "@/features/quick-pay/filters";
 import {
   createBulk,
   createEntry,
+  createTransfer,
   deleteEntry,
   getBalances,
   getEntry,
@@ -476,5 +477,59 @@ describe("people used for Split", () => {
     expect((await options()).persons.map((p) => p.id)).toContain(id);
     await archiveOption(db, ME.id, { kind: "party", id });
     expect((await options()).persons.map((p) => p.id)).not.toContain(id);
+  });
+});
+
+describe("self transfer", () => {
+  it("moves money from one bank to another as one transaction and updates both balances", async () => {
+    const o = await options();
+    const from = bank(o, "GPay → Canara");
+    const to = bank(o, "GPay → DBS");
+    const fromBefore = await currentOf(from);
+    const toBefore = await currentOf(to);
+    const saved = await createTransfer(db, ME.id, rid(), { fromId: from, toId: to, amountPaise: 25000, reason: "Top up" }, istInstant("2026-10-05", "10:00"));
+    expect(await currentOf(from)).toBe(fromBefore - 250);
+    expect(await currentOf(to)).toBe(toBefore + 250);
+
+    const rows = (await listForExport(db, ME.id, parseTxFilters({ from: "2026-10-05", to: "2026-10-05" }))).rows.filter((r) => r.id === saved.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amountPaise: 25000, reason: "Top up", transfer: { from: "GPay → Canara", to: "GPay → DBS" } });
+
+    // the balances screen agrees
+    const groups = (await getBalances(db, ME.id)).groups;
+    const line = (name: string) => groups.find((g) => g.name === "GPay")!.accounts.find((a) => a.name === name)!;
+    expect([line("Canara").currentPaise, line("DBS").currentPaise]).toEqual([(fromBefore - 250) * 100, (toBefore + 250) * 100]);
+  });
+
+  it("is not counted as a debit or a credit in the totals, but is counted as a transaction", async () => {
+    const o = await options();
+    const before = (await listTransactions(db, ME.id, parseTxFilters({ from: "2026-11-02", to: "2026-11-02" }))).totals;
+    await createTransfer(db, ME.id, rid(), { fromId: bank(o, "GPay → Canara"), toId: bank(o, "HDFC"), amountPaise: 10000, reason: "" }, istInstant("2026-11-02", "09:00"));
+    const after = (await listTransactions(db, ME.id, parseTxFilters({ from: "2026-11-02", to: "2026-11-02" }))).totals;
+    expect(after).toEqual({ debitPaise: before.debitPaise, creditPaise: before.creditPaise, count: before.count + 1 });
+  });
+
+  it("saves once when sent twice, and refuses the same bank twice or a bank that belongs to someone else", async () => {
+    const o = await options();
+    const id = rid();
+    const input = { fromId: bank(o, "GPay → Canara"), toId: bank(o, "GPay → DBS"), amountPaise: 1000, reason: "" };
+    const first = await createTransfer(db, ME.id, id, input);
+    const again = await createTransfer(db, ME.id, id, input);
+    expect(again).toEqual({ id: first.id, duplicate: true });
+    await expect(createTransfer(db, ME.id, rid(), { ...input, toId: input.fromId })).rejects.toThrow("two different banks");
+    const theirs = await options(OTHER.id);
+    await expect(createTransfer(db, ME.id, rid(), { ...input, toId: bank(theirs, "HDFC") })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("deleting a transfer puts both balances back, and it cannot be opened or edited like a payment", async () => {
+    const o = await options();
+    const from = bank(o, "GPay → Canara");
+    const to = bank(o, "HDFC");
+    const [a, b] = [await currentOf(from), await currentOf(to)];
+    const saved = await createTransfer(db, ME.id, rid(), { fromId: from, toId: to, amountPaise: 5000, reason: "" });
+    expect(await getEntry(db, ME.id, saved.id)).toBeNull();
+    await expect(updateEntry(db, ME.id, saved.id, entry({ accountId: from }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await deleteEntry(db, ME.id, saved.id);
+    expect([await currentOf(from), await currentOf(to)]).toEqual([a, b]);
   });
 });

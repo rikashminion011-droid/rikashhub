@@ -1,9 +1,10 @@
 "use client";
 
-import { Soup, Wallet } from "lucide-react";
+import { ArrowLeftRight, Receipt, Soup, Wallet } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
+import { SHOW_TRANSACTIONS_EVENT } from "@/features/quick-pay/components/transactions-panel";
 import { FoodEntryForm } from "./food-entry-form";
 
 const DESKTOP = "(min-width: 1024px)";
@@ -15,31 +16,28 @@ const subscribe = (notify: () => void) => {
 /** True on a wide screen. The server (and the first paint) assume a phone. */
 const useIsDesktop = () => useSyncExternalStore(subscribe, () => window.matchMedia(DESKTOP).matches, () => false);
 
-type Panel = "summary" | "payment" | "food";
+type Panel = "transactions" | "payment" | "food" | "transfer";
 
-/** Left to right, as you swipe: Today's Summary, Payment Entry, Food Entry. */
-const ORDER: readonly { id: Panel; label: string }[] = [
-  { id: "summary", label: "Today’s Summary" },
-  { id: "payment", label: "Payment Entry" },
-  { id: "food", label: "Food Entry" },
+/** Left to right, as you swipe: Transactions, Payment Entry, Food Rent, Self Transfer. */
+const ORDER: readonly { id: Panel; label: string; icon: ReactNode }[] = [
+  { id: "transactions", label: "Transactions", icon: <Receipt className="size-4" aria-hidden /> },
+  { id: "payment", label: "Payment Entry", icon: <Wallet className="size-4" aria-hidden /> },
+  { id: "food", label: "Food Rent", icon: <Soup className="size-4" aria-hidden /> },
+  { id: "transfer", label: "Self Transfer", icon: <ArrowLeftRight className="size-4" aria-hidden /> },
 ];
 
 /**
- * Quick Entry's screens.
+ * Quick Entry's screens: Transactions, Payment Entry, Food Rent and Self Transfer, in that order, with one tab bar above.
  *
- * Phone: one row of three pages, Today's Summary, Payment Entry and Food Entry, with a single tab bar above. Payment Entry
- * is showing when the page opens; swipe right for Today's Summary, left for Food Entry (or tap a tab).
- *
- * Wide screen: Payment Entry with Today's Summary beside it, and a Payment Entry / Food Entry switch above.
- *
- * Payment Entry is always the one showing when the page opens. Pages are hidden, not removed, so a half-typed payment is
- * still there when you come back. The swipe is handled here (not with a scrolling box) so dropdowns can open freely.
+ * Payment Entry is showing when the page opens. On a phone you can also swipe left or right to move between the pages (or tap
+ * a tab). Pages are hidden, not removed, so a half-typed payment is still there when you come back. The swipe is handled here
+ * (not with a scrolling box) so dropdowns can open freely.
  */
-export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment: ReactNode; sidePanels: ReactNode; foodActions: FoodActions }) {
+export function EntryModeSwitch({ transactions, payment, transfer, foodActions }: { transactions: ReactNode; payment: ReactNode; transfer: ReactNode; foodActions: FoodActions }) {
   const desktop = useIsDesktop();
   const [active, setActive] = useState<Panel>("payment");
-  // The food form is only created the first time it is opened (so Payment Entry's page load does no extra work).
-  const [foodOpened, setFoodOpened] = useState(false);
+  // These pages are only created the first time they are opened (so Payment Entry's page load does no extra work).
+  const [opened, setOpened] = useState<ReadonlySet<Panel>>(new Set(["payment"]));
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
@@ -58,7 +56,9 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
   }, [active, desktop]);
   const show = (next: Panel) => {
     setActive(next);
-    if (next === "food") setFoodOpened(true);
+    setOpened((o) => (o.has(next) ? o : new Set([...o, next])));
+    // Read the list again, so what was just saved in Payment Entry or Self Transfer is in it.
+    if (next === "transactions") window.dispatchEvent(new Event(SHOW_TRANSACTIONS_EVENT));
   };
   const width = () => frame.current?.clientWidth ?? 360;
 
@@ -108,11 +108,9 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
     setDragging(false);
   }
 
-  // On a wide screen "summary" counts as Payment Entry (the summary sits beside it).
-  const deskMode: "payment" | "food" = active === "food" ? "food" : "payment";
   const offset = desktop ? undefined : `translateX(calc(${-index * 100}% + ${dragX}px))`;
 
-  const tab = (selected: boolean, onClick: () => void, label: string, icon?: ReactNode, className?: string, id?: string) => (
+  const tab = (selected: boolean, onClick: () => void, label: string, icon: ReactNode, id: string) => (
     <button
       data-tab={id}
       type="button"
@@ -120,9 +118,8 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
       aria-selected={selected}
       onClick={onClick}
       className={cn(
-        "flex h-10 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap transition-colors",
+        "flex h-10 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap transition-colors sm:flex-none sm:px-5",
         selected ? "bg-neutral-950 text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
-        className,
       )}
     >
       {icon}
@@ -130,21 +127,25 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
     </button>
   );
 
-  return (
-    <div className="space-y-4 lg:space-y-6">
-      {/* Phone: one tab bar for all three pages */}
-      <div ref={bar} role="tablist" aria-label="Quick Entry pages" className="flex w-full gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] before:w-[28%] before:shrink-0 after:w-[28%] after:shrink-0 lg:hidden [&::-webkit-scrollbar]:hidden">
-        {ORDER.map((p) => (
-          <Fragment key={p.id}>
-            {tab(active === p.id, () => show(p.id), p.label, p.id === "payment" ? <Wallet className="size-4" aria-hidden /> : p.id === "food" ? <Soup className="size-4" aria-hidden /> : null, "sm:flex-none sm:px-6", p.id)}
-          </Fragment>
-        ))}
-      </div>
+  const pages: Record<Panel, ReactNode> = {
+    transactions: opened.has("transactions") ? transactions : null,
+    payment,
+    food: opened.has("food") ? <FoodEntryForm actions={foodActions} /> : null,
+    transfer: opened.has("transfer") ? transfer : null,
+  };
 
-      {/* Wide screen: Payment Entry or Food Entry */}
-      <div role="tablist" aria-label="Entry type" className="hidden w-fit gap-1 rounded-xl bg-muted p-1 lg:flex">
-        {tab(deskMode === "payment", () => show("payment"), "Payment Entry", <Wallet className="size-4" aria-hidden />, "lg:flex-none lg:px-6")}
-        {tab(deskMode === "food", () => show("food"), "Food Entry", <Soup className="size-4" aria-hidden />, "lg:flex-none lg:px-6")}
+  return (
+    <div className="space-y-5">
+      {/* One tab bar for all the pages; on a phone it scrolls, with room at both ends so even the first and last tab can reach the middle */}
+      <div
+        ref={bar}
+        role="tablist"
+        aria-label="Quick Entry pages"
+        className="flex w-full gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] before:w-[20%] before:shrink-0 after:w-[20%] after:shrink-0 sm:w-fit sm:overflow-visible sm:before:hidden sm:after:hidden [&::-webkit-scrollbar]:hidden"
+      >
+        {ORDER.map((p) => (
+          <Fragment key={p.id}>{tab(active === p.id, () => show(p.id), p.label, p.icon, p.id)}</Fragment>
+        ))}
       </div>
 
       <div
@@ -155,29 +156,19 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
         onPointerCancel={end}
         className="overflow-x-clip [touch-action:pan-y] lg:overflow-visible"
       >
-        <div
-          style={{ transform: offset, transition: dragging ? "none" : "transform 250ms ease-out" }}
-          className="flex w-full lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6 lg:!transform-none"
-        >
-          {/* 1. Today's Summary (beside Payment Entry on a wide screen) */}
-          <section
-            id="entry-panel-summary"
-            aria-label="Today's Summary"
-            inert={!desktop && active !== "summary"}
-            className={cn("w-full shrink-0 space-y-6 lg:order-2 lg:w-auto", deskMode === "food" && "lg:hidden")}
-          >
-            {sidePanels}
-          </section>
-
-          {/* 2. Payment Entry */}
-          <section id="entry-panel-payment" aria-label="Payment Entry" inert={!desktop && active !== "payment"} className={cn("w-full shrink-0 lg:order-1 lg:w-auto", deskMode === "food" && "lg:hidden")}>
-            {payment}
-          </section>
-
-          {/* 3. Food Entry */}
-          <section id="entry-panel-food" aria-label="Food Entry" inert={!desktop && active !== "food"} className={cn("w-full shrink-0 lg:order-3 lg:col-span-2 lg:max-w-3xl", deskMode !== "food" && "lg:hidden")}>
-            {foodOpened ? <FoodEntryForm actions={foodActions} /> : null}
-          </section>
+        <div style={{ transform: offset, transition: dragging ? "none" : "transform 250ms ease-out" }} className="flex w-full lg:!transform-none">
+          {ORDER.map((p) => (
+            <section
+              key={p.id}
+              id={`entry-panel-${p.id}`}
+              aria-label={p.label}
+              inert={!desktop && active !== p.id}
+              data-active={active === p.id}
+              className="w-full shrink-0 lg:max-w-3xl lg:data-[active=false]:hidden"
+            >
+              {pages[p.id]}
+            </section>
+          ))}
         </div>
       </div>
     </div>

@@ -14,6 +14,7 @@ import {
   validateBulk,
   validateBulkRow,
   validateQuickPayInput,
+  validateTransfer,
   type BulkRowInput,
   type QuickPayInput,
 } from "@/features/quick-pay/validation";
@@ -220,5 +221,21 @@ describe("bulk rows", () => {
     const result = validateBulk([row({ key: "good" }), row({ key: "bad", debit: "" })], now);
     expect(result).toMatchObject({ ok: false, message: "1 row needs fixing before anything is saved." });
     expect(!result.ok && Object.keys(result.errors)).toEqual(["bad"]);
+  });
+});
+
+describe("validateTransfer", () => {
+  const ok = { fromId: "a", toId: "b", amount: "250.50", reason: " Top up " };
+  it("accepts two different banks and an amount, tidying the reason", () => {
+    expect(validateTransfer(ok)).toEqual({ ok: true, value: { fromId: "a", toId: "b", amountPaise: 25050, reason: "Top up" } });
+  });
+  it("needs both banks, two different ones, and a valid amount", () => {
+    expect(validateTransfer({ ...ok, fromId: null, toId: null, amount: "" })).toEqual({
+      ok: false,
+      errors: { from: "Choose the bank the money comes from.", to: "Choose the bank the money goes to.", amount: "Enter the amount." },
+    });
+    expect(validateTransfer({ ...ok, toId: "a" })).toMatchObject({ ok: false, errors: { to: "Choose two different banks." } });
+    expect(validateTransfer({ ...ok, amount: "0" })).toMatchObject({ ok: false });
+    expect(validateTransfer({ ...ok, reason: "x".repeat(201) })).toMatchObject({ ok: false, errors: { reason: expect.any(String) } });
   });
 });

@@ -7,7 +7,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatINR } from "@/lib/finance";
 import type { QuickAddActions, QuickPayActions } from "../actions";
 import { formatTransactionWhen } from "../datetime";
@@ -180,25 +179,22 @@ export function QuickEntryForm({
 
   const when = current ? formatTransactionWhen(new Date(current.occurredAt)) : null;
 
-  // overflow-visible: the bank and category lists open over the card's edge, so the card must not clip them.
+  // No title and no box: plain fields on the page. Only an entry opened for editing gets a small heading.
   return (
-    <Card className="gap-3 overflow-visible py-4">
-      <CardHeader className="px-4 sm:px-5">
+    <div className="space-y-3">
+      {current ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <CardTitle className="text-lg">{current ? "Edit Entry" : "Quick Entry"}</CardTitle>
+            <p className="text-sm font-semibold">Edit Entry</p>
             {when ? <p className="truncate text-xs text-muted-foreground">{when.date} · {when.timeAndDay}</p> : null}
           </div>
-
-          {current ? (
-            <Button type="button" variant="ghost" size="sm" onClick={startNew}>
-              <Plus /> New
-            </Button>
-          ) : null}
+          <Button type="button" variant="ghost" size="sm" onClick={startNew}>
+            <Plus /> New
+          </Button>
         </div>
-      </CardHeader>
+      ) : null}
 
-      <CardContent className="px-4 sm:px-5">
+      <div>
         <form onSubmit={onSubmit} noValidate method="post" className="space-y-3">
           <EntryFields
             form={form}
@@ -241,7 +237,7 @@ export function QuickEntryForm({
             </Link>
           </p>
         </form>
-      </CardContent>
+      </div>
 
       <ConfirmDialog
         open={confirmDelete}
@@ -251,6 +247,6 @@ export function QuickEntryForm({
         confirmLabel="Delete entry"
         onConfirm={removeEntry}
       />
-    </Card>
+    </div>
   );
 }

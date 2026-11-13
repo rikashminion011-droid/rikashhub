@@ -7,6 +7,7 @@ import {
   deleteFoodEntry,
   deleteFoodItem,
   getFoodPricing,
+  getFoodTotal,
   listFoodEntries,
   setMealPrice,
   updateFoodItem,
@@ -129,5 +130,25 @@ describe("listing", () => {
     await deleteFoodEntry(db, ME.id, entry.id);
     expect((await listFoodEntries(db, ME.id, "2026-10", "2026-10")).rows).toEqual([]);
     expect((await listFoodEntries(db, OTHER.id, "2026-10", "2026-10")).rows.map((r) => r.notes)).toEqual(["Theirs"]);
+  });
+});
+
+describe("an amount typed by hand, and the total for a period", () => {
+  it("saves the amount you typed instead of the calculated price", async () => {
+    const { entry } = await createFoodEntry(db, ME.id, rid(), { meal: "LUNCH", notes: "Fish Gravy", amountPaise: 7500 }, istInstant("2026-08-02", "13:00"));
+    expect(entry.amountPaise).toBe(7500);
+    await expect(createFoodEntry(db, ME.id, rid(), { meal: "LUNCH", notes: "Fish Gravy", amountPaise: -5 })).rejects.toThrow();
+    await expect(createFoodEntry(db, ME.id, rid(), { meal: "LUNCH", notes: "Fish Gravy", amountPaise: 99_999_999_99 })).rejects.toThrow();
+  });
+
+  it("adds up what was spent between two days, in India time, for this user only", async () => {
+    await createFoodEntry(db, ME.id, rid(), { meal: "TIFFIN", notes: "Idli", amountPaise: 3000 }, istInstant("2026-09-10", "00:30"));
+    await createFoodEntry(db, ME.id, rid(), { meal: "DINNER", notes: "Chapati", amountPaise: 4000 }, istInstant("2026-09-10", "23:50"));
+    await createFoodEntry(db, ME.id, rid(), { meal: "DINNER", notes: "Chapati", amountPaise: 4000 }, istInstant("2026-09-11", "00:10"));
+    await createFoodEntry(db, OTHER.id, rid(), { meal: "DINNER", notes: "Chapati", amountPaise: 9999 }, istInstant("2026-09-10", "12:00"));
+    expect(await getFoodTotal(db, ME.id, "2026-09-10", "2026-09-10")).toEqual({ totalPaise: 7000, count: 2 });
+    expect(await getFoodTotal(db, ME.id, "2026-09-10", "2026-09-11")).toEqual({ totalPaise: 11000, count: 3 });
+    expect(await getFoodTotal(db, ME.id, "2026-09-11", "2026-09-10")).toEqual({ totalPaise: 11000, count: 3 });
+    expect(await getFoodTotal(db, ME.id, "2025-01-01", "2025-01-02")).toEqual({ totalPaise: 0, count: 0 });
   });
 });

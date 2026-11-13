@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, withCategory, withKind, withPeople, withReason, withShareValue } from "@/features/quick-pay/entry-state";
+import { cycleId, defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, withCategory, withKind, withPeople, withReason, withShareValue } from "@/features/quick-pay/entry-state";
 import { DEFAULT_SETTINGS, type QuickPaySettingsData } from "@/features/quick-pay/settings-model";
 import type { EntryDetails, RecentCredit } from "@/features/quick-pay/types";
 
@@ -127,12 +127,25 @@ describe("defaultCreditSelection", () => {
     { id: "c3", type: "CREDIT", amountPaise: 400, reason: "", occurredAt: "2026-06-02T00:00:00Z" },
   ];
   const credits = (defaultSelection: "none" | "latest" | "custom", customCount = 2) => ({ ...DEFAULT_SETTINGS.credits, defaultSelection, customCount });
-  it("selects nothing, the latest credit, or the newest few credits (never a debit)", () => {
+  it("selects nothing or the latest credit, never a debit and never more than one", () => {
     expect(defaultCreditSelection(choices, credits("none"))).toEqual([]);
     expect(defaultCreditSelection(choices, credits("latest"))).toEqual(["c1"]);
-    expect(defaultCreditSelection(choices, credits("custom", 2))).toEqual(["c1", "c2"]);
-    expect(defaultCreditSelection(choices, credits("custom", 9))).toEqual(["c1", "c2", "c3"]);
+    // Credit History allows one credit at a time, so a "newest few" setting still selects only the newest.
+    expect(defaultCreditSelection(choices, credits("custom", 2))).toEqual(["c1"]);
+    expect(defaultCreditSelection(choices, credits("custom", 9))).toEqual(["c1"]);
     expect(defaultCreditSelection([], credits("latest"))).toEqual([]);
   });
 });
 
+
+describe("cycleId (the switch icon)", () => {
+  it("moves to the next item, wraps after the last, and starts at the first when nothing is chosen", () => {
+    const banks = ["canara", "idfc", "dbs"];
+    expect(cycleId(banks, null)).toBe("canara");
+    expect(cycleId(banks, "canara")).toBe("idfc");
+    expect(cycleId(banks, "idfc")).toBe("dbs");
+    expect(cycleId(banks, "dbs")).toBe("canara");
+    expect(cycleId(banks, "gone")).toBe("canara");
+    expect(cycleId([], "x")).toBeNull();
+  });
+});

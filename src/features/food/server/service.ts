@@ -134,7 +134,7 @@ export async function createFoodEntry(
   db: PrismaClient,
   userId: string,
   requestId: string,
-  input: { meal: Meal; notes: string },
+  input: { meal: Meal; notes: string; /** An amount typed by hand; it replaces the calculated price. */ amountPaise?: number },
   at: Date = new Date(),
 ): Promise<{ entry: FoodEntryRow; duplicate: boolean }> {
   const dedupeKey = `food-entry:${requestId}`;
@@ -144,11 +144,14 @@ export async function createFoodEntry(
   const pricing = await getFoodPricing(db, userId);
   const meal = pricing.meals[input.meal];
   const custom = new Map(meal.items.map((i) => [foodKey(i.name), i.pricePaise]));
-  const { totalPaise } = priceNotes(input.notes, custom, meal.defaultPaise);
+  const priced = priceNotes(input.notes, custom, meal.defaultPaise).totalPaise;
+  // An amount you typed wins; without one, the price worked out from the saved prices is used.
+  const amountPaise = input.amountPaise !== undefined ? input.amountPaise : priced;
+  if (!Number.isSafeInteger(amountPaise) || amountPaise < 0 || amountPaise > MAX_PRICE_PAISE) throw new ExpenseError("Enter an amount between 0 and 1,00,000.");
 
   try {
     const created = await db.foodEntry.create({
-      data: { userId, meal: input.meal, notes: input.notes, amount: paiseToDecimalString(totalPaise), occurredAt: at, dedupeKey },
+      data: { userId, meal: input.meal, notes: input.notes, amount: paiseToDecimalString(amountPaise), occurredAt: at, dedupeKey },
     });
     return { entry: toRow(created), duplicate: false };
   } catch (error) {
@@ -218,4 +221,11 @@ export async function listFoodEntries(db: PrismaClient, userId: string, fromMont
   });
   const mapped = rows.map(toRow);
   return { rows: mapped, totalPaise: mapped.reduce((s, r) => s + r.amountPaise, 0), count: mapped.length, months };
+}
+
+/** What was spent on food between two days (inclusive, India time), and how many meals. */
+export async function getFoodTotal(db: PrismaClient, userId: string, from: string, to: string): Promise<{ totalPaise: number; count: number }> {
+  const [a, b] = from <= to ? [from, to] : [to, from];
+  const sum = await db.foodEntry.aggregate({ where: { userId, deletedAt: null, occurredAt: rangeToInstants(a, b) }, _sum: { amount: true }, _count: { _all: true } });
+  return { totalPaise: sum._sum.amount ? paiseOf(sum._sum.amount) : 0, count: sum._count._all };
 }

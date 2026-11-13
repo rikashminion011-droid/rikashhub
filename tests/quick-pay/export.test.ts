@@ -15,6 +15,7 @@ const row = (i: number, over: Partial<TxRow> = {}): TxRow => ({
   bankId: null,
   category: "Food → Dosa",
   categoryId: null,
+  transfer: null,
   splitKind: i % 2 ? "SPLIT" : null,
   shares: i % 2 ? [{ partyId: "p1", name: "Mukesh", percent: 100, sharePaise: 12345 }] : [],
   linkedCreditsPaise: 0,

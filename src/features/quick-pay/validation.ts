@@ -107,6 +107,35 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
   };
 }
 
+// ───────────────────────── Self transfer ─────────────────────────
+
+export interface TransferInput {
+  fromId: string | null;
+  toId: string | null;
+  amount: string;
+  reason: string;
+}
+
+export interface TransferErrors {
+  from?: string;
+  to?: string;
+  amount?: string;
+  reason?: string;
+}
+
+export function validateTransfer(input: TransferInput): { ok: true; value: { fromId: string; toId: string; amountPaise: number; reason: string } } | { ok: false; errors: TransferErrors } {
+  const errors: TransferErrors = {};
+  if (!input.fromId) errors.from = "Choose the bank the money comes from.";
+  if (!input.toId) errors.to = "Choose the bank the money goes to.";
+  else if (input.fromId && input.fromId === input.toId) errors.to = "Choose two different banks.";
+  const amount = checkAmount(input.amount);
+  if ("error" in amount) errors.amount = amount.error;
+  const reason = input.reason.trim();
+  if (reason.length > MAX_REASON_LENGTH) errors.reason = `Reason can be at most ${MAX_REASON_LENGTH} characters.`;
+  if (Object.keys(errors).length > 0 || "error" in amount) return { ok: false, errors };
+  return { ok: true, value: { fromId: input.fromId!, toId: input.toId!, amountPaise: amount.paise, reason } };
+}
+
 // ───────────────────────── Bulk entry ─────────────────────────
 
 export interface BulkRowInput {
