@@ -303,6 +303,27 @@ describe("Customized Settings", () => {
     const saved = await saveSettingsSection(db, ME.id, "credits", { source: "last_transaction", listSize: 3, defaultSelection: "custom", customCount: 9 });
     expect(saved.credits).toEqual({ source: "last_transaction", listSize: 3, defaultSelection: "custom", customCount: 3 });
   });
+  it("saves the Bank Through, Switch and Debt sections and puts each back to its defaults", async () => {
+    const options = await getQuickPayOptions(db, ME.id);
+    const bankId = options.banks[0]!.id;
+    const sw = { ...DEFAULT_SETTINGS.switch, split: { enabled: true, mode: "CUSTOM" as const, order: [userB, userA], startId: userA } };
+    await saveSettingsSection(db, ME.id, "banks", { hiddenIds: [bankId] });
+    await saveSettingsSection(db, ME.id, "switch", sw);
+    const saved = await saveSettingsSection(db, ME.id, "debt", { ...DEFAULT_SETTINGS.debt, columns: { ...DEFAULT_SETTINGS.debt.columns, details: false }, hideSettled: true, hiddenPersonIds: [userA], defaultPercent: 50 });
+    expect(saved.banks.hiddenIds).toEqual([bankId]);
+    expect(saved.switch.split).toEqual(sw.split);
+    expect(saved.debt).toMatchObject({ hideSettled: true, hiddenPersonIds: [userA], defaultPercent: 50, columns: { details: false, remaining: true } });
+    expect((await getSettings(db, OTHER.id)).banks.hiddenIds).toEqual([]); // private to each user
+    expect((await resetSettingsSection(db, ME.id, "banks")).banks).toEqual(DEFAULT_SETTINGS.banks);
+    expect((await resetSettingsSection(db, ME.id, "switch")).switch).toEqual(DEFAULT_SETTINGS.switch);
+    expect((await resetSettingsSection(db, ME.id, "debt")).debt).toEqual(DEFAULT_SETTINGS.debt);
+    await expect(saveSettingsSection(db, ME.id, "debt", { ...DEFAULT_SETTINGS.debt, defaultPercent: 0 })).rejects.toThrow();
+  });
+  it("reads split settings saved before the new options existed, filling in their defaults", () => {
+    const old = { enabledByDefault: true, method: "PERCENT", defaultPercent: 40, percentOptions: [40, 50], defaultPartyId: null, defaultFixedPaise: 0 };
+    expect(parseSettings({ split: old }).split).toMatchObject({ defaultPercent: 40, showPercent: true, showAmount: true, equalDivide: true, hiddenPersonIds: [] });
+    expect(parseSettings({}).debt).toEqual(DEFAULT_SETTINGS.debt);
+  });
   it("refuses bad values and references to things that are not yours", async () => {
     await expect(saveSettingsSection(db, ME.id, "split", { ...DEFAULT_SETTINGS.split, defaultPercent: 150 })).rejects.toThrow();
     await expect(saveSettingsSection(db, ME.id, "split", { ...DEFAULT_SETTINGS.split, percentOptions: [] })).rejects.toThrow();

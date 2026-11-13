@@ -74,7 +74,7 @@ function SplitBody({
         shares: row.shares.map((x) => ({ partyId: x.partyId, method: "PERCENT" as const, value: String(Number(x.percent.toFixed(2))), edited: true })),
       };
     }
-    return withKind({ ...base, splitKind: "SPLIT", shares: [] }, "SPLIT", initialOptions.settings.split, initialOptions.settings.split.defaultPartyId);
+    return withKind({ ...base, splitKind: "SPLIT", shares: [] }, "SPLIT", initialOptions.settings, initialOptions.settings.split.defaultPartyId);
   });
   const [errors, setErrors] = useState<QuickPayErrors>({});
   const [saving, setSaving] = useState(false);
@@ -117,12 +117,12 @@ function SplitBody({
       {/* Split or Debt: only one of the two at a time */}
       <div className="flex items-center gap-5" role="group" aria-label="Share as">
         <label className={cn("flex h-9 items-center gap-2 text-sm font-semibold", form.splitKind === "DEBT" ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
-          <Checkbox checked={form.splitKind === "SPLIT"} disabled={form.splitKind === "DEBT"} onCheckedChange={(next) => setForm((f) => withKind(f, next === true ? "SPLIT" : null, options.settings.split, null))} />
+          <Checkbox checked={form.splitKind === "SPLIT"} disabled={form.splitKind === "DEBT"} onCheckedChange={(next) => setForm((f) => withKind(f, next === true ? "SPLIT" : null, options.settings, null))} />
           {options.settings.fields.labels.split}
         </label>
         {isDebit ? (
           <label className={cn("flex h-9 items-center gap-2 text-sm font-semibold", form.splitKind === "SPLIT" ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
-            <Checkbox checked={form.splitKind === "DEBT"} disabled={form.splitKind === "SPLIT"} onCheckedChange={(next) => setForm((f) => withKind(f, next === true ? "DEBT" : null, options.settings.split, null))} />
+            <Checkbox checked={form.splitKind === "DEBT"} disabled={form.splitKind === "SPLIT"} onCheckedChange={(next) => setForm((f) => withKind(f, next === true ? "DEBT" : null, options.settings, null))} />
             Debt
           </label>
         ) : null}

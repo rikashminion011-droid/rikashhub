@@ -661,6 +661,12 @@ export async function getDayTotals(db: PrismaClient, userId: string, date: strin
   return totalsFor(db, where);
 }
 
+/** Debit and credit totals between two days (India time, inclusive), for the header above the tabs. */
+export async function getPeriodTotals(db: PrismaClient, userId: string, from: string, to: string): Promise<TxTotals> {
+  const [a, b] = from <= to ? [from, to] : [to, from];
+  return totalsFor(db, buildWhere(userId, { month: null, from: a, to: b, q: "" }));
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }

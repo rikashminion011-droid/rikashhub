@@ -6,6 +6,7 @@ import {
   deleteEntryAction,
   getEntryAction,
   getOptionsAction,
+  getPeriodTotalsAction,
   getRecentCreditsAction,
   listPeriodAction,
   saveEntryAction,
@@ -49,6 +50,8 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
 
   return (
     <EntryModeSwitch
+      today={today}
+      getTotals={getPeriodTotalsAction}
       foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction, getTotal: getFoodTotalAction }}
       transactions={
         <TransactionsPanel

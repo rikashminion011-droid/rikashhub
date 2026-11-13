@@ -46,7 +46,10 @@ export function TreeEditor({
   actions,
   nouns,
   mainExtra,
+  initialVisible,
 }: {
+  /** Show only this many main items to begin with, with a See more button for the rest. */
+  initialVisible?: number;
   initialNodes: TreeNode[];
   actions: TreeActions;
   nouns: { main: string; sub: string };
@@ -58,6 +61,9 @@ export function TreeEditor({
   const [quickName, setQuickName] = useState("");
   const [quickError, setQuickError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const shown = initialVisible && !expanded ? nodes.slice(0, initialVisible) : nodes;
+  const hiddenCount = nodes.length - shown.length;
 
   /** Runs an action, shows the refreshed list, and returns an error message for the dialog (or null). */
   async function run(call: Promise<TreeResult>, success: string): Promise<string | null> {
@@ -120,7 +126,7 @@ export function TreeEditor({
         </p>
       ) : (
         <ul className="space-y-3">
-          {nodes.map((node) => (
+          {shown.map((node) => (
             <li key={node.id}>
               <Card className="gap-0 py-0">
                 <CardContent className="p-0">
@@ -176,6 +182,11 @@ export function TreeEditor({
           ))}
         </ul>
       )}
+      {initialVisible && nodes.length > initialVisible ? (
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="text-sm font-medium underline-offset-4 hover:underline">
+          {expanded ? "See less" : `See more (${hiddenCount} more)`}
+        </button>
+      ) : null}
 
       <AddOptionDialog
         open={dialog?.type === "addSub"}

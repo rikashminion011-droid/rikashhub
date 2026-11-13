@@ -17,7 +17,10 @@ import {
   setKeywordsAction,
 } from "@/features/quick-pay/actions";
 import { SettingsCenter } from "@/features/quick-pay/components/settings-center";
-import { isSettingsTab, type SettingsTab } from "@/features/quick-pay/settings-tabs";
+import { readSettingsTab, type SettingsTab } from "@/features/quick-pay/settings-tabs";
+import { addFoodItemAction, deleteFoodItemAction, setMealPriceAction, updateFoodItemAction } from "@/features/food/actions";
+import { getFoodPricing } from "@/features/food/server/service";
+import type { FoodPricing } from "@/features/food/types";
 import { getBankTree, getCategoryTree, getQuickPayOptions } from "@/features/quick-pay/server/settings";
 import type { BankTreeNode, CategoryTreeNode, QuickPayOptions } from "@/features/quick-pay/types";
 import { ensureUserSetup } from "@/features/expenses/server/service";
@@ -32,16 +35,17 @@ export const metadata: Metadata = { title: "Customized Settings" };
 export default async function SettingsPage({ searchParams }: PageProps<"/quick-pay/settings">) {
   const user = await requireUser();
   const params = await searchParams;
-  const tab: SettingsTab = isSettingsTab(params.tab) ? params.tab : "users";
+  const tab: SettingsTab = readSettingsTab(params.tab);
 
   let banks: BankTreeNode[];
   let categories: CategoryTreeNode[];
   let people: PersonRow[];
   let options: QuickPayOptions;
+  let food: FoodPricing;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    [banks, categories, people, options] = await Promise.all([getBankTree(db, user.id), getCategoryTree(db, user.id), listPeople(db, user.id), getQuickPayOptions(db, user.id)]);
+    [banks, categories, people, options, food] = await Promise.all([getBankTree(db, user.id), getCategoryTree(db, user.id), listPeople(db, user.id), getQuickPayOptions(db, user.id), getFoodPricing(db, user.id)]);
   } catch (error) {
     console.error("[quick-pay] could not load settings", error);
     return (
@@ -56,7 +60,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/quick-p
     <>
       <PageHeader
         title="Customized Settings"
-        description="Set up users, banks, categories, fields, Split and Credits Added in one place. Changes apply across the whole app as soon as you save."
+        description="Choose a page, then set it up section by section. Changes apply across the whole app as soon as you save."
         actions={
           <Link href="/quick-pay" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             <ArrowLeft className="size-3.5" /> Back to Quick Entry
@@ -69,6 +73,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/quick-p
         categories={categories}
         people={people}
         options={options}
+        food={food}
         actions={{
           addBank: addBankAction,
           addSubBank: addSubBankAction,
@@ -82,6 +87,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/quick-p
           save: saveSettingsAction,
           reset: resetSettingsAction,
           people: { addPerson: addPersonAction, renamePerson: renamePersonAction, removePerson: removePersonAction },
+          food: { addItem: addFoodItemAction, updateItem: updateFoodItemAction, deleteItem: deleteFoodItemAction, setMealPrice: setMealPriceAction },
         }}
       />
     </>

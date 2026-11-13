@@ -10,6 +10,8 @@ import { DebtTable } from "@/features/debt/components/debt-table";
 import { getDebtSummary } from "@/features/debt/server/service";
 import type { DebtSummary } from "@/features/debt/types";
 import { ensureUserSetup } from "@/features/expenses/server/service";
+import { getSettings } from "@/features/quick-pay/server/prefs";
+import type { DebtSettings } from "@/features/quick-pay/settings-model";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { formatINR } from "@/lib/finance";
@@ -21,10 +23,11 @@ export default async function DebtPage() {
   const user = await requireUser();
 
   let summary: DebtSummary;
+  let settings: DebtSettings;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    summary = await getDebtSummary(db, user.id);
+    [summary, settings] = await Promise.all([getDebtSummary(db, user.id), getSettings(db, user.id).then((s) => s.debt)]);
   } catch (error) {
     console.error("[debt] could not load", error);
     return (
@@ -41,12 +44,13 @@ export default async function DebtPage() {
         title="Debt Management"
         description="What each person owes from splits, what they have paid, and what remains. It updates by itself whenever a split is added, changed or removed."
         actions={
-          <Link href="/quick-pay/settings?tab=users" className={cn(buttonVariants({ variant: "outline" }))}>
-            <Settings2 /> <span className="hidden sm:inline">Manage users</span>
+          <Link href="/quick-pay/settings?tab=debt" className={cn(buttonVariants({ variant: "outline" }))}>
+            <Settings2 /> <span className="hidden sm:inline">Customize</span>
           </Link>
         }
       />
       <div className="space-y-5">
+        {settings.showTotals ? (
         <div className="grid gap-3 sm:grid-cols-3">
           <Card className="gap-1 py-4">
             <CardContent className="space-y-1">
@@ -67,7 +71,8 @@ export default async function DebtPage() {
             </CardContent>
           </Card>
         </div>
-        <DebtTable summary={summary} actions={{ getHistory: getDebtHistoryAction, addPayment: addPaymentAction, deletePayment: deletePaymentAction }} />
+        ) : null}
+        <DebtTable settings={settings} summary={summary} actions={{ getHistory: getDebtHistoryAction, addPayment: addPaymentAction, deletePayment: deletePaymentAction }} />
       </div>
     </>
   );

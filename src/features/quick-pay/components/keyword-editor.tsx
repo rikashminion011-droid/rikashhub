@@ -23,15 +23,24 @@ const rowsOf = (tree: readonly CategoryTreeNode[]): Row[] =>
  * Words that pick a category from the Reason in Quick Entry. For example Food: dosa, idli, lunch; Travel: petrol, rapido.
  * Add, edit (click a word) and remove words for any category. A word can belong to one category only.
  */
-export function KeywordEditor({ tree, setKeywords, onTree }: { tree: readonly CategoryTreeNode[]; setKeywords: typeof setKeywordsAction; onTree: (tree: CategoryTreeNode[]) => void }) {
-  const rows = rowsOf(tree);
+export function KeywordEditor({ tree, setKeywords, onTree, initialVisible }: { tree: readonly CategoryTreeNode[]; setKeywords: typeof setKeywordsAction; onTree: (tree: CategoryTreeNode[]) => void; initialVisible?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const all = rowsOf(tree);
+  const rows = initialVisible && !expanded ? all.slice(0, initialVisible) : all;
   if (rows.length === 0) return <p className="text-sm text-muted-foreground">Add a category first, then give it keywords here.</p>;
   return (
-    <ul className="divide-y rounded-xl border">
-      {rows.map((row) => (
-        <KeywordRow key={row.id} row={row} setKeywords={setKeywords} onTree={onTree} />
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <ul className="divide-y rounded-xl border">
+        {rows.map((row) => (
+          <KeywordRow key={row.id} row={row} setKeywords={setKeywords} onTree={onTree} />
+        ))}
+      </ul>
+      {initialVisible && all.length > initialVisible ? (
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="text-sm font-medium underline-offset-4 hover:underline">
+          {expanded ? "See less" : `See more (${all.length - rows.length} more)`}
+        </button>
+      ) : null}
+    </div>
   );
 }
 

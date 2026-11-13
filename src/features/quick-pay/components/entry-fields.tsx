@@ -7,7 +7,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { groupBanks, groupCategories } from "../cascade";
-import { cycleId, withCategory, withKind, withReason, type FormState } from "../entry-state";
+import { visibleBanks } from "../availability";
+import { withCategory, withKind, withReason, type FormState } from "../entry-state";
+import { nextSwitch } from "../switching";
 import type { QuickPayOptions, RecentCredit } from "../types";
 import { MAX_REASON_LENGTH, type QuickPayErrors } from "../validation";
 import { CreditsPanel } from "./credits-panel";
@@ -71,7 +73,10 @@ export function EntryFields({
   onAddPerson: (name: string) => Promise<AddResult>;
 }) {
   const labels = options.settings.fields.labels;
-  const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
+  // Banks switched off in Customized Settings are not offered (the one already on the entry still is).
+  const banks = useMemo(() => visibleBanks(options, [form.accountId]), [options, form.accountId]);
+  const bankGroups = useMemo(() => groupBanks(banks), [banks]);
+  const switches = options.settings.switch;
   const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
   const showCredits = form.type === "DEBIT" && form.creditsAdded;
   const isDebit = form.type === "DEBIT";
@@ -224,14 +229,16 @@ export function EntryFields({
             footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
             className="min-w-0 flex-1"
           />
-          <CycleButton
-            label="Switch to the next bank"
-            disabled={options.banks.length < 2}
-            onClick={() => {
-              setForm((f) => ({ ...f, accountId: cycleId(options.banks.map((b) => b.id), f.accountId) }));
-              clearError("bank");
-            }}
-          />
+          {switches.bank.enabled ? (
+            <CycleButton
+              label="Switch to the next bank"
+              disabled={banks.length < 2}
+              onClick={() => {
+                setForm((f) => ({ ...f, accountId: nextSwitch(switches.bank, banks.map((b) => b.id), f.accountId) }));
+                clearError("bank");
+              }}
+            />
+          ) : null}
         </div>
       </div>
       {errors.bank ? (
@@ -247,7 +254,7 @@ export function EntryFields({
             checked={form.splitKind === "SPLIT"}
             disabled={form.splitKind === "DEBT"}
             onCheckedChange={(next) => {
-              setForm((f) => withKind(f, next === true ? "SPLIT" : null, options.settings.split, options.settings.split.defaultPartyId));
+              setForm((f) => withKind(f, next === true ? "SPLIT" : null, options.settings, options.settings.split.defaultPartyId));
               clearError("split");
               clearError("splitValue");
             }}
@@ -260,7 +267,7 @@ export function EntryFields({
               checked={form.splitKind === "DEBT"}
               disabled={form.splitKind === "SPLIT"}
               onCheckedChange={(next) => {
-                setForm((f) => withKind(f, next === true ? "DEBT" : null, options.settings.split, options.settings.split.defaultPartyId));
+                setForm((f) => withKind(f, next === true ? "DEBT" : null, options.settings, options.settings.split.defaultPartyId));
                 clearError("split");
                 clearError("splitValue");
               }}
@@ -284,9 +291,10 @@ export function EntryFields({
           loading={loadingCredits}
           selected={form.creditIds}
           onChoose={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [creditId] : [] }))}
+          canCycle={switches.credit.enabled}
           onCycle={() =>
             setForm((f) => {
-              const next = cycleId((credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), f.creditIds[0] ?? null);
+              const next = nextSwitch(switches.credit, (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), f.creditIds[0] ?? null);
               return next ? { ...f, creditIds: [next] } : f;
             })
           }

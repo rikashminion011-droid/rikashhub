@@ -18,6 +18,7 @@ import {
   deleteEntry,
   getBalances,
   getDayTotals,
+  getPeriodTotals,
   getEntry,
   importEntries,
   listCreditChoices,
@@ -27,7 +28,7 @@ import {
   updateEntry,
 } from "./server/entries";
 import { getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
-import { SECTION_SCHEMAS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
+import { SECTION_SCHEMAS, SETTINGS_SECTIONS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
 import type { EntryPatch } from "./server/entries";
 import type { TxRow, TxTotals } from "./types";
 import {
@@ -206,6 +207,18 @@ export async function patchEntryAction(raw: unknown): Promise<QuickPayResult<{ r
     return { ok: true, row };
   } catch (error) {
     return failure(error, "patch entry");
+  }
+}
+
+/** Debit and credit totals for a period, for the header above the tabs. */
+export async function getPeriodTotalsAction(raw: unknown): Promise<QuickPayResult<{ totals: TxTotals }>> {
+  try {
+    const parsed = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Choose a valid period." };
+    const user = await requireUser();
+    return { ok: true, totals: await getPeriodTotals(getPrisma(), user.id, parsed.data.from, parsed.data.to) };
+  } catch (error) {
+    return failure(error, "period totals");
   }
 }
 
@@ -411,7 +424,7 @@ export async function importGpayAction(raw: unknown): Promise<QuickPayResult<{ r
 /** Saves one section of the settings ("fields", "split" or "credits"). The server checks it again and returns what is saved. */
 export async function saveSettingsAction(raw: unknown): Promise<QuickPayResult<{ settings: QuickPaySettingsData }>> {
   try {
-    const parsed = z.object({ section: z.enum(["fields", "split", "credits"]), value: z.unknown() }).safeParse(raw);
+    const parsed = z.object({ section: z.enum(SETTINGS_SECTIONS), value: z.unknown() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "Those settings could not be read." };
     const section = parsed.data.section as SettingsSection;
     const checked = SECTION_SCHEMAS[section].safeParse(parsed.data.value);
@@ -427,7 +440,7 @@ export async function saveSettingsAction(raw: unknown): Promise<QuickPayResult<{
 
 export async function resetSettingsAction(raw: unknown): Promise<QuickPayResult<{ settings: QuickPaySettingsData }>> {
   try {
-    const parsed = z.object({ section: z.enum(["fields", "split", "credits"]) }).safeParse(raw);
+    const parsed = z.object({ section: z.enum(SETTINGS_SECTIONS) }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That section could not be found." };
     const { user, db } = await context();
     const settings = await resetSettingsSection(db, user.id, parsed.data.section);

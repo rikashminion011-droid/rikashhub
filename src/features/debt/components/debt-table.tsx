@@ -12,7 +12,9 @@ import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
 import { formatPercent } from "@/features/quick-pay/split";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
+import type { DebtSettings } from "@/features/quick-pay/settings-model";
 import type { DebtActions } from "../actions";
+import { visibleDebtRows } from "../view";
 import type { DebtHistory, DebtRow, DebtSummary } from "../types";
 
 const when = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
@@ -29,17 +31,24 @@ function Remaining({ paise }: { paise: number }) {
 }
 
 /** One row for every person: what they owe from splits, what they have paid, and what remains. */
-export function DebtTable({ summary, actions }: { summary: DebtSummary; actions: DebtActions }) {
+export function DebtTable({ summary: full, actions, settings }: { summary: DebtSummary; actions: DebtActions; settings: DebtSettings }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  // Customized Settings decides who is listed and which columns show.
+  const summary = visibleDebtRows(full, settings);
+  const col = settings.columns;
 
   if (summary.rows.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-14 text-center">
         <UsersRound className="size-7 text-muted-foreground" aria-hidden />
-        <p className="font-medium">No users yet</p>
-        <p className="max-w-sm text-sm text-muted-foreground">Add the people you split expenses with in Customized Settings. They appear here automatically.</p>
-        <Link href="/quick-pay/settings?tab=users" className="mt-1 text-sm font-medium underline underline-offset-4">
-          Add users
+        <p className="font-medium">{full.rows.length === 0 ? "No users yet" : "Nobody to show"}</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          {full.rows.length === 0
+            ? "Add the people you split expenses with in Customized Settings. They appear here automatically."
+            : "Everyone is hidden or settled under your Debt settings. Change them in Customized Settings."}
+        </p>
+        <Link href={full.rows.length === 0 ? "/quick-pay/settings?tab=split" : "/quick-pay/settings?tab=debt"} className="mt-1 text-sm font-medium underline underline-offset-4">
+          {full.rows.length === 0 ? "Add users" : "Debt settings"}
         </Link>
       </div>
     );
@@ -53,41 +62,47 @@ export function DebtTable({ summary, actions }: { summary: DebtSummary; actions:
           <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th scope="col" className="px-4 py-2.5 text-left font-medium">User Name</th>
-              <th scope="col" className="px-4 py-2.5 text-right font-medium">Total Split Amount</th>
-              <th scope="col" className="px-4 py-2.5 text-right font-medium">Split Percentage</th>
-              <th scope="col" className="px-4 py-2.5 text-right font-medium">Amount Paid</th>
-              <th scope="col" className="px-4 py-2.5 text-right font-medium">Remaining Amount</th>
-              <th scope="col" className="px-4 py-2.5 text-right font-medium">Transaction Details</th>
+              {col.splitAmount ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Total Split Amount</th> : null}
+              {col.splitPercent ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Split Percentage</th> : null}
+              {col.paid ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Amount Paid</th> : null}
+              {col.remaining ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Remaining Amount</th> : null}
+              {col.details ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Transaction Details</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y">
             {summary.rows.map((row) => (
               <tr key={row.partyId} className="hover:bg-muted/30">
                 <td className="px-4 py-3 font-medium">{row.name}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{formatINR(row.totalSplitPaise)}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{row.splitPercent === null ? "—" : formatPercent(row.splitPercent)}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-success">{formatINR(row.paidPaise)}</td>
-                <td className="px-4 py-3 text-right">
-                  <Remaining paise={row.remainingPaise} />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setOpenId(row.partyId)}>
-                    <ReceiptText /> View{row.splitCount ? ` (${row.splitCount})` : ""}
-                  </Button>
-                </td>
+                {col.splitAmount ? <td className="px-4 py-3 text-right tabular-nums">{formatINR(row.totalSplitPaise)}</td> : null}
+                {col.splitPercent ? <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{row.splitPercent === null ? "—" : formatPercent(row.splitPercent)}</td> : null}
+                {col.paid ? <td className="px-4 py-3 text-right tabular-nums text-success">{formatINR(row.paidPaise)}</td> : null}
+                {col.remaining ? (
+                  <td className="px-4 py-3 text-right">
+                    <Remaining paise={row.remainingPaise} />
+                  </td>
+                ) : null}
+                {col.details ? (
+                  <td className="px-4 py-2 text-right">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setOpenId(row.partyId)}>
+                      <ReceiptText /> View{row.splitCount ? ` (${row.splitCount})` : ""}
+                    </Button>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/30 font-semibold">
               <td className="px-4 py-3">Total</td>
-              <td className="px-4 py-3 text-right tabular-nums">{formatINR(summary.totalSplitPaise)}</td>
-              <td />
-              <td className="px-4 py-3 text-right tabular-nums text-success">{formatINR(summary.totalPaidPaise)}</td>
-              <td className="px-4 py-3 text-right">
-                <Remaining paise={summary.totalRemainingPaise} />
-              </td>
-              <td />
+              {col.splitAmount ? <td className="px-4 py-3 text-right tabular-nums">{formatINR(summary.totalSplitPaise)}</td> : null}
+              {col.splitPercent ? <td /> : null}
+              {col.paid ? <td className="px-4 py-3 text-right tabular-nums text-success">{formatINR(summary.totalPaidPaise)}</td> : null}
+              {col.remaining ? (
+                <td className="px-4 py-3 text-right">
+                  <Remaining paise={summary.totalRemainingPaise} />
+                </td>
+              ) : null}
+              {col.details ? <td /> : null}
             </tr>
           </tfoot>
         </table>
@@ -99,25 +114,35 @@ export function DebtTable({ summary, actions }: { summary: DebtSummary; actions:
           <li key={row.partyId} className="space-y-3 rounded-xl border bg-card p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-base font-semibold">{row.name}</p>
-              <Remaining paise={row.remainingPaise} />
+              {col.remaining ? <Remaining paise={row.remainingPaise} /> : null}
             </div>
-            <dl className="grid grid-cols-3 gap-2 text-xs">
-              <div>
-                <dt className="text-muted-foreground">Split total</dt>
-                <dd className="font-medium tabular-nums">{formatINR(row.totalSplitPaise)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Split %</dt>
-                <dd className="font-medium tabular-nums">{row.splitPercent === null ? "—" : formatPercent(row.splitPercent)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Paid</dt>
-                <dd className="font-medium tabular-nums text-success">{formatINR(row.paidPaise)}</dd>
-              </div>
-            </dl>
-            <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setOpenId(row.partyId)}>
-              <ReceiptText /> Transaction details{row.splitCount ? ` (${row.splitCount})` : ""}
-            </Button>
+            {col.splitAmount || col.splitPercent || col.paid ? (
+              <dl className="grid grid-cols-3 gap-2 text-xs">
+                {col.splitAmount ? (
+                  <div>
+                    <dt className="text-muted-foreground">Split total</dt>
+                    <dd className="font-medium tabular-nums">{formatINR(row.totalSplitPaise)}</dd>
+                  </div>
+                ) : null}
+                {col.splitPercent ? (
+                  <div>
+                    <dt className="text-muted-foreground">Split %</dt>
+                    <dd className="font-medium tabular-nums">{row.splitPercent === null ? "—" : formatPercent(row.splitPercent)}</dd>
+                  </div>
+                ) : null}
+                {col.paid ? (
+                  <div>
+                    <dt className="text-muted-foreground">Paid</dt>
+                    <dd className="font-medium tabular-nums text-success">{formatINR(row.paidPaise)}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            ) : null}
+            {col.details ? (
+              <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setOpenId(row.partyId)}>
+                <ReceiptText /> Transaction details{row.splitCount ? ` (${row.splitCount})` : ""}
+              </Button>
+            ) : null}
           </li>
         ))}
       </ul>

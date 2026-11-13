@@ -6,7 +6,8 @@ import type { AddResult } from "./inline-add";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { withPeople, withShareValue, type FormShare, type FormState } from "../entry-state";
-import { cycleId } from "../entry-state";
+import { availablePersons } from "../availability";
+import { nextSwitch } from "../switching";
 import { resolveShares } from "../shares";
 import { formatPercent, resolveSplit } from "../split";
 import type { QuickPayOptions } from "../types";
@@ -42,6 +43,11 @@ export function SplitControl({
   const amountPaise = parseAmountInput(form.amount);
   const nameOf = (id: string) => options.persons.find((p) => p.id === id)?.name ?? "Person";
   const several = form.shares.length > 1;
+  const chosenIds = form.shares.map((s) => s.partyId);
+  // People left out of this kind of sharing in Customized Settings are not offered (one already chosen stays).
+  const people = availablePersons(options, kind, chosenIds);
+  const { showPercent, showAmount } = options.settings.split;
+  const switchConfig = options.settings.switch.split;
 
   const totals = amountPaise ? resolveShares(amountPaise, form.shares.map(({ partyId, method, value }) => ({ partyId, method, value }))) : null;
   const edit = (share: FormShare) => (method: "PERCENT" | "FIXED", value: string) => {
@@ -52,28 +58,28 @@ export function SplitControl({
   const picker = (
     <PeoplePicker
       ariaLabel={kind === "DEBT" ? "Who owes this" : "Split with"}
-      people={options.persons}
-      selected={form.shares.map((s) => s.partyId)}
+      people={people}
+      selected={chosenIds}
       invalid={!!errors.split}
       onChange={(ids) => {
-        setForm((f) => withPeople(f, ids, options.settings.split));
+        setForm((f) => withPeople(f, ids, options.settings));
         clearError("split");
         clearError("splitValue");
       }}
       onAddPerson={onAddPerson}
     />
   );
-  const cycle = (
+  const cycle = switchConfig.enabled ? (
     <CycleButton
       label={several ? "Switch person (works with one person)" : "Switch to the next person"}
-      disabled={several || options.persons.length < 2}
+      disabled={several || people.length < 2}
       onClick={() => {
-        const next = cycleId(options.persons.map((p) => p.id), form.shares[0]?.partyId ?? null);
-        if (next) setForm((f) => withPeople(f, [next], options.settings.split));
+        const next = nextSwitch(switchConfig, people.map((p) => p.id), form.shares[0]?.partyId ?? null);
+        if (next) setForm((f) => withPeople(f, [next], options.settings));
         clearError("split");
       }}
     />
-  );
+  ) : null;
 
   return (
     <div id={`${idPrefix}-field-split`} className="scroll-mt-24 space-y-2">
@@ -86,6 +92,8 @@ export function SplitControl({
             amountPaise={amountPaise}
             savedPaise={totals?.ok ? (totals.shares[0]?.sharePaise ?? null) : null}
             percentOptions={percentOptions}
+            showPercent={showPercent}
+            showAmount={showAmount}
             onChange={edit(form.shares[0]!)}
           />
         ) : null}
@@ -106,6 +114,8 @@ export function SplitControl({
                 // What will really be saved (the last person takes the odd paisa), so the screen and the saved amounts agree.
                 savedPaise={totals?.ok ? (totals.shares[index]?.sharePaise ?? null) : null}
                 percentOptions={percentOptions}
+                showPercent={showPercent}
+                showAmount={showAmount}
                 onChange={edit(share)}
               />
             </li>
@@ -136,8 +146,12 @@ function ShareFields({
   amountPaise,
   percentOptions,
   savedPaise,
+  showPercent,
+  showAmount,
   onChange,
 }: {
+  showPercent: boolean;
+  showAmount: boolean;
   savedPaise: number | null;
   share: FormShare;
   name: string;
@@ -152,6 +166,7 @@ function ShareFields({
 
   return (
     <>
+      {showPercent ? (
       <select
         aria-label={`${name}: split percentage`}
         value={inList ? String(percent) : CUSTOM}
@@ -167,6 +182,8 @@ function ShareFields({
         ))}
         <option value={CUSTOM}>{percent !== null && !inList && Number.isFinite(percent) ? formatPercent(percent) : "Custom"}</option>
       </select>
+      ) : null}
+      {showAmount ? (
       <div className="relative w-24 shrink-0">
         <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">
           ₹
@@ -181,6 +198,7 @@ function ShareFields({
           className="h-10 w-full rounded-lg border border-input bg-background pr-2 pl-6 text-right text-base tabular-nums outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
         />
       </div>
+      ) : null}
     </>
   );
 }

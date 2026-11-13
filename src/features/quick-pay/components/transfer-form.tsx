@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input";
 import { formatINR } from "@/lib/finance";
 import type { saveTransferAction } from "../actions";
 import { groupBanks } from "../cascade";
-import { cycleId } from "../entry-state";
+import { visibleBanks } from "../availability";
+import { nextSwitch } from "../switching";
 import type { QuickPayOptions } from "../types";
 import { MAX_REASON_LENGTH, validateTransfer, type TransferErrors } from "../validation";
 import { CycleButton } from "./cycle-button";
+import { notifyDataChanged } from "./period-context";
 
 const labelClass = "text-xs font-semibold text-muted-foreground";
 const newRequestId = () => crypto.randomUUID();
@@ -24,8 +26,10 @@ const newRequestId = () => crypto.randomUUID();
  */
 export function TransferForm({ options, saveTransfer }: { options: QuickPayOptions; saveTransfer: typeof saveTransferAction }) {
   const router = useRouter();
-  const groups = useMemo(() => groupBanks(options.banks), [options.banks]);
-  const ids = useMemo(() => options.banks.map((b) => b.id), [options.banks]);
+  // Banks switched off in Customized Settings are not offered here either.
+  const banks = useMemo(() => visibleBanks(options), [options]);
+  const groups = useMemo(() => groupBanks(banks), [banks]);
+  const ids = useMemo(() => banks.map((b) => b.id), [banks]);
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
@@ -66,6 +70,7 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
     setAmount("");
     setReason("");
     setRequestId(newRequestId());
+    notifyDataChanged();
     router.refresh();
   }
 
@@ -94,14 +99,16 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
             invalid={!!error}
             className="min-w-0 flex-1"
           />
-          <CycleButton
-            label={`Switch the ${which === "from" ? "From" : "To"} bank to the next one`}
-            disabled={ids.length < 2}
-            onClick={() => {
-              set(cycleId(ids, value));
-              setErrors((e) => ({ ...e, [which]: undefined }));
-            }}
-          />
+          {options.settings.switch.bank.enabled ? (
+            <CycleButton
+              label={`Switch the ${which === "from" ? "From" : "To"} bank to the next one`}
+              disabled={ids.length < 2}
+              onClick={() => {
+                set(nextSwitch(options.settings.switch.bank, ids, value));
+                setErrors((e) => ({ ...e, [which]: undefined }));
+              }}
+            />
+          ) : null}
         </div>
         {error ? (
           <p role="alert" className="text-xs text-destructive">

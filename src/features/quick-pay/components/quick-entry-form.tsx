@@ -14,6 +14,7 @@ import { defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, type Fo
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
 import { validateQuickPayInput, type QuickPayErrors } from "../validation";
 import { EntryFields } from "./entry-fields";
+import { notifyDataChanged } from "./period-context";
 import { useQuickAdd } from "./use-quick-add";
 
 const newRequestId = () => crypto.randomUUID();
@@ -136,6 +137,7 @@ export function QuickEntryForm({
       return;
     }
 
+    notifyDataChanged();
     if (result.updated) {
       toast.success("Entry updated.");
       setCurrent({
@@ -166,6 +168,7 @@ export function QuickEntryForm({
     const result = await actions.deleteEntry({ id: current.id });
     if (!result.ok) return result.error;
     toast.success("Entry deleted.");
+    notifyDataChanged();
     setCurrent(null);
     setFormState(emptyState(options.settings, options));
     setRequestId(newRequestId());

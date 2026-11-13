@@ -41,7 +41,7 @@ describe("emptyState", () => {
 });
 
 describe("choosing people for a Split or a Debt", () => {
-  const split = DEFAULT_SETTINGS.split;
+  const split = DEFAULT_SETTINGS;
   const start = emptyState(DEFAULT_SETTINGS);
 
   it("one person starts at 50% for a Split and 100% for a Debt", () => {

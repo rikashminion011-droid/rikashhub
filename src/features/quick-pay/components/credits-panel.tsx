@@ -20,6 +20,7 @@ export function CreditsPanel({
   selected,
   onChoose,
   onCycle,
+  canCycle: cycleEnabled = true,
   source,
   debitAmount,
 }: {
@@ -29,6 +30,8 @@ export function CreditsPanel({
   /** Picks this credit, or clears the choice when it is already the chosen one. */
   onChoose: (id: string, on: boolean) => void;
   onCycle: () => void;
+  /** False when the switch icon is turned off in Customized Settings. */
+  canCycle?: boolean;
   source: CreditSource;
   debitAmount: string;
 }) {
@@ -41,7 +44,7 @@ export function CreditsPanel({
     <div className="space-y-2" aria-live="polite">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-semibold text-muted-foreground">{CREDIT_SOURCE_LABEL[source]}: choose one</p>
-        <CycleButton label="Switch to the next credit" onClick={onCycle} disabled={!canCycle} className="size-8" />
+        {cycleEnabled ? <CycleButton label="Switch to the next credit" onClick={onCycle} disabled={!canCycle} className="size-8" /> : null}
       </div>
       {loading ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">

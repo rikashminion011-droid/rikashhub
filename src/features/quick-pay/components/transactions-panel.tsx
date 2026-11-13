@@ -11,10 +11,10 @@ import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { deleteEntryAction, listPeriodAction } from "../actions";
 import { formatTransactionWhen } from "../datetime";
-import { periodFor, periodRange, type Period } from "../period";
+import { periodRange, type Period } from "../period";
 import type { QuickPayOptions, TxRow, TxTotals } from "../types";
 import { EditEntryDialog, type EditActions } from "./edit-entry-dialog";
-import { PeriodNavigator } from "./period-navigator";
+import { DATA_CHANGED_EVENT, notifyDataChanged, usePeriod } from "./period-context";
 
 /** Sent by the page's tab bar when this tab is opened, so the list is read again and shows what was saved elsewhere. */
 export const SHOW_TRANSACTIONS_EVENT = "quickpay:show-transactions";
@@ -31,7 +31,8 @@ export interface TransactionsPanelActions extends EditActions {
  */
 export function TransactionsPanel({ today, options, actions }: { today: string; options: QuickPayOptions; actions: TransactionsPanelActions }) {
   const router = useRouter();
-  const [period, setPeriod] = useState<Period>(() => periodFor("day", today));
+  // The period is chosen in the header above the tabs.
+  const { period } = usePeriod(today);
   const [data, setData] = useState<{ rows: TxRow[]; totals: TxTotals; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [oldestFirst, setOldestFirst] = useState(true);
@@ -61,7 +62,11 @@ export function TransactionsPanel({ today, options, actions }: { today: string; 
   useEffect(() => {
     const again = () => load(period);
     window.addEventListener(SHOW_TRANSACTIONS_EVENT, again);
-    return () => window.removeEventListener(SHOW_TRANSACTIONS_EVENT, again);
+    window.addEventListener(DATA_CHANGED_EVENT, again);
+    return () => {
+      window.removeEventListener(SHOW_TRANSACTIONS_EVENT, again);
+      window.removeEventListener(DATA_CHANGED_EVENT, again);
+    };
   }, [period, load]);
 
   async function confirmDelete(): Promise<string | null> {
@@ -69,7 +74,7 @@ export function TransactionsPanel({ today, options, actions }: { today: string; 
     const result = await actions.deleteEntry({ id: deleting.id });
     if (!result.ok) return result.error;
     toast.success("Transaction deleted. Totals and balances updated.");
-    load(period);
+    notifyDataChanged();
     router.refresh();
     return null;
   }
@@ -78,24 +83,6 @@ export function TransactionsPanel({ today, options, actions }: { today: string; 
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
-        <div className="flex flex-wrap gap-x-8 gap-y-2">
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground">Total Debit</p>
-            <p className="text-2xl font-bold tracking-tight text-red-600 tabular-nums" aria-live="polite">
-              {data ? formatINR(data.totals.debitPaise) : "…"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground">Total Credit</p>
-            <p className="text-2xl font-bold tracking-tight text-green-600 tabular-nums" aria-live="polite">
-              {data ? formatINR(data.totals.creditPaise) : "…"}
-            </p>
-          </div>
-        </div>
-        <PeriodNavigator value={period} onChange={setPeriod} today={today} />
-      </div>
-
       <div className="flex items-center justify-between gap-3 text-sm">
         <p className="text-muted-foreground">{data ? `${data.totals.count} record${data.totals.count === 1 ? "" : "s"} found` : "Loading…"}</p>
         <button type="button" onClick={() => setOldestFirst((v) => !v)} className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
@@ -167,7 +154,7 @@ export function TransactionsPanel({ today, options, actions }: { today: string; 
         actions={actions}
         onClose={() => setEditing(null)}
         onSaved={() => {
-          load(period);
+          notifyDataChanged();
           router.refresh();
         }}
       />

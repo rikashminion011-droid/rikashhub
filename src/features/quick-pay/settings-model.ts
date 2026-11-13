@@ -58,6 +58,56 @@ export const splitSchema = z.object({
   defaultPartyId: uuid.nullable(),
   /** The share filled in for the FIXED method, in paise. 0 leaves it empty. */
   defaultFixedPaise: z.number().int().min(0).max(99_999_999_99),
+  /** People who are not offered in Split (they stay in your list and in Debt Management). */
+  hiddenPersonIds: z.array(uuid).max(500).default([]),
+  /** Whether each person's line shows the percentage list and the amount box. */
+  showPercent: z.boolean().default(true),
+  showAmount: z.boolean().default(true),
+  /** With several people chosen: divide equally (₹50 and two people is ₹25 each), or give each the default percentage. */
+  equalDivide: z.boolean().default(true),
+});
+
+/** The Bank Through list in Quick Entry: banks listed here are left out of its dropdowns (they still exist everywhere else). */
+export const banksSchema = z.object({ hiddenIds: z.array(uuid).max(500).default([]) });
+
+export const SWITCH_FEATURES = ["bank", "split", "credit"] as const;
+export type SwitchFeature = (typeof SWITCH_FEATURES)[number];
+export const SWITCH_LABEL: Record<SwitchFeature, string> = { bank: "Bank Through", split: "Split (person)", credit: "Credit History" };
+
+const switchFeatureSchema = z.object({
+  /** Whether the switch icon is shown beside it. */
+  enabled: z.boolean(),
+  /** SEQUENTIAL: the list in its own order. CUSTOM: only the options in `order`, in that order. */
+  mode: z.enum(["SEQUENTIAL", "CUSTOM"]),
+  /** For CUSTOM: ids of the options, in the order the switch moves through them. */
+  order: z.array(z.string().max(60)).max(200),
+  /** The option the first press lands on when nothing is chosen yet; null means the first one. */
+  startId: z.string().max(60).nullable(),
+});
+export type SwitchSettings = z.infer<typeof switchFeatureSchema>;
+export const switchSchema = z.object({ bank: switchFeatureSchema, split: switchFeatureSchema, credit: switchFeatureSchema });
+
+export const DEBT_COLUMNS = ["splitAmount", "splitPercent", "paid", "remaining", "details"] as const;
+export type DebtColumn = (typeof DEBT_COLUMNS)[number];
+export const DEBT_COLUMN_LABEL: Record<DebtColumn, string> = {
+  splitAmount: "Total Split Amount",
+  splitPercent: "Split Percentage",
+  paid: "Amount Paid",
+  remaining: "Remaining Amount",
+  details: "Transaction Details",
+};
+
+/** How Debt Management looks, and how a Debt starts in Quick Entry. */
+export const debtSchema = z.object({
+  columns: z.object({ splitAmount: z.boolean(), splitPercent: z.boolean(), paid: z.boolean(), remaining: z.boolean(), details: z.boolean() }),
+  /** The three totals above the table. */
+  showTotals: z.boolean(),
+  /** Leave out people who owe nothing and have paid nothing ahead. */
+  hideSettled: z.boolean(),
+  /** People who are not shown in Debt Management or offered for a Debt in Quick Entry. */
+  hiddenPersonIds: z.array(uuid).max(500),
+  /** The percentage a single person starts with when Debt is ticked. */
+  defaultPercent: percent,
 });
 
 export const creditsSchema = z.object({
@@ -69,20 +119,48 @@ export const creditsSchema = z.object({
   customCount: z.number().int().min(1).max(50),
 });
 
-export const settingsSchema = z.object({ fields: fieldsSchema, split: splitSchema, credits: creditsSchema });
+export const settingsSchema = z.object({ fields: fieldsSchema, split: splitSchema, credits: creditsSchema, banks: banksSchema, switch: switchSchema, debt: debtSchema });
 
 export type FieldsSettings = z.infer<typeof fieldsSchema>;
 export type SplitSettings = z.infer<typeof splitSchema>;
 export type CreditsSettings = z.infer<typeof creditsSchema>;
+export type BanksSettings = z.infer<typeof banksSchema>;
+export type SwitchAllSettings = z.infer<typeof switchSchema>;
+export type DebtSettings = z.infer<typeof debtSchema>;
 export type QuickPaySettingsData = z.infer<typeof settingsSchema>;
 export type SettingsSection = keyof QuickPaySettingsData;
 
-export const SECTION_SCHEMAS = { fields: fieldsSchema, split: splitSchema, credits: creditsSchema } as const;
+export const SECTION_SCHEMAS = { fields: fieldsSchema, split: splitSchema, credits: creditsSchema, banks: banksSchema, switch: switchSchema, debt: debtSchema } as const;
+export const SETTINGS_SECTIONS = ["fields", "split", "credits", "banks", "switch", "debt"] as const;
 
 export const DEFAULT_SETTINGS: QuickPaySettingsData = {
   fields: { labels: { ...DEFAULT_LABELS }, defaults: { type: "DEBIT", bankId: null, categoryId: null } },
-  split: { enabledByDefault: false, method: "PERCENT", defaultPercent: 50, percentOptions: [...DEFAULT_PERCENT_OPTIONS], defaultPartyId: null, defaultFixedPaise: 0 },
+  split: {
+    enabledByDefault: false,
+    method: "PERCENT",
+    defaultPercent: 50,
+    percentOptions: [...DEFAULT_PERCENT_OPTIONS],
+    defaultPartyId: null,
+    defaultFixedPaise: 0,
+    hiddenPersonIds: [],
+    showPercent: true,
+    showAmount: true,
+    equalDivide: true,
+  },
   credits: { source: "recent_credits", listSize: 10, defaultSelection: "none", customCount: 1 },
+  banks: { hiddenIds: [] },
+  switch: {
+    bank: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+    split: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+    credit: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+  },
+  debt: {
+    columns: { splitAmount: true, splitPercent: true, paid: true, remaining: true, details: true },
+    showTotals: true,
+    hideSettled: false,
+    hiddenPersonIds: [],
+    defaultPercent: 100,
+  },
 };
 
 /** Percentages sorted, without repeats. */
@@ -98,5 +176,5 @@ export function parseSettings(stored: unknown): QuickPaySettingsData {
     const parsed = SECTION_SCHEMAS[key].safeParse(raw[key]);
     return (parsed.success ? parsed.data : DEFAULT_SETTINGS[key]) as QuickPaySettingsData[K];
   };
-  return { fields: read("fields"), split: read("split"), credits: read("credits") };
+  return { fields: read("fields"), split: read("split"), credits: read("credits"), banks: read("banks"), switch: read("switch"), debt: read("debt") };
 }

@@ -120,14 +120,17 @@ export function defaultCreditSelection(choices: readonly RecentCredit[], setting
 
 /**
  * The people chosen for a Split or Debt. A person's share you have not typed yourself is worked out again whenever the
- * group changes: one person gets 50% (a Split) or 100% (a Debt), several divide the amount equally. Shares you typed stay as they are.
+ * group changes: one person gets the default percentage (50% for a Split, 100% for a Debt, both set in Customized Settings),
+ * several divide the amount equally. Shares you typed stay as they are.
  */
-export function withPeople(form: FormState, ids: readonly string[], settings: QuickPaySettingsData["split"]): FormState {
+export function withPeople(form: FormState, ids: readonly string[], settings: QuickPaySettingsData): FormState {
   if (!form.splitKind) return form;
   const kind = form.splitKind;
   const existing = new Map(form.shares.map((s) => [s.partyId, s]));
   const people = ids.map((id) => existing.get(id) ?? ({ partyId: id, method: "PERCENT", value: "", edited: false } satisfies FormShare));
-  const autos = evenPercents(people.length, singlePercent(kind, settings.defaultPercent));
+  const single = singlePercent(kind, settings.split.defaultPercent, settings.debt.defaultPercent);
+  // Several people share equally (50% each for two); with "equal" turned off each one starts at the default percentage.
+  const autos = settings.split.equalDivide || people.length === 1 ? evenPercents(people.length, single) : people.map(() => single);
   return {
     ...form,
     shares: people.map((p, i) => (p.edited ? p : { ...p, method: "PERCENT", value: String(autos[i]) })),
@@ -135,7 +138,7 @@ export function withPeople(form: FormState, ids: readonly string[], settings: Qu
 }
 
 /** Switches between Split and Debt (or off), keeping the chosen people and working their shares out again. */
-export function withKind(form: FormState, kind: SplitKind | null, settings: QuickPaySettingsData["split"], defaultPartyId: string | null): FormState {
+export function withKind(form: FormState, kind: SplitKind | null, settings: QuickPaySettingsData, defaultPartyId: string | null): FormState {
   if (kind === null) return { ...form, splitKind: null, shares: [] };
   const ids = form.shares.length > 0 ? form.shares.map((s) => s.partyId) : defaultPartyId ? [defaultPartyId] : [];
   // The shares are re-divided for the new kind, so a Debt starts at 100% where a Split starts at 50%.

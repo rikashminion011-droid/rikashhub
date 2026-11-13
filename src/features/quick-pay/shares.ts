@@ -41,7 +41,7 @@ export function evenPercents(count: number, single: number): number[] {
 }
 
 /** The percentage a lone person starts with. */
-export const singlePercent = (kind: SplitKind, splitDefault: number) => (kind === "DEBT" ? 100 : splitDefault);
+export const singlePercent = (kind: SplitKind, splitDefault: number, debtDefault = 100) => (kind === "DEBT" ? debtDefault : splitDefault);
 
 export type ResolvedShares = { ok: true; shares: ResolvedShare[]; sharedPaise: number; restPaise: number } | { ok: false; error: string; /** Index of the line with the problem. */ line?: number };
 

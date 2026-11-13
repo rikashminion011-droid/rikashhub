@@ -45,7 +45,7 @@ const FIELD_NAME: Record<(typeof FIELD_KEYS)[number], string> = {
   creditsAdded: "Credit History",
 };
 
-function SectionCard({ title, description, children, footer }: { title: string; description: string; children: ReactNode; footer: ReactNode }) {
+export function SectionCard({ title, description, children, footer }: { title: string; description: string; children: ReactNode; footer: ReactNode }) {
   return (
     <Card className="overflow-visible">
       <CardHeader>
@@ -61,7 +61,7 @@ function SectionCard({ title, description, children, footer }: { title: string; 
 }
 
 /** Save and Reset buttons that go with each section. */
-function SaveBar({ dirty, saving, error, onSave, onReset }: { dirty: boolean; saving: boolean; error: string | null; onSave: () => void; onReset: () => void }) {
+export function SaveBar({ dirty, saving, error, onSave, onReset }: { dirty: boolean; saving: boolean; error: string | null; onSave: () => void; onReset: () => void }) {
   return (
     <>
       <Button type="button" onClick={onSave} disabled={!dirty || saving}>
@@ -83,7 +83,7 @@ function SaveBar({ dirty, saving, error, onSave, onReset }: { dirty: boolean; sa
 }
 
 /** Shared save / reset behaviour for the three sections. */
-function useSection<K extends SettingsSection>(
+export function useSection<K extends SettingsSection>(
   section: K,
   saved: QuickPaySettingsData[K],
   actions: SettingsFormActions,
@@ -325,6 +325,67 @@ export function SplitSection({ settings, options, actions, onSaved }: { settings
         </div>
       )}
 
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">Fields shown on each person&apos;s line</p>
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox checked={draft.showPercent} onCheckedChange={(v) => setDraft({ ...draft, showPercent: v === true })} />
+            Percentage list
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox checked={draft.showAmount} onCheckedChange={(v) => setDraft({ ...draft, showAmount: v === true })} />
+            Amount box
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">Hidden fields are still worked out; they just are not shown. The amount is always calculated from the percentage.</p>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">When several people are chosen</p>
+        <div role="radiogroup" aria-label="How several people are divided" className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              [true, "Divide equally", "₹50 with two people is ₹25 each (50% each)."],
+              [false, "Default percentage for each", "Every person starts at the default percentage."],
+            ] as const
+          ).map(([value, title, text]) => (
+            <button
+              key={title}
+              type="button"
+              role="radio"
+              aria-checked={draft.equalDivide === value}
+              onClick={() => setDraft({ ...draft, equalDivide: value })}
+              className={cn("rounded-xl border p-3 text-left", draft.equalDivide === value ? "border-neutral-950 bg-neutral-50" : "hover:bg-muted/50")}
+            >
+              <p className="text-sm font-semibold">{title}</p>
+              <p className="text-xs text-muted-foreground">{text}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">People offered in Split</p>
+        {options.persons.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No people yet. Add them above.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-x-6 gap-y-2" aria-label="People offered in Split">
+            {options.persons.map((person) => (
+              <li key={person.id}>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={!draft.hiddenPersonIds.includes(person.id)}
+                    onCheckedChange={(v) => setDraft({ ...draft, hiddenPersonIds: v === true ? draft.hiddenPersonIds.filter((id) => id !== person.id) : [...draft.hiddenPersonIds, person.id] })}
+                  />
+                  {person.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs text-muted-foreground">Someone you untick is not offered in Split. They stay in your list and in Debt Management.</p>
+      </div>
+
       <div className="space-y-1">
         <p className="text-sm font-semibold">Default person</p>
         <div className="max-w-xs">
@@ -374,8 +435,8 @@ export function CreditsSection({ settings, actions, onSaved }: { settings: Credi
 
   return (
     <SectionCard
-      title="Credits Added Settings"
-      description="What the Credits Added panel in Quick Entry shows when you tick it, and what is ticked for you. You can always tick any row to add it to the debit."
+      title="Credit History Settings"
+      description="What Credit History in Quick Entry shows when you tick it, and which credit is chosen for you. One credit can be chosen at a time."
       footer={<SaveBar dirty={dirty} saving={saving} error={error} onSave={save} onReset={reset} />}
     >
       <div className="space-y-2">

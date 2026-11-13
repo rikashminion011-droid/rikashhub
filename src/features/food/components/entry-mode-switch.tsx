@@ -4,7 +4,11 @@ import { ArrowLeftRight, Receipt, Soup, Wallet } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
+import { PeriodContext } from "@/features/quick-pay/components/period-context";
+import { PeriodHeader } from "@/features/quick-pay/components/period-header";
 import { SHOW_TRANSACTIONS_EVENT } from "@/features/quick-pay/components/transactions-panel";
+import { periodFor, type Period } from "@/features/quick-pay/period";
+import type { getPeriodTotalsAction } from "@/features/quick-pay/actions";
 import { FoodEntryForm } from "./food-entry-form";
 
 const DESKTOP = "(min-width: 1024px)";
@@ -33,7 +37,24 @@ const ORDER: readonly { id: Panel; label: string; icon: ReactNode }[] = [
  * a tab). Pages are hidden, not removed, so a half-typed payment is still there when you come back. The swipe is handled here
  * (not with a scrolling box) so dropdowns can open freely.
  */
-export function EntryModeSwitch({ transactions, payment, transfer, foodActions }: { transactions: ReactNode; payment: ReactNode; transfer: ReactNode; foodActions: FoodActions }) {
+export function EntryModeSwitch({
+  transactions,
+  payment,
+  transfer,
+  foodActions,
+  today,
+  getTotals,
+}: {
+  transactions: ReactNode;
+  payment: ReactNode;
+  transfer: ReactNode;
+  foodActions: FoodActions;
+  /** Today's date, YYYY-MM-DD in India time. */
+  today: string;
+  getTotals: typeof getPeriodTotalsAction;
+}) {
+  // One period for the whole page: the totals above the tabs and the Transactions list both follow it.
+  const [period, setPeriod] = useState<Period>(() => periodFor("day", today));
   const desktop = useIsDesktop();
   const [active, setActive] = useState<Panel>("payment");
   // These pages are only created the first time they are opened (so Payment Entry's page load does no extra work).
@@ -135,7 +156,11 @@ export function EntryModeSwitch({ transactions, payment, transfer, foodActions }
   };
 
   return (
+    <PeriodContext.Provider value={{ period, today }}>
     <div className="space-y-5">
+      {/* Totals and the period control, above every tab */}
+      <PeriodHeader period={period} onPeriod={setPeriod} today={today} food={active === "food"} getTotals={getTotals} getFoodTotal={foodActions.getTotal} />
+
       {/* One tab bar for all the pages; on a phone it scrolls, with room at both ends so even the first and last tab can reach the middle */}
       <div
         ref={bar}
@@ -172,5 +197,6 @@ export function EntryModeSwitch({ transactions, payment, transfer, foodActions }
         </div>
       </div>
     </div>
+    </PeriodContext.Provider>
   );
 }

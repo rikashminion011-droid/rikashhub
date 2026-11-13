@@ -3,12 +3,11 @@
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PeriodNavigator } from "@/features/quick-pay/components/period-navigator";
-import { periodFor, periodRange, type Period } from "@/features/quick-pay/period";
+import { notifyDataChanged } from "@/features/quick-pay/components/period-context";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
@@ -17,11 +16,10 @@ import type { FoodPricing } from "../types";
 
 const newRequestId = () => crypto.randomUUID();
 const rupees = (paise: number) => (paise / 100).toFixed(2).replace(/\.00$/, "");
-const istToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 
 /**
- * Food Rent (food entry): the total spent on food for a period (Today, Yesterday, a week, a month, a year or any dates), and
- * a meal, what you had and its amount on one line, plus Save. The meal is picked from the time of day (9 am to 12 pm Tiffin,
+ * Food Rent (food entry): a meal, what you had and its amount on one line, plus Save (the total spent on food for the chosen
+ * period is in the header above the tabs). The meal is picked from the time of day (9 am to 12 pm Tiffin,
  * 12 pm to 5:30 pm Lunch, after that Dinner). The amount is worked out from your Customize list (else the meal's default
  * price) and can be changed by hand; the server works it out again when no amount is typed.
  */
@@ -38,23 +36,6 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
   const [saving, setSaving] = useState(false);
   // One id per entry being typed: a retried or double-clicked Save can never record it twice.
   const [requestId, setRequestId] = useState(newRequestId);
-
-  const today = istToday();
-  const [period, setPeriod] = useState<Period>(() => periodFor("day", today));
-  const [total, setTotal] = useState<{ totalPaise: number; count: number } | null>(null);
-  const latest = useRef(0);
-
-  const loadTotal = useCallback(
-    (next: Period) => {
-      const mine = ++latest.current;
-      const { from, to } = periodRange(next);
-      void actions.getTotal({ from, to }).then((result) => {
-        if (mine === latest.current && result.ok) setTotal({ totalPaise: result.totalPaise, count: result.count });
-      });
-    },
-    [actions],
-  );
-  useEffect(() => loadTotal(period), [period, loadTotal]);
 
   // Loaded when the form first appears; re-loaded each time you come back to this tab so prices changed elsewhere are used.
   useEffect(() => {
@@ -120,23 +101,11 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
     setAmount("");
     setAmountTyped(false);
     setRequestId(newRequestId());
-    loadTotal(period);
+    notifyDataChanged();
   }
 
   return (
     <div className="space-y-5">
-      {/* Total food expenses for the chosen period */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground">Total food expenses</p>
-          <p className="text-2xl font-bold tracking-tight tabular-nums" aria-live="polite">
-            {total ? formatINR(total.totalPaise) : "…"}
-          </p>
-          {total ? <p className="text-xs text-muted-foreground">{total.count} meal{total.count === 1 ? "" : "s"}</p> : null}
-        </div>
-        <PeriodNavigator value={period} onChange={setPeriod} today={today} />
-      </div>
-
       <form
         noValidate
         onSubmit={(e) => {
@@ -173,12 +142,19 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
               autoComplete="off"
               aria-invalid={!!error}
               aria-describedby="food-hint"
+              list="food-items"
               onChange={(e) => {
                 setNotes(e.target.value);
                 setError(null);
               }}
               className="h-10 text-base sm:text-sm"
             />
+            {/* The items you priced for this meal are offered as you type; picking one fills in its price */}
+            <datalist id="food-items">
+              {(pricing?.meals[meal].items ?? []).map((item) => (
+                <option key={item.id} value={item.name} />
+              ))}
+            </datalist>
           </div>
 
           <div className="w-28 space-y-1.5">

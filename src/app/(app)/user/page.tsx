@@ -53,7 +53,7 @@ export default async function UserPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>{people ? `${people.length} ${people.length === 1 ? "person" : "people"} added.` : "Can't reach the database right now."}</p>
-            <Link href="/quick-pay/settings?tab=users" className={cn(buttonVariants({ variant: "outline" }))}>
+            <Link href="/quick-pay/settings?tab=split" className={cn(buttonVariants({ variant: "outline" }))}>
               <UsersRound /> Manage users
             </Link>
           </CardContent>
