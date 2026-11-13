@@ -74,7 +74,7 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
           key={entry?.id ?? "new"}
           initialOptions={options}
           initialEntry={entry}
-          actions={{ saveEntry: saveEntryAction, deleteEntry: deleteEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction, getOptions: getOptionsAction, ...adders }}
+          actions={{ saveEntry: saveEntryAction, deleteEntry: deleteEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction, getOptions: getOptionsAction, saveTransfer: saveTransferAction, ...adders }}
         />
       }
       transfer={<TransferForm options={options} saveTransfer={saveTransferAction} />}

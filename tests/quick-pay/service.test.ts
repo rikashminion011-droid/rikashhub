@@ -282,7 +282,7 @@ describe("editing and deleting", () => {
     const aBefore = await currentOf(a);
     expect(aBefore).toBeLessThan(0);
 
-    await updateEntry(db, ME.id, saved.id, entry({ accountId: b, type: "CREDIT", amountPaise: 5000, reason: "Refund", categoryId: cat(o, "Food"), partyId: person(o, "Balan") }));
+    await updateEntry(db, ME.id, saved.id, entry({ accountId: b, type: "CREDIT", amountPaise: 5000, reason: "Refund", categoryId: null, partyId: person(o, "Balan") }));
     const got = (await getEntry(db, ME.id, saved.id))!;
     expect(got).toMatchObject({ type: "CREDIT", amountPaise: 5000, reason: "Refund", accountId: b, shares: [expect.objectContaining({ partyId: person(o, "Balan") })], occurredAt: when.toISOString() });
     expect(await currentOf(a)).toBe(aBefore + 100);
@@ -571,5 +571,59 @@ describe("GPay Transactions: several filters at once", () => {
     expect(await ids({ types: "CREDIT,DEBIT" })).toEqual([a.id, b.id, c.id].sort());
     expect(await ids({ people: person(o, "Mukesh") })).toEqual([c.id]);
     expect(await ids({ banks: `${canara},${hdfc}`, types: "DEBIT" })).toEqual([a.id]); // filters combine
+  });
+});
+
+describe("Debit categories and Credit categories are separate lists", () => {
+  it("a credit has its own categories, listed apart from the debit ones", async () => {
+    const before = await options();
+    const salary = await addMainCategory(db, ME.id, { name: "Salary", kind: "CREDIT" });
+    const after = await options();
+    expect(after.creditCategories.map((c) => c.label)).toContain("Salary");
+    expect(after.categories.map((c) => c.label)).not.toContain("Salary");
+    expect(before.creditCategories.map((c) => c.id)).not.toContain(salary);
+    expect((await getCategoryTree(db, ME.id, "CREDIT")).map((n) => n.name)).toContain("Salary");
+    expect((await getCategoryTree(db, ME.id, "DEBIT")).map((n) => n.name)).not.toContain("Salary");
+  });
+
+  it("a credit can use a credit category but not a debit one, and a debit the other way round", async () => {
+    const o = await options();
+    const hdfc = bank(o, "HDFC");
+    const incomeCat = (await options()).creditCategories.find((c) => c.label === "Salary")!.id;
+    const debitCat = cat(o, "Food");
+    const ok = await createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "CREDIT", categoryId: incomeCat, reason: "pay" }), istInstant("2026-12-10", "09:00"));
+    expect((await getEntry(db, ME.id, ok.id))!.categoryId).toBe(incomeCat);
+    await expect(createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "CREDIT", categoryId: debitCat }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "DEBIT", categoryId: incomeCat }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(createBulk(db, ME.id, rid(), [row2(o, 1) && { ...row2(o, 1), type: "CREDIT" as const, categoryId: debitCat }])).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("self transfers saved with the rest of an Add Bulk sheet", () => {
+  it("saves a transfer row together with the other rows, moving money between the two banks", async () => {
+    const o = await options();
+    const from = bank(o, "GPay → Canara");
+    const to = bank(o, "GPay → IDFC");
+    const [fromBefore, toBefore] = [await currentOf(from), await currentOf(to)];
+    const result = await createBulk(db, ME.id, rid(), [
+      { key: "x1", type: "DEBIT", amountPaise: 3000, occurredAt: istInstant("2026-12-20", "10:00"), reason: "sheet-transfer", accountId: from, categoryId: null, shares: [], transfer: { toId: to } },
+      { key: "x2", type: "DEBIT", amountPaise: 1000, occurredAt: istInstant("2026-12-20", "10:01"), reason: "sheet-debit", accountId: from, categoryId: null, shares: [] },
+    ]);
+    expect(result.count).toBe(2);
+    expect(await currentOf(from)).toBe(fromBefore - 30 - 10);
+    expect(await currentOf(to)).toBe(toBefore + 30);
+    const saved = await db.transaction.findMany({ where: { userId: ME.id, description: { in: ["sheet-transfer", "sheet-debit"] } } });
+    expect(saved.find((r) => r.description === "sheet-transfer")).toMatchObject({ type: "TRANSFER", accountId: from, toAccountId: to });
+    expect(saved.find((r) => r.description === "sheet-debit")!.type).toBe("EXPENSE");
+  });
+
+  it("saves nothing if the transfer points at a bank that is not yours", async () => {
+    const o = await options();
+    const theirs = await options(OTHER.id);
+    const before = await db.transaction.count({ where: { userId: ME.id } });
+    await expect(
+      createBulk(db, ME.id, rid(), [{ key: "y", type: "DEBIT", amountPaise: 100, occurredAt: istInstant("2026-12-21", "10:00"), reason: "", accountId: bank(o, "HDFC"), categoryId: null, shares: [], transfer: { toId: bank(theirs, "HDFC") } }]),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await db.transaction.count({ where: { userId: ME.id } })).toBe(before);
   });
 });

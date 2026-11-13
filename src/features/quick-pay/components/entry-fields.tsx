@@ -7,15 +7,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { groupBanks, groupCategories } from "../cascade";
-import { visibleBanks } from "../availability";
+import { categoriesFor, keywordsFor, visibleBanks } from "../availability";
 import { withCategory, withKind, withReason, type FormState } from "../entry-state";
 import { nextSwitch } from "../switching";
 import type { QuickPayOptions, RecentCredit } from "../types";
-import { MAX_REASON_LENGTH, type QuickPayErrors } from "../validation";
+import { MAX_REASON_LENGTH, type EntryType, type QuickPayErrors } from "../validation";
 import { CreditsPanel } from "./credits-panel";
 import { CycleButton } from "./cycle-button";
 import { InlineAdd, type AddResult } from "./inline-add";
 import { SplitControl } from "./split-control";
+import { SelfTransferItem } from "./transfer-dialog";
 
 const SETTINGS = {
   banks: "/quick-pay/settings?tab=banks",
@@ -57,6 +58,7 @@ export function EntryFields({
   onToggleCredits,
   onAddCategory,
   onAddPerson,
+  onSelfTransfer,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -68,16 +70,20 @@ export function EntryFields({
   loadingCredits: boolean;
   onToggleCredits: (on: boolean) => void;
   /** Adds a category right here (no trip to Customized Settings). Resolves with the new id. */
-  onAddCategory: (name: string) => Promise<AddResult>;
+  onAddCategory: (name: string, type: EntryType) => Promise<AddResult>;
   /** Adds a person right here. Resolves with the new id. */
   onAddPerson: (name: string) => Promise<AddResult>;
+  /** When given, the Bank Through list ends with a Self Transfer item that calls this (it opens the transfer pop-up). */
+  onSelfTransfer?: () => void;
 }) {
   const labels = options.settings.fields.labels;
   // Banks switched off in Customized Settings are not offered (the one already on the entry still is).
   const banks = useMemo(() => visibleBanks(options, [form.accountId]), [options, form.accountId]);
   const bankGroups = useMemo(() => groupBanks(banks), [banks]);
   const switches = options.settings.switch;
-  const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
+  // A Debit and a Credit have different categories.
+  const categoryList = categoriesFor(options, form.type);
+  const categoryGroups = useMemo(() => groupCategories(categoryList), [categoryList]);
   const showCredits = form.type === "DEBIT" && form.creditsAdded;
   const isDebit = form.type === "DEBIT";
   const id = (name: string) => `${idPrefix}-${name}`;
@@ -127,8 +133,9 @@ export function EntryFields({
                     setForm((f) => ({
                       ...f,
                       type: t,
-                      // A Credit has no category, no Debt and no Credits Added.
-                      ...(t === "CREDIT" ? { creditsAdded: false, creditIds: [], categoryId: null, categoryAuto: false, ...(f.splitKind === "DEBT" ? { splitKind: null, shares: [] } : {}) } : {}),
+                      // The category lists differ, so the choice is cleared; a Credit has no Debt and no Credits Added.
+                      ...(f.type !== t ? { categoryId: null, categoryAuto: false, categoryManual: false } : {}),
+                      ...(t === "CREDIT" ? { creditsAdded: false, creditIds: [], ...(f.splitKind === "DEBT" ? { splitKind: null, shares: [] } : {}) } : {}),
                     }))
                   }
                   className={cn(
@@ -156,8 +163,8 @@ export function EntryFields({
         ) : null}
       </div>
 
-      {/* Reason and Category on one line (a Credit has no category) */}
-      <div className={cn("grid gap-2", isDebit ? "grid-cols-2" : "grid-cols-1")}>
+      {/* Reason and Category on one line (each kind has its own categories) */}
+      <div className="grid grid-cols-2 gap-2">
         <div className="min-w-0 space-y-1">
           <label htmlFor={id("reason")} className={labelClass}>
             {labels.reason}
@@ -170,41 +177,40 @@ export function EntryFields({
             value={form.reason}
             onChange={(e) => {
               const value = e.target.value;
-              setForm((f) => withReason(f, value, options.keywords));
+              setForm((f) => withReason(f, value, keywordsFor(options, f.type)));
             }}
             className="h-10 text-base sm:text-sm"
           />
         </div>
-        {isDebit ? (
-          <div className="min-w-0 space-y-1">
-            <label htmlFor={id("category")} className={labelClass}>
-              {labels.category}
-              {form.categoryAuto ? <span className="ml-1 font-normal text-amber-600">· auto</span> : null}
-            </label>
-            <CascadingSelect
-              id={id("category")}
-              ariaLabel={labels.category}
-              groups={categoryGroups}
-              value={form.categoryId}
-              onChange={(v) => setForm((f) => withCategory(f, v))}
-              placeholder="Optional"
-              searchPlaceholder="Search categories…"
-              emptyText="No category found. Add one below."
-              clearable
-              footer={
-                <InlineAdd
-                  label="New category"
-                  placeholder="Add a category…"
-                  onAdd={async (name) => {
-                    const result = await onAddCategory(name);
-                    if (result.ok) setForm((f) => withCategory(f, result.id));
-                    return result;
-                  }}
-                />
-              }
-            />
-          </div>
-        ) : null}
+        <div className="min-w-0 space-y-1">
+          <label htmlFor={id("category")} className={labelClass}>
+            {labels.category}
+            {form.categoryAuto ? <span className="ml-1 font-normal text-amber-600">· auto</span> : null}
+          </label>
+          <CascadingSelect
+            id={id("category")}
+            ariaLabel={labels.category}
+            groups={categoryGroups}
+            value={form.categoryId}
+            onChange={(v) => setForm((f) => withCategory(f, v))}
+            placeholder="Optional"
+            searchPlaceholder="Search categories…"
+            emptyText="No category found. Add one below."
+            clearable
+            footer={
+              <InlineAdd
+                label="New category"
+                placeholder="Add a category…"
+                onAdd={async (name) => {
+                  const result = await onAddCategory(name, form.type);
+                  if (result.ok) setForm((f) => withCategory(f, result.id));
+                  return result;
+                }}
+              />
+            }
+          />
+        </div>
+
       </div>
 
       {/* Bank Through on its own line */}
@@ -226,7 +232,12 @@ export function EntryFields({
             searchPlaceholder="Search banks…"
             emptyText="No bank found. Use Add Details to create one."
             invalid={!!errors.bank}
-            footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
+            footer={
+              <>
+                {onSelfTransfer ? <SelfTransferItem onOpen={onSelfTransfer} /> : null}
+                <AddLink href={SETTINGS.banks}>Add Details</AddLink>
+              </>
+            }
             className="min-w-0 flex-1"
           />
           {switches.bank.enabled ? (

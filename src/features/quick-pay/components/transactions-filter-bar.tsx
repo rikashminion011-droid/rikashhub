@@ -24,7 +24,7 @@ const list = (value: string | null) => (value ? value.split(",").filter(Boolean)
  * with that month's first and last day in From and To. The URL is the source of truth, so a filtered view can be shared,
  * refreshed or reached with the back button. Choosing a month changes From and To with it; choosing dates makes a custom range.
  */
-export function TransactionsFilterBar({ today, defaultMonth, options }: { today: string; defaultMonth: string; options: Pick<QuickPayOptions, "banks" | "categories" | "persons"> }) {
+export function TransactionsFilterBar({ today, defaultMonth, options }: { today: string; defaultMonth: string; options: Pick<QuickPayOptions, "banks" | "categories" | "creditCategories" | "persons"> }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -50,7 +50,11 @@ export function TransactionsFilterBar({ today, defaultMonth, options }: { today:
   const changed = multi > 0 || Boolean(params.get("q")) || custom || all || (params.get("month") !== null && params.get("month") !== defaultMonth);
 
   const bankOptions = useMemo(() => options.banks.map((b) => ({ value: b.id, label: b.label })), [options.banks]);
-  const categoryOptions = useMemo(() => options.categories.map((c) => ({ value: c.id, label: c.label })), [options.categories]);
+  // Debit categories and Credit categories are separate lists; both can be chosen here.
+  const categoryOptions = useMemo(
+    () => [...options.categories.map((c) => ({ value: c.id, label: c.label })), ...options.creditCategories.map((c) => ({ value: c.id, label: `${c.label} (Credit)` }))],
+    [options.categories, options.creditCategories],
+  );
   const personOptions = useMemo(() => options.persons.map((p) => ({ value: p.id, label: p.name })), [options.persons]);
 
   function go(changes: Record<string, string>) {

@@ -1,5 +1,7 @@
 import type { SplitKind } from "./shares";
-import type { BankOption, PersonOption, QuickPayOptions } from "./types";
+import type { KeywordEntry } from "./keywords";
+import type { BankOption, CategoryOption, PersonOption, QuickPayOptions } from "./types";
+import type { EntryType } from "./validation";
 
 /**
  * What Customized Settings lets Quick Entry offer. Banks and people left out there stay in your lists everywhere else, and one
@@ -16,4 +18,15 @@ export function visibleBanks(options: Pick<QuickPayOptions, "banks" | "settings"
 export function availablePersons(options: Pick<QuickPayOptions, "persons" | "settings">, kind: SplitKind, keep: readonly string[] = []): PersonOption[] {
   const hidden = new Set(kind === "DEBT" ? options.settings.debt.hiddenPersonIds : options.settings.split.hiddenPersonIds);
   return options.persons.filter((p) => !hidden.has(p.id) || keep.includes(p.id));
+}
+
+/** A Debit and a Credit have separate category lists. */
+export function categoriesFor(options: Pick<QuickPayOptions, "categories" | "creditCategories">, type: EntryType): CategoryOption[] {
+  return type === "CREDIT" ? options.creditCategories : options.categories;
+}
+
+/** The reason keywords that belong to the categories of a Debit, or of a Credit (a word never picks a category of the other kind). */
+export function keywordsFor(options: Pick<QuickPayOptions, "categories" | "creditCategories" | "keywords">, type: EntryType): KeywordEntry[] {
+  const ids = new Set(categoriesFor(options, type).map((c) => c.id));
+  return options.keywords.filter((k) => ids.has(k.categoryId));
 }

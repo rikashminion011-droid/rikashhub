@@ -110,19 +110,20 @@ export const isCreditRow = (row: Pick<BulkRowInput, "debit" | "credit">) => row.
 
 /**
  * The row after its Reason changes, with the same rules as Quick Entry: a keyword in the Reason picks the category unless you
- * chose it yourself; if a keyword picked it and no longer matches it is cleared; a credit never has a category.
+ * chose it yourself; if a keyword picked it and no longer matches it is cleared. `keywords` are the ones for this row's kind
+ * (a Debit and a Credit have different categories).
  */
 export function rowWithReason<T extends BulkRow>(row: T, reason: string, keywords: readonly KeywordEntry[]): T {
   const next = { ...row, reason };
-  if (isCreditRow(row) || row.categoryManual) return next;
+  if (row.categoryManual) return next;
   const matched = matchCategory(reason, keywords);
   if (matched) return { ...next, categoryId: matched, categoryAuto: true };
   if (row.categoryAuto) return { ...next, categoryId: null, categoryAuto: false };
   return next;
 }
 
-/** The row after an amount is typed: when it turns into a credit its category is dropped, as in Quick Entry. */
+/** The row after an amount is typed. When it turns from a debit into a credit (or back) its category is dropped, because the two kinds have different categories. */
 export function rowWithAmounts<T extends BulkRow>(row: T, changes: Partial<Pick<BulkRowInput, "debit" | "credit">>): T {
   const next = { ...row, ...changes };
-  return isCreditRow(next) ? { ...next, categoryId: null, categoryAuto: false, categoryManual: false } : next;
+  return isCreditRow(next) !== isCreditRow(row) ? { ...next, categoryId: null, categoryAuto: false, categoryManual: false } : next;
 }

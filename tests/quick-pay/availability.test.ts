@@ -22,3 +22,18 @@ describe("what Quick Entry offers", () => {
     expect(availablePersons(options, "SPLIT", ["p2"]).map((p) => p.id)).toEqual(["p1", "p2"]);
   });
 });
+
+describe("Debit and Credit categories", () => {
+  const withCats = {
+    categories: [{ id: "c-food", label: "Food", mainName: "Food", name: "Food", isSub: false }],
+    creditCategories: [{ id: "c-salary", label: "Salary", mainName: "Salary", name: "Salary", isSub: false }],
+    keywords: [{ keyword: "tiffin", categoryId: "c-food" }, { keyword: "pay", categoryId: "c-salary" }],
+  };
+  it("a Debit and a Credit each see only their own categories and their own reason keywords", async () => {
+    const { categoriesFor, keywordsFor } = await import("@/features/quick-pay/availability");
+    expect(categoriesFor(withCats, "DEBIT").map((c) => c.id)).toEqual(["c-food"]);
+    expect(categoriesFor(withCats, "CREDIT").map((c) => c.id)).toEqual(["c-salary"]);
+    expect(keywordsFor(withCats, "DEBIT").map((k) => k.keyword)).toEqual(["tiffin"]);
+    expect(keywordsFor(withCats, "CREDIT").map((k) => k.keyword)).toEqual(["pay"]);
+  });
+});

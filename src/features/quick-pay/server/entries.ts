@@ -39,10 +39,11 @@ async function resolveBanks(tx: Prisma.TransactionClient, userId: string, ids: r
   if (withAccounts) throw new ExpenseError(`Choose one of the accounts under ${withAccounts.name}.`);
 }
 
-async function resolveCategories(tx: Prisma.TransactionClient, userId: string, ids: readonly (string | null)[]): Promise<void> {
+/** A Debit uses a Debit category and a Credit uses a Credit category; the two lists are separate. */
+async function resolveCategories(tx: Prisma.TransactionClient, userId: string, ids: readonly (string | null)[], entryType: EntryType = "DEBIT"): Promise<void> {
   const unique = [...new Set(ids.filter((id): id is string => id !== null))];
   if (unique.length === 0) return;
-  const found = await tx.transactionCategory.count({ where: { id: { in: unique }, userId, deletedAt: null } });
+  const found = await tx.transactionCategory.count({ where: { id: { in: unique }, userId, deletedAt: null, type: entryType === "CREDIT" ? "INCOME" : "EXPENSE" } });
   if (found !== unique.length) throw new ExpenseError("A selected category no longer exists. Pick another.", "NOT_FOUND");
 }
 
@@ -127,7 +128,7 @@ export async function createEntry(
       if (already) return { id: already.id, duplicate: true };
 
       await resolveBanks(tx, userId, [entry.accountId]);
-      await resolveCategories(tx, userId, [entry.categoryId]);
+      await resolveCategories(tx, userId, [entry.categoryId], entry.type);
       await resolvePersons(tx, userId, entry.shares.map((x) => x.partyId));
 
       const amount = paiseToDecimalString(entry.amountPaise);
@@ -170,7 +171,7 @@ export async function updateEntry(db: PrismaClient, userId: string, id: string, 
     if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
 
     await resolveBanks(tx, userId, [entry.accountId]);
-    await resolveCategories(tx, userId, [entry.categoryId]);
+    await resolveCategories(tx, userId, [entry.categoryId], entry.type);
     await resolvePersons(tx, userId, entry.shares.map((x) => x.partyId));
 
     const amount = paiseToDecimalString(entry.amountPaise);
@@ -274,8 +275,9 @@ export async function createBulk(
         const existing = await tx.transaction.count({ where: { userId, dedupeKey: { in: rows.map(keyOf) } } });
         if (existing > 0) return { count: existing, duplicate: true };
 
-        await resolveBanks(tx, userId, rows.map((r) => r.accountId));
-        await resolveCategories(tx, userId, rows.map((r) => r.categoryId));
+        await resolveBanks(tx, userId, rows.flatMap((r) => [r.accountId, ...(r.transfer ? [r.transfer.toId] : [])]));
+        await resolveCategories(tx, userId, rows.filter((r) => r.type === "DEBIT").map((r) => r.categoryId), "DEBIT");
+        await resolveCategories(tx, userId, rows.filter((r) => r.type === "CREDIT").map((r) => r.categoryId), "CREDIT");
         await resolvePersons(tx, userId, rows.flatMap((r) => r.shares.map((s) => s.partyId)));
 
         const ids = rows.map(() => randomUUID());
@@ -283,7 +285,8 @@ export async function createBulk(
           data: rows.map((row, i) => ({
             id: ids[i]!,
             userId,
-            ...typeFields(row.type, row.accountId),
+            // A self transfer row moves money from one bank to another and counts as one transaction.
+            ...(row.transfer ? { type: "TRANSFER" as const, accountId: row.accountId, toAccountId: row.transfer.toId } : typeFields(row.type, row.accountId)),
             amount: paiseToDecimalString(row.amountPaise),
             date: parseISODate(istDateOf(row.occurredAt)),
             occurredAt: row.occurredAt,
@@ -310,7 +313,7 @@ export async function createBulk(
           }
           await tx.transactionSplit.createMany({ data });
         }
-        await recomputeBalances(tx, userId, rows.map((r) => r.accountId));
+        await recomputeBalances(tx, userId, rows.flatMap((r) => [r.accountId, ...(r.transfer ? [r.transfer.toId] : [])]));
         await tx.auditLog.create({ data: { userId, action: "quickpay.bulk", entity: "transaction", after: { rows: rows.length } } });
         return { count: rows.length, duplicate: false };
       },
@@ -652,7 +655,7 @@ export async function patchEntry(db: PrismaClient, userId: string, id: string, p
       data.description = reason || null;
     }
     if (patch.categoryId !== undefined) {
-      await resolveCategories(tx, userId, [patch.categoryId]);
+      await resolveCategories(tx, userId, [patch.categoryId], existing.type === "INCOME" ? "CREDIT" : "DEBIT");
       data.category = patch.categoryId ? { connect: { id: patch.categoryId } } : { disconnect: true };
     }
     if (Object.keys(data).length > 0) await tx.transaction.update({ where: { id }, data });

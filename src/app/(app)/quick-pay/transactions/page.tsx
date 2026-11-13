@@ -18,6 +18,7 @@ import {
   setOpeningBalanceAction,
 } from "@/features/quick-pay/actions";
 import { addPersonAction } from "@/features/users/actions";
+import { DraftLink } from "@/features/quick-pay/components/draft-link";
 import { BalancesDialog } from "@/features/quick-pay/components/balances-dialog";
 import { ImportDialog } from "@/features/quick-pay/components/import-dialog";
 import { ExportMenu } from "@/features/quick-pay/components/export-menu";
@@ -78,6 +79,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
             <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))}>
               <FilePlus2 /> Add Bulk
             </Link>
+            <DraftLink />
             <ImportDialog actions={{ getOptions: getOptionsAction, importGpay: importGpayAction }} />
             <ExportMenu query={query} />
           </>

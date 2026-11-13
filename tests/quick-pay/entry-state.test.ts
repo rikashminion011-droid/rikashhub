@@ -23,7 +23,8 @@ describe("emptyState", () => {
       fields: { ...DEFAULT_SETTINGS.fields, defaults: { type: "CREDIT", bankId: "b1", categoryId: "c1" } },
       split: { ...DEFAULT_SETTINGS.split, enabledByDefault: true, defaultPercent: 25, defaultPartyId: "p1" },
     });
-    expect(emptyState(s, options)).toMatchObject({ type: "CREDIT", accountId: "b1", categoryId: "c1", splitKind: "SPLIT", shares: [{ partyId: "p1", method: "PERCENT", value: "25" }] });
+    // the default category is a Debit category, so a form that opens as a Credit does not use it
+    expect(emptyState(s, options)).toMatchObject({ type: "CREDIT", accountId: "b1", categoryId: null, splitKind: "SPLIT", shares: [{ partyId: "p1", method: "PERCENT", value: "25" }] });
   });
   it("ignores a default whose bank, category or person has since been removed", () => {
     const s = settings({
@@ -66,12 +67,14 @@ describe("choosing people for a Split or a Debt", () => {
     expect(form).toMatchObject({ splitKind: "DEBT", shares: [{ partyId: "a", value: "100" }] });
     expect(withKind(form, null, split, null)).toMatchObject({ splitKind: null, shares: [] });
   });
-  it("a Credit never gets a category from the reason", () => {
-    expect(withReason({ ...start, type: "CREDIT" }, "dosa", keywords).categoryId).toBeNull();
+  it("a Credit gets its category from the Credit keywords it is given", () => {
+    const creditKeywords = [{ keyword: "salary", categoryId: "income-salary" }];
+    expect(withReason({ ...start, type: "CREDIT" }, "Salary", creditKeywords).categoryId).toBe("income-salary");
+    expect(withReason({ ...start, type: "CREDIT" }, "dosa", creditKeywords).categoryId).toBeNull();
   });
-  it("what is sent to be saved leaves out the category and the Debt of a Credit", () => {
-    const form = { ...start, type: "CREDIT" as const, categoryId: "c1", splitKind: "DEBT" as const, shares: [{ partyId: "a", method: "PERCENT" as const, value: "100", edited: false }] };
-    expect(toQuickPayInput(form)).toMatchObject({ categoryId: null, split: { enabled: false } });
+  it("what is sent to be saved keeps a Credit category but leaves out the Debt of a Credit", () => {
+    const form = { ...start, type: "CREDIT" as const, categoryId: "income-salary", splitKind: "DEBT" as const, shares: [{ partyId: "a", method: "PERCENT" as const, value: "100", edited: false }] };
+    expect(toQuickPayInput(form)).toMatchObject({ categoryId: "income-salary", split: { enabled: false } });
   });
 });
 

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { deleteEntryAction, patchEntryAction, QuickAddActions, QuickPayActions } from "../actions";
+import { keywordsFor } from "../availability";
 import { groupCategories } from "../cascade";
 import { formatTransactionWhen } from "../datetime";
 import { matchCategory } from "../keywords";
@@ -67,7 +68,9 @@ export function TransactionsTable({
 
   const view = useMemo(() => rows.map((r) => patched[r.id] ?? r), [rows, patched]);
   const labels = options.settings.fields.labels;
+  // A Debit and a Credit have different categories.
   const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
+  const creditCategoryGroups = useMemo(() => groupCategories(options.creditCategories), [options.creditCategories]);
 
   /** Saves a change to one row. Returns an error message, or null when saved. */
   const patch = useCallback(
@@ -84,13 +87,13 @@ export function TransactionsTable({
   const commitReason = useCallback(
     async (row: TxRow, reason: string) => {
       // A keyword in the new Reason fills the category, but only when the row has none (yours is never overwritten).
-      const auto = !row.categoryId ? matchCategory(reason, options.keywords) : null;
+      const auto = !row.categoryId ? matchCategory(reason, keywordsFor(options, row.type)) : null;
       const problem = await patch(row.id, { reason, ...(auto ? { categoryId: auto } : {}) });
       if (problem) toast.error(problem);
       else if (auto) toast.success("Category picked from the reason.");
       return problem;
     },
-    [patch, options.keywords],
+    [patch, options],
   );
 
   const commitCategory = useCallback(
@@ -152,7 +155,7 @@ export function TransactionsTable({
         compact
         clearable
         ariaLabel={`${labels.category} of ${row.reason || row.details || "this transaction"}`}
-        groups={categoryGroups}
+        groups={row.type === "CREDIT" ? creditCategoryGroups : categoryGroups}
         value={row.categoryId}
         onChange={(v) => void commitCategory(row, v)}
         placeholder={labels.category}

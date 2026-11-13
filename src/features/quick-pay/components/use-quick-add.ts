@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 import type { QuickAddActions, QuickPayActions } from "../actions";
+import { categoriesFor } from "../availability";
 import type { QuickPayOptions } from "../types";
+import type { EntryType } from "../validation";
 import type { AddResult } from "./inline-add";
 
 export type QuickAddHostActions = QuickAddActions & Pick<QuickPayActions, "getOptions">;
@@ -20,12 +22,13 @@ export function useQuickAdd(actions: QuickAddHostActions, setOptions: (options: 
       return result.options;
     }
 
-    async function addCategory(name: string): Promise<AddResult> {
-      const added = await actions.addCategory({ name });
+    /** Adds a category to the Debit list or the Credit list, whichever kind of entry it is for. */
+    async function addCategory(name: string, type: EntryType = "DEBIT"): Promise<AddResult> {
+      const added = await actions.addCategory({ name, kind: type });
       if (!added.ok) return { ok: false, error: added.error };
       const options = await reload();
       const key = name.trim().toLowerCase();
-      const found = options?.categories.find((c) => !c.isSub && c.name.toLowerCase() === key);
+      const found = (options ? categoriesFor(options, type) : []).find((c) => !c.isSub && c.name.toLowerCase() === key);
       return found ? { ok: true, id: found.id } : { ok: false, error: "Added, but it could not be selected. Pick it from the list." };
     }
 

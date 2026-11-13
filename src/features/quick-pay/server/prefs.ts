@@ -77,7 +77,7 @@ export const resetSettingsSection = (db: PrismaClient, userId: string, section: 
 
 /** Every keyword with the category it picks, for categories still in your list. */
 export async function getKeywordEntries(db: PrismaClient, userId: string): Promise<KeywordEntry[]> {
-  const rows = await db.transactionCategory.findMany({ where: { userId, deletedAt: null, type: "EXPENSE" }, select: { id: true, keywords: true }, orderBy: [{ createdAt: "asc" }] });
+  const rows = await db.transactionCategory.findMany({ where: { userId, deletedAt: null, type: { in: ["EXPENSE", "INCOME"] } }, select: { id: true, keywords: true }, orderBy: [{ createdAt: "asc" }] });
   return rows.flatMap((r) => r.keywords.map((keyword) => ({ keyword, categoryId: r.id })));
 }
 
@@ -96,10 +96,11 @@ export async function setCategoryKeywords(db: PrismaClient, userId: string, inpu
   if (keys.length > MAX_KEYWORDS_PER_CATEGORY) throw new ExpenseError(`At most ${MAX_KEYWORDS_PER_CATEGORY} keywords per category.`);
 
   await db.$transaction(async (tx) => {
-    const category = await tx.transactionCategory.findFirst({ where: { id: input.categoryId, userId, deletedAt: null, type: "EXPENSE" } });
+    const category = await tx.transactionCategory.findFirst({ where: { id: input.categoryId, userId, deletedAt: null, type: { in: ["EXPENSE", "INCOME"] } } });
     if (!category) throw new ExpenseError("That category no longer exists.", "NOT_FOUND");
 
-    const others = await tx.transactionCategory.findMany({ where: { userId, deletedAt: null, type: "EXPENSE", id: { not: category.id } }, select: { name: true, keywords: true, parent: { select: { name: true } } } });
+    // A word can only point to one category in the same list (Debit categories and Credit categories are separate lists).
+    const others = await tx.transactionCategory.findMany({ where: { userId, deletedAt: null, type: category.type, id: { not: category.id } }, select: { name: true, keywords: true, parent: { select: { name: true } } } });
     for (const key of keys) {
       const clash = others.find((o) => o.keywords.includes(key));
       if (clash) throw new ExpenseError(`"${key}" already picks ${clash.parent ? `${clash.parent.name} → ${clash.name}` : clash.name}. Remove it there first.`, "CONFLICT");

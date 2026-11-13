@@ -24,16 +24,39 @@ const newRequestId = () => crypto.randomUUID();
  * Self Transfer: move money from one of your banks to another. Pick the bank it leaves and the bank it goes to, the amount
  * and a reason, and save. Both balances change at once, and the transfer is one transaction in GPay Transactions.
  */
-export function TransferForm({ options, saveTransfer }: { options: QuickPayOptions; saveTransfer: typeof saveTransferAction }) {
+export function TransferForm({
+  options,
+  saveTransfer,
+  onSaved,
+  fixedAmount,
+  initialReason = "",
+  when,
+  onChoose,
+  initial,
+}: {
+  /** The banks to start with (when an Add Bulk row already has a transfer). */
+  initial?: { fromId: string | null; toId: string | null };
+  /** When given, pressing the button does not save anything: it hands the choice back (Add Bulk keeps it until Save All). */
+  onChoose?: (choice: { fromId: string; toId: string; amount: string; reason: string }) => void;
+  options: QuickPayOptions;
+  saveTransfer: typeof saveTransferAction;
+  /** Called after a transfer is saved (the pop-up closes itself with it). */
+  onSaved?: () => void;
+  /** An amount that is already decided (the Debit typed on an Add Bulk row): it is shown and cannot be changed. */
+  fixedAmount?: string;
+  initialReason?: string;
+  /** The date and time of the transfer, when it is not "now" (the date and time of the Add Bulk row). */
+  when?: { date: string; time: string };
+}) {
   const router = useRouter();
   // Banks switched off in Customized Settings are not offered here either.
   const banks = useMemo(() => visibleBanks(options), [options]);
   const groups = useMemo(() => groupBanks(banks), [banks]);
   const ids = useMemo(() => banks.map((b) => b.id), [banks]);
-  const [fromId, setFromId] = useState<string | null>(null);
-  const [toId, setToId] = useState<string | null>(null);
-  const [amount, setAmount] = useState("");
-  const [reason, setReason] = useState("");
+  const [fromId, setFromId] = useState<string | null>(initial?.fromId ?? null);
+  const [toId, setToId] = useState<string | null>(initial?.toId ?? null);
+  const [amount, setAmount] = useState(fixedAmount ?? "");
+  const [reason, setReason] = useState(initialReason);
   const [errors, setErrors] = useState<TransferErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -49,10 +72,14 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
       return;
     }
     setErrors({});
+    if (onChoose) {
+      onChoose({ fromId: checked.value.fromId, toId: checked.value.toId, amount, reason: checked.value.reason });
+      return;
+    }
     setSaving(true);
     let result: Awaited<ReturnType<typeof saveTransferAction>>;
     try {
-      result = await saveTransfer({ requestId, fromId, toId, amount, reason });
+      result = await saveTransfer({ requestId, fromId, toId, amount, reason, ...(when ? { date: when.date, time: when.time } : {}) });
     } catch {
       result = { ok: false, error: "Could not reach the server. Nothing was saved. Check your connection and try again." };
     }
@@ -67,11 +94,12 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
     toast.success(result.duplicate ? "That transfer was already saved." : `Moved ${formatINR(result.amountPaise)} from ${name(fromId)} to ${name(toId)}.`, {
       description: "Both bank balances are updated. It shows as one transaction in GPay Transactions.",
     });
-    setAmount("");
-    setReason("");
+    if (fixedAmount === undefined) setAmount("");
+    setReason(initialReason);
     setRequestId(newRequestId());
     notifyDataChanged();
     router.refresh();
+    onSaved?.();
   }
 
   const bank = (which: "from" | "to") => {
@@ -130,7 +158,7 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
       <div className="grid gap-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
         <div className="space-y-1">
           <label htmlFor="tr-amount" className={labelClass}>
-            Amount
+            Amount{fixedAmount !== undefined ? <span className="ml-1 font-normal">· from the row</span> : null}
           </label>
           <div className="flex overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 focus-within:ring-3 focus-within:ring-amber-300/40 aria-[invalid=true]:border-destructive" aria-invalid={!!errors.amount}>
             <span aria-hidden className="flex w-9 items-center justify-center bg-amber-100/60 text-base">
@@ -138,6 +166,7 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
             </span>
             <Input
               id="tr-amount"
+              readOnly={fixedAmount !== undefined}
               inputMode="decimal"
               autoComplete="off"
               placeholder="0.00"
@@ -171,7 +200,7 @@ export function TransferForm({ options, saveTransfer }: { options: QuickPayOptio
 
       <Button type="submit" size="lg" className="h-11 w-full rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving}>
         {saving ? <Loader2 className="animate-spin" /> : <Check />}
-        {saving ? "Saving…" : "Save Transfer"}
+        {saving ? "Saving…" : onChoose ? "Add to the sheet" : "Save Transfer"}
       </Button>
     </form>
   );

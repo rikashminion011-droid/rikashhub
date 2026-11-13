@@ -1,19 +1,22 @@
 "use client";
 
-import { ArrowDownToLine, ArrowUpToLine, Copy, Loader2, MoreVertical, Plus, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpToLine, Copy, Loader2, MoreVertical, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { CascadingSelect } from "@/components/shared/cascading-select";
 import { DatePicker, TimePicker } from "@/components/shared/date-picker";
+import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { saveBulkAction } from "../actions";
-import { availablePersons } from "../availability";
+import type { saveBulkAction, saveTransferAction } from "../actions";
+import { availablePersons, keywordsFor } from "../availability";
+import { clearDraft, readDraft, writeDraft } from "../bulk-draft";
 import { addNextDay, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type BulkRow, type Direction, type RowChange } from "../bulk-rows";
 import { groupBanks, groupCategories } from "../cascade";
 import { istTimeOf } from "../datetime";
@@ -23,8 +26,10 @@ import { MAX_BULK_ROWS, isBlankBulkRow, validateBulk, type BulkRowErrors } from 
 import { InlineAdd } from "./inline-add";
 import { PeoplePicker } from "./people-picker";
 import { ShareFields } from "./split-control";
+import { SelfTransferDialog, SelfTransferItem } from "./transfer-dialog";
 import { useQuickAdd, type QuickAddHostActions } from "./use-quick-add";
 
+const bankName = (options: QuickPayOptions, id: string) => options.banks.find((b) => b.id === id)?.name ?? "Bank";
 const newKey = () => crypto.randomUUID();
 const newRequestId = () => crypto.randomUUID();
 
@@ -35,33 +40,7 @@ const blankRow = (date: string, time: string, key = newKey()): BulkRow => ({
 /** The five starting rows. Their keys are fixed (not random) so the server-rendered page and the browser agree. */
 const startingRows = (date: string, time: string) => Array.from({ length: 5 }, (_, i) => blankRow(date, time, `start-${i}`));
 
-/** What is typed is kept in this browser, so a refresh (or closing the page) does not lose it. */
-const DRAFT_KEY = "rikash:add-bulk:draft:v2";
-
-function readDraft(): BulkRow[] | null {
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(DRAFT_KEY) ?? "null");
-    if (!Array.isArray(parsed)) return null;
-    const rows = parsed
-      .filter((r): r is BulkRow => !!r && typeof r === "object" && typeof (r as BulkRow).key === "string" && typeof (r as BulkRow).date === "string" && typeof (r as BulkRow).time === "string")
-      .map((r) => ({ ...blankRow(r.date, r.time, r.key), ...r, shares: Array.isArray(r.shares) ? r.shares : [] }))
-      .slice(0, MAX_BULK_ROWS);
-    return rows.length > 0 ? rows : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeDraft(rows: readonly BulkRow[]) {
-  try {
-    if (rows.every(isBlankBulkRow)) window.localStorage.removeItem(DRAFT_KEY);
-    else window.localStorage.setItem(DRAFT_KEY, JSON.stringify(rows));
-  } catch {
-    // Storage can be blocked (private window); the sheet still works, it just is not kept.
-  }
-}
-
-const WIDE = "(min-width: 1280px)";
+const WIDE = "(min-width: 1400px)";
 const subscribe = (notify: () => void) => {
   const query = window.matchMedia(WIDE);
   query.addEventListener("change", notify);
@@ -87,8 +66,8 @@ function focusControl(control: HTMLElement | null) {
 /** One cell of the grid. On a phone the label shows above the box; on a wide screen the column header does that job. */
 function Cell({ col, label, wide = false, children }: { col: number; label: string; wide?: boolean; children: React.ReactNode }) {
   return (
-    <td data-col={col} className={cn("px-1 py-1 align-top max-xl:block max-xl:p-0 xl:border-r xl:border-border/60", wide && "max-xl:col-span-2")}>
-      <span className="mb-1 block text-xs font-medium text-muted-foreground xl:hidden">{label}</span>
+    <td data-col={col} className={cn("px-1 py-1 align-top max-[1399px]:block max-[1399px]:p-0 min-[1400px]:border-r min-[1400px]:border-border/60", wide && "max-[1399px]:col-span-2")}>
+      <span className="mb-1 block text-xs font-medium text-muted-foreground min-[1400px]:hidden">{label}</span>
       {children}
     </td>
   );
@@ -116,11 +95,13 @@ export function BulkEntry({
   nowTime: string;
   saveBulk: typeof saveBulkAction;
   /** For adding a category or a person without leaving the sheet. */
-  quickActions: QuickAddHostActions;
+  quickActions: QuickAddHostActions & { saveTransfer?: typeof saveTransferAction };
 }) {
   const [options, setOptions] = useState(initialOptions);
   const adders = useQuickAdd(quickActions, setOptions);
+  const router = useRouter();
   const wide = useIsWide();
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [rows, setRows] = useState<BulkRow[]>(() => startingRows(today, nowTime));
   const [restored, setRestored] = useState(false);
   const [errors, setErrors] = useState<Record<string, BulkRowErrors>>({});
@@ -130,6 +111,9 @@ export function BulkEntry({
   const [howMany, setHowMany] = useState("5");
   const [addMode, setAddMode] = useState<"today" | "next">("today");
   const [saving, setSaving] = useState(false);
+  // The row whose Bank Through list was used to open Self Transfer; its Debit is the (fixed) amount of the transfer.
+  // The transfer stays on that row, and is saved together with every other row when Save All is pressed.
+  const [transferFor, setTransferFor] = useState<BulkRow | null>(null);
   // One id per sheet: sending the same sheet again (retry, double click) can never save it twice.
   const [requestId, setRequestId] = useState(newRequestId);
   // After rows are added, the cursor goes to the first new one.
@@ -137,6 +121,7 @@ export function BulkEntry({
 
   const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
   const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
+  const creditCategoryGroups = useMemo(() => groupCategories(options.creditCategories), [options.creditCategories]);
 
   // Bring back what was typed before the page was refreshed.
   useEffect(() => {
@@ -188,6 +173,14 @@ export function BulkEntry({
       // New rows start from the previous row's date and time, which is what you want when typing a day's entries.
       return [...all, ...Array.from({ length: count }, () => blankRow(last?.date ?? today, last?.time ?? nowTime))];
     });
+  }
+
+  /** Self Transfer from a row: the amount is what was typed in that row's Debit, and the transfer cannot change it. */
+  function openTransfer(row: BulkRow) {
+    const typed = row.debit.trim() || row.credit.trim();
+    const paise = parseAmountInput(typed);
+    if (!paise || paise <= 0) return void toast.error("Type the amount in Debit first. The transfer uses that amount.");
+    setTransferFor(row);
   }
 
   // ── Selecting rows ──
@@ -292,7 +285,7 @@ export function BulkEntry({
         const atEnd = target.selectionStart === target.value.length && target.selectionEnd === target.value.length;
         if (!(target.value.endsWith(" ") && atEnd)) return; // the first space is typed as usual
         const key = tr.id.replace(/^row-/, "");
-        change(key, (r) => rowWithReason(r, r.reason.trimEnd(), options.keywords));
+        change(key, (r) => rowWithReason(r, r.reason.trimEnd(), keywordsFor(options, isCreditRow(r) ? "CREDIT" : "DEBIT")));
       }
       event.preventDefault();
       const right = nextCell({ rows: trs.length, cols: COLS }, { row: at, col }, "right", usable);
@@ -354,14 +347,25 @@ export function BulkEntry({
     toast.success(result.duplicate ? "That sheet was already saved." : `${result.count} transaction${result.count === 1 ? "" : "s"} saved.`, {
       description: "Totals, the table and bank balances are updated.",
     });
+    clearDraft();
     setRows(startingRows(today, nowTime));
     setSelected(new Set());
     setRequestId(newRequestId());
   }
 
+  /** Cancel, once confirmed: the sheet and its draft are thrown away (nothing is kept), and the page goes back to GPay Transactions. */
+  async function cancelSheet(): Promise<string | null> {
+    clearDraft();
+    setRows(startingRows(today, nowTime));
+    setErrors({});
+    setSelected(new Set());
+    router.push("/quick-pay/transactions");
+    return null;
+  }
+
   const bad = (key: string, field: keyof BulkRowErrors) => Boolean(errors[key]?.[field]);
   // On a wide screen the boxes are plain (like a spreadsheet); they only show a frame when hovered or focused.
-  const field = cn("h-8 text-base xl:text-sm", wide && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background");
+  const field = cn("h-8 text-base min-[1400px]:text-sm", wide && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background");
   const count = selected.size;
 
   const menu = (key: string, index: number) => (
@@ -410,6 +414,9 @@ export function BulkEntry({
           {saving ? <Loader2 className="animate-spin" /> : null}
           {saving ? "Saving…" : `Save All${totals.filled ? ` (${totals.filled})` : ""}`}
         </Button>
+        <Button type="button" variant="outline" onClick={() => setConfirmCancel(true)} disabled={saving}>
+          Cancel
+        </Button>
         <Link href="/quick-pay/transactions" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
           Back to GPay Transactions
         </Link>
@@ -446,25 +453,25 @@ export function BulkEntry({
             </button>
           </>
         ) : (
-          <span className="hidden text-xs text-muted-foreground xl:inline">Tip: arrows move between boxes, Space goes to the next box, Enter goes to the next line.</span>
+          <span className="hidden text-xs text-muted-foreground min-[1400px]:inline">Tip: arrows move between boxes, Space goes to the next box, Enter goes to the next line.</span>
         )}
       </div>
 
-      <div className="xl:rounded-lg xl:border xl:bg-card">
+      <div className="min-[1400px]:rounded-lg min-[1400px]:border min-[1400px]:bg-card">
         <table className="w-full table-fixed text-sm" onKeyDown={onGridKeyDown}>
-          <colgroup className="max-xl:hidden">
-            <col style={{ width: "3.5rem" }} />
-            <col style={{ width: "12.25rem" }} />
-            <col style={{ width: "6.75rem" }} />
-            <col style={{ width: "5.5rem" }} />
-            <col style={{ width: "5.5rem" }} />
+          <colgroup className="max-[1399px]:hidden">
+            <col style={{ width: "3.25rem" }} />
+            <col style={{ width: "12.5rem" }} />
+            <col style={{ width: "7rem" }} />
+            <col style={{ width: "6.5rem" }} />
+            <col style={{ width: "6.5rem" }} />
             <col />
-            <col style={{ width: "8.5rem" }} />
-            <col style={{ width: "8.5rem" }} />
-            <col style={{ width: "14.5rem" }} />
-            <col style={{ width: "2.5rem" }} />
+            <col style={{ width: "10rem" }} />
+            <col style={{ width: "11rem" }} />
+            <col style={{ width: "16rem" }} />
+            <col style={{ width: "2.25rem" }} />
           </colgroup>
-          <thead className="hidden border-b bg-muted/50 text-xs text-muted-foreground xl:table-header-group">
+          <thead className="hidden border-b bg-muted/50 text-xs text-muted-foreground min-[1400px]:table-header-group">
             <tr>
               <th scope="col" className="px-2 py-2 text-left font-medium">
                 <span className="sr-only">Select and row number</span>#
@@ -482,7 +489,7 @@ export function BulkEntry({
               </th>
             </tr>
           </thead>
-          <tbody className="max-xl:block xl:divide-y">
+          <tbody className="max-[1399px]:block min-[1400px]:divide-y">
             {rows.map((row, index) => {
               const e = errors[row.key] ?? {};
               const hasDebit = row.debit.trim() !== "";
@@ -499,18 +506,18 @@ export function BulkEntry({
                   data-grid-row=""
                   aria-selected={on}
                   className={cn(
-                    "max-xl:mb-3 max-xl:grid max-xl:grid-cols-2 max-xl:gap-x-2 max-xl:gap-y-2 max-xl:rounded-xl max-xl:border max-xl:bg-card max-xl:p-3",
-                    on && "bg-amber-50/60 max-xl:border-amber-300",
+                    "max-[1399px]:mb-3 max-[1399px]:grid max-[1399px]:grid-cols-2 max-[1399px]:gap-x-2 max-[1399px]:gap-y-2 max-[1399px]:rounded-xl max-[1399px]:border max-[1399px]:bg-card max-[1399px]:p-3",
+                    on && "bg-amber-50/60 max-[1399px]:border-amber-300",
                     Object.keys(e).length > 0 && "bg-destructive/5",
                   )}
                 >
-                  <td className="px-2 py-2.5 max-xl:col-span-2 max-xl:flex max-xl:items-center max-xl:justify-between max-xl:p-0 xl:border-r xl:border-border/60">
+                  <td className="px-2 py-2.5 max-[1399px]:col-span-2 max-[1399px]:flex max-[1399px]:items-center max-[1399px]:justify-between max-[1399px]:p-0 min-[1400px]:border-r min-[1400px]:border-border/60">
                     <span className="flex items-center gap-2">
                       <Checkbox checked={on} onCheckedChange={() => toggle(row.key)} aria-label={`Select row ${index + 1}`} />
                       <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
                     </span>
                     {/* On a phone the menu sits in the card's top corner */}
-                    <span className="xl:hidden">{menu(row.key, index)}</span>
+                    <span className="min-[1400px]:hidden">{menu(row.key, index)}</span>
                   </td>
                   <Cell col={0} label="Date">
                     <DatePicker compact bare={wide} ariaLabel={`Row ${index + 1} date`} value={row.date} max={today} invalid={bad(row.key, "date")} onChange={(d) => update(row.key, { date: d })} />
@@ -550,47 +557,59 @@ export function BulkEntry({
                       placeholder="Reason"
                       value={row.reason}
                       maxLength={200}
-                      onChange={(ev) => change(row.key, (r) => rowWithReason(r, ev.target.value, options.keywords))}
+                      onChange={(ev) => change(row.key, (r) => rowWithReason(r, ev.target.value, keywordsFor(options, isCreditRow(r) ? "CREDIT" : "DEBIT")))}
                       className={field}
                     />
                     {e.amount ? <p className="mt-0.5 text-[11px] text-destructive">{e.amount}</p> : null}
                     {e.reason ? <p className="mt-0.5 text-[11px] text-destructive">{e.reason}</p> : null}
                   </Cell>
                   <Cell col={5} label="Bank Through">
-                    <CascadingSelect compact bare={wide} ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} />
+                    {row.transfer ? (
+                      <div className="flex h-8 items-center gap-1.5 rounded-md bg-sky-50 px-2 text-sm text-sky-800" title="Self transfer, saved with Save All">
+                        <ArrowLeftRight className="size-3.5 shrink-0" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate">
+                          {bankName(options, row.transfer.fromId)} → {bankName(options, row.transfer.toId)}
+                        </span>
+                        <button type="button" data-grid-control="" aria-label={`Row ${index + 1}: remove the self transfer`} onClick={() => update(row.key, { transfer: null, accountId: null })} className="rounded p-0.5 hover:bg-sky-100">
+                          <X className="size-3.5" aria-hidden />
+                        </button>
+                      </div>
+                    ) : (
+                    <CascadingSelect compact bare={wide} ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} footer={quickActions.saveTransfer ? <SelfTransferItem onOpen={() => openTransfer(row)} /> : undefined} />
+                    )}
                     {e.bank ? <p className="mt-0.5 text-[11px] text-destructive">{e.bank}</p> : null}
                   </Cell>
                   <Cell col={6} label="Category">
-                    {/* As in Quick Entry: a Credit has no category; a keyword in the Reason picks it; a new one can be added here */}
-                    {credit ? (
-                      <p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>
-                    ) : (
-                      <CascadingSelect
-                        compact
-                        bare={wide}
-                        clearable
-                        ariaLabel={`Row ${index + 1} category`}
-                        groups={categoryGroups}
-                        value={row.categoryId}
-                        onChange={(v) => update(row.key, { categoryId: v, categoryManual: true, categoryAuto: false })}
-                        placeholder={row.categoryAuto ? "Category · auto" : "Category"}
-                        searchPlaceholder="Search categories…"
-                        emptyText="No category found. Add one below."
-                        footer={
-                          <InlineAdd
-                            label="New category"
-                            placeholder="Add a category…"
-                            onAdd={async (name) => {
-                              const added = await adders.addCategory(name);
-                              if (added.ok) update(row.key, { categoryId: added.id, categoryManual: true, categoryAuto: false });
-                              return added;
-                            }}
-                          />
-                        }
-                      />
-                    )}
+                    {row.transfer ? (<p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>) : (<>
+                    {/* As in Quick Entry: a Debit and a Credit have different categories; a keyword in the Reason picks it; a new one can be added here */}
+                    <CascadingSelect
+                      compact
+                      bare={wide}
+                      clearable
+                      ariaLabel={`Row ${index + 1} category`}
+                      groups={credit ? creditCategoryGroups : categoryGroups}
+                      value={row.categoryId}
+                      onChange={(v) => update(row.key, { categoryId: v, categoryManual: true, categoryAuto: false })}
+                      placeholder={row.categoryAuto ? "Category · auto" : "Category"}
+                      searchPlaceholder="Search categories…"
+                      emptyText="No category found. Add one below."
+                      footer={
+                        <InlineAdd
+                          label="New category"
+                          placeholder="Add a category…"
+                          onAdd={async (name) => {
+                            const added = await adders.addCategory(name, credit ? "CREDIT" : "DEBIT");
+                            if (added.ok) update(row.key, { categoryId: added.id, categoryManual: true, categoryAuto: false });
+                            return added;
+                          }}
+                        />
+                      }
+                    />
+
+                  </>)}
                   </Cell>
                   <Cell col={7} label="Split" wide>
+                    {row.transfer ? (<p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>) : (<>
                     {/* As in Quick Entry: pick people; each gets a percentage and an amount */}
                     <PeoplePicker
                       compact
@@ -630,14 +649,43 @@ export function BulkEntry({
                       </ul>
                     ) : null}
                     {e.split ? <p className="mt-0.5 text-[11px] text-destructive">{e.split}</p> : null}
+                  </>)}
                   </Cell>
-                  <td className={cn("px-1 py-1 align-top max-xl:hidden")}>{menu(row.key, index)}</td>
+                  <td className={cn("px-1 py-1 align-top max-[1399px]:hidden")}>{menu(row.key, index)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {quickActions.saveTransfer ? (
+        <SelfTransferDialog
+          open={transferFor !== null}
+          onOpenChange={(open) => {
+            if (!open) setTransferFor(null);
+          }}
+          options={options}
+          saveTransfer={quickActions.saveTransfer}
+          // Nothing is saved here: the transfer is kept on the row and saved with Save All.
+          onChoose={(choice) => {
+            if (!transferFor) return;
+            update(transferFor.key, { transfer: { fromId: choice.fromId, toId: choice.toId }, accountId: choice.fromId, reason: choice.reason, categoryId: null, categoryManual: false, categoryAuto: false, shares: [] });
+            setTransferFor(null);
+            toast.success("Self transfer added to the sheet. It is saved with Save All.");
+          }}
+          fixedAmount={transferFor ? (transferFor.debit.trim() || transferFor.credit.trim()) : undefined}
+          initialReason={transferFor?.reason}
+          initial={transferFor?.transfer ? { fromId: transferFor.transfer.fromId, toId: transferFor.transfer.toId } : undefined}
+        />
+      ) : null}
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title="Cancel this sheet?"
+        description="Everything typed here is thrown away and it is not kept as a draft. This cannot be undone."
+        confirmLabel="Yes, cancel"
+        onConfirm={cancelSheet}
+      />
     </div>
   );
 }

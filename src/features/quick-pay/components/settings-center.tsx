@@ -61,6 +61,7 @@ export function SettingsCenter({
   initialTab,
   banks: initialBanks,
   categories: initialCategories,
+  creditCategories: initialCreditCategories,
   people,
   options,
   food,
@@ -69,6 +70,8 @@ export function SettingsCenter({
   initialTab: SettingsTab;
   banks: BankTreeNode[];
   categories: CategoryTreeNode[];
+  /** The categories for a Credit (money in), a separate list from the Debit ones. */
+  creditCategories: CategoryTreeNode[];
   people: PersonRow[];
   options: QuickPayOptions;
   food: FoodPricing;
@@ -78,6 +81,9 @@ export function SettingsCenter({
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [bankTree, setBankTree] = useState(initialBanks);
   const [categories, setCategories] = useState(initialCategories);
+  const [creditTree, setCreditTree] = useState(initialCreditCategories);
+  // Which list of categories is open: a Debit has one set, a Credit another.
+  const [catKind, setCatKind] = useState<"DEBIT" | "CREDIT">("DEBIT");
   const [settings, setSettings] = useState<QuickPaySettingsData>(options.settings);
   const [newKind, setNewKind] = useState<MethodKind>("BANK");
 
@@ -89,7 +95,7 @@ export function SettingsCenter({
   /** Category changes made in the names list also refresh the keyword list. */
   function trackCategories(result: { ok: true; tree: CategoryTreeNode[] } | { ok: false; error: string }): TreeResult {
     if (!result.ok) return { ok: false, error: result.error };
-    setCategories(result.tree);
+    (catKind === "CREDIT" ? setCreditTree : setCategories)(result.tree);
     return { ok: true, nodes: categoryNodes(result.tree) };
   }
   function bankResult(result: { ok: true; tree: BankTreeNode[] } | { ok: false; error: string }): TreeResult {
@@ -104,7 +110,13 @@ export function SettingsCenter({
     { id: m.id, label: m.name, mainName: m.name, name: m.name, isSub: false },
     ...m.subs.map((s) => ({ id: s.id, label: `${m.name} → ${s.name}`, mainName: m.name, name: s.name, isSub: true })),
   ]);
-  const liveOptions: QuickPayOptions = { ...options, settings, banks: bankOptions, categories: categoryOptions };
+  const toOptions = (tree: CategoryTreeNode[]) =>
+    tree.flatMap((m) => [
+      { id: m.id, label: m.name, mainName: m.name, name: m.name, isSub: false },
+      ...m.subs.map((s) => ({ id: s.id, label: `${m.name} → ${s.name}`, mainName: m.name, name: s.name, isSub: true })),
+    ]);
+  const liveOptions: QuickPayOptions = { ...options, settings, banks: bankOptions, categories: categoryOptions, creditCategories: toOptions(creditTree) };
+  const shownTree = catKind === "CREDIT" ? creditTree : categories;
 
   return (
     <div className="space-y-5">
@@ -165,24 +177,48 @@ export function SettingsCenter({
           <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="min-w-0 max-w-3xl space-y-4">
             {tab === "categories" ? (
               <>
+                {/* A Debit (money out) and a Credit (money in) have different categories */}
+                <div role="radiogroup" aria-label="Which categories" className="flex w-fit gap-1 rounded-xl bg-muted p-1">
+                  {(
+                    [
+                      ["DEBIT", "Debit categories"],
+                      ["CREDIT", "Credit categories"],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="radio"
+                      aria-checked={catKind === kind}
+                      onClick={() => setCatKind(kind)}
+                      className={cn("h-9 rounded-lg px-4 text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50", catKind === kind ? "bg-neutral-950 text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground")}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <Card className="overflow-visible">
                   <CardHeader>
-                    <CardTitle>Categories</CardTitle>
-                    <CardDescription>Add as many categories as you like, for example Food, Travel, Office. Give each its reasons below. The first three are shown; use See more for the rest.</CardDescription>
+                    <CardTitle>{catKind === "CREDIT" ? "Credit categories" : "Debit categories"}</CardTitle>
+                    <CardDescription>
+                      {catKind === "CREDIT"
+                        ? "The categories offered when an entry is a Credit (money in), for example Salary, Refund, Interest. They are separate from the Debit categories. The first three are shown; use See more for the rest."
+                        : "The categories offered when an entry is a Debit (money out), for example Food, Travel, Office. They are separate from the Credit categories. The first three are shown; use See more for the rest."}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    <DefaultChoice kind="category" settings={settings.fields} options={liveOptions} actions={actions} onSaved={setSettings} />
+                    {catKind === "DEBIT" ? <DefaultChoice kind="category" settings={settings.fields} options={liveOptions} actions={actions} onSaved={setSettings} /> : null}
                     <TreeEditor
-                      key="categories"
+                      key={`categories-${catKind}`}
                       initialVisible={3}
                       allowSubs={false}
-                      initialNodes={categoryNodes(categories)}
+                      initialNodes={categoryNodes(shownTree)}
                       nouns={{ main: "category", sub: "sub-category" }}
                       actions={{
-                        addMain: async (name) => trackCategories(await actions.addCategory({ name })),
+                        addMain: async (name) => trackCategories(await actions.addCategory({ name, kind: catKind })),
                         addSub: async (mainId, name) => trackCategories(await actions.addSubCategory({ mainId, name })),
-                        rename: async (id, name) => trackCategories(await actions.renameCategory({ id, name })),
-                        remove: async (id) => trackCategories(await actions.removeCategory({ id })),
+                        rename: async (id, name) => trackCategories(await actions.renameCategory({ id, name, kind: catKind })),
+                        remove: async (id) => trackCategories(await actions.removeCategory({ id, kind: catKind })),
                       }}
                     />
                   </CardContent>
@@ -197,7 +233,14 @@ export function SettingsCenter({
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <KeywordEditor tree={categories} setKeywords={actions.setKeywords} onTree={setCategories} initialVisible={3} mainOnly />
+                    <KeywordEditor
+                      key={`reasons-${catKind}`}
+                      tree={shownTree}
+                      setKeywords={((raw: object) => actions.setKeywords({ ...raw, kind: catKind })) as typeof actions.setKeywords}
+                      onTree={catKind === "CREDIT" ? setCreditTree : setCategories}
+                      initialVisible={3}
+                      mainOnly
+                    />
                   </CardContent>
                 </Card>
               </>

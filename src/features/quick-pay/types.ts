@@ -41,7 +41,10 @@ export interface ShareDetail {
 
 export interface QuickPayOptions {
   banks: BankOption[];
+  /** Categories for a Debit (money out). A Credit has its own, separate list: `creditCategories`. */
   categories: CategoryOption[];
+  /** Categories for a Credit (money in). */
+  creditCategories: CategoryOption[];
   persons: PersonOption[];
   /** Words that pick a category from the Reason. */
   keywords: KeywordEntry[];

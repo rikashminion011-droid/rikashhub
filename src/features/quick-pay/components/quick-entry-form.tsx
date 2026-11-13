@@ -15,6 +15,7 @@ import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
 import { validateQuickPayInput, type QuickPayErrors } from "../validation";
 import { EntryFields } from "./entry-fields";
 import { notifyDataChanged } from "./period-context";
+import { SelfTransferDialog } from "./transfer-dialog";
 import { useQuickAdd } from "./use-quick-add";
 
 const newRequestId = () => crypto.randomUUID();
@@ -42,6 +43,7 @@ export function QuickEntryForm({
 
   const [credits, setCredits] = useState<RecentCredit[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const router = useRouter();
 
   const setForm = useCallback((update: (f: FormState) => FormState) => setFormState((f) => update(f)), []);
@@ -211,6 +213,7 @@ export function QuickEntryForm({
             onToggleCredits={toggleCredits}
             onAddCategory={adders.addCategory}
             onAddPerson={adders.addPerson}
+            onSelfTransfer={actions.saveTransfer ? () => setTransferOpen(true) : undefined}
           />
 
           {formError ? (
@@ -242,6 +245,7 @@ export function QuickEntryForm({
         </form>
       </div>
 
+      {actions.saveTransfer ? <SelfTransferDialog open={transferOpen} onOpenChange={setTransferOpen} options={options} saveTransfer={actions.saveTransfer} /> : null}
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

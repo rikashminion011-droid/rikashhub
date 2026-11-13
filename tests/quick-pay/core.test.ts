@@ -276,12 +276,29 @@ describe("bulk rows with a split", () => {
     const out = validateBulkRow({ ...base, shares }, now);
     expect(out.ok && out.value.shares.map((s) => [s.partyId, s.sharePaise])).toEqual([["p1", 2500], ["p2", 2500]]);
   });
-  it("refuses shares above the amount, and keeps a credit free of a category", () => {
+  it("refuses shares above the amount, and keeps a credit's own category", () => {
     expect(validateBulkRow({ ...base, shares: [{ partyId: "p1", method: "PERCENT", value: "70" }, { partyId: "p2", method: "PERCENT", value: "60" }] }, now)).toMatchObject({ ok: false, errors: { split: expect.any(String) } });
-    const credit = validateBulkRow({ ...base, debit: "", credit: "50" }, now);
-    expect(credit.ok && credit.value.categoryId).toBeNull();
+    const credit = validateBulkRow({ ...base, debit: "", credit: "50", categoryId: "income-c" }, now);
+    expect(credit.ok && credit.value.categoryId).toBe("income-c");
   });
   it("a row with only people chosen is not blank", () => {
     expect(isBlankBulkRow({ ...base, debit: "", reason: "", accountId: null, categoryId: null, shares })).toBe(false);
+  });
+});
+
+describe("bulk rows that are self transfers", () => {
+  const now = new Date("2026-11-10T10:00:00Z");
+  const base: BulkRowInput = { key: "t1", date: "2026-11-09", time: "14:30", debit: "500", credit: "", reason: "Top up", accountId: null, categoryId: null, shares: [], transfer: { fromId: "a1", toId: "a2" } };
+
+  it("needs no Bank Through, and becomes a transfer from the first bank to the second", () => {
+    const out = validateBulkRow(base, now);
+    expect(out.ok && [out.value.accountId, out.value.transfer, out.value.amountPaise, out.value.categoryId, out.value.shares]).toEqual(["a1", { toId: "a2" }, 50000, null, []]);
+  });
+  it("refuses the same bank twice, and still needs an amount", () => {
+    expect(validateBulkRow({ ...base, transfer: { fromId: "a1", toId: "a1" } }, now)).toMatchObject({ ok: false, errors: { bank: "Choose two different banks." } });
+    expect(validateBulkRow({ ...base, debit: "" }, now)).toMatchObject({ ok: false, errors: { amount: expect.any(String) } });
+  });
+  it("a row with only a transfer on it is not blank", () => {
+    expect(isBlankBulkRow({ ...base, debit: "", reason: "" })).toBe(false);
   });
 });

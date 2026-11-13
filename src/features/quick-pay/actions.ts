@@ -245,21 +245,31 @@ export async function getOptionsAction(): Promise<QuickPayResult<{ options: Quic
 
 // ───────────────────────── Self transfer and the period list ─────────────────────────
 
-const transferSchema = z.object({ requestId: id, fromId: id.nullable(), toId: id.nullable(), amount: z.string().max(20), reason: z.string().max(1000) });
+const transferSchema = z.object({ requestId: id, fromId: id.nullable(), toId: id.nullable(), amount: z.string().max(20), reason: z.string().max(1000), date: z.string().max(10).optional(), time: z.string().max(5).optional() });
 
 /** Moves money from one bank to another. Both balances change and it shows once in GPay Transactions. */
 export async function saveTransferAction(raw: unknown): Promise<QuickPayResult<{ id: string; duplicate: boolean; amountPaise: number }>> {
   try {
     const parsed = transferSchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That transfer could not be read. Reload the page and try again." };
-    const { requestId, ...input } = parsed.data;
+    const { requestId, date, time, ...input } = parsed.data;
     const checked = validateTransfer(input);
     if (!checked.ok) {
       const [first] = Object.values(checked.errors);
       return { ok: false, error: first ?? "Check the transfer and try again.", fieldErrors: checked.errors as Record<string, string> };
     }
+    // A transfer made from a row of the Add Bulk sheet keeps that row's date and time.
+    let occurredAt: Date | undefined;
+    if (date) {
+      try {
+        occurredAt = istInstant(date, time || "00:00");
+      } catch {
+        return { ok: false, error: "Enter a valid date and time." };
+      }
+      if (occurredAt.getTime() > Date.now() + 5 * 60_000) return { ok: false, error: "The date and time cannot be in the future." };
+    }
     const { user, db } = await context();
-    const saved = await createTransfer(db, user.id, requestId, checked.value);
+    const saved = await createTransfer(db, user.id, requestId, checked.value, occurredAt);
     refresh();
     return { ok: true, id: saved.id, duplicate: saved.duplicate, amountPaise: checked.value.amountPaise };
   } catch (error) {
@@ -299,6 +309,7 @@ const bulkSchema = z.object({
         accountId: id.nullable(),
         categoryId: id.nullable(),
         shares: z.array(shareSchema).max(30),
+        transfer: z.object({ fromId: id, toId: id }).nullable().optional(),
       }),
     )
     .max(MAX_BULK_ROWS + 200),
@@ -453,9 +464,9 @@ export async function resetSettingsAction(raw: unknown): Promise<QuickPayResult<
 
 /** Sets the keywords of one category (replacing its list) and returns the refreshed category tree. */
 export async function setKeywordsAction(raw: unknown): Promise<QuickPayResult<{ tree: CategoryTreeNode[] }>> {
-  const parsed = z.object({ categoryId: id, keywords: z.array(z.string().max(80)).max(200) }).safeParse(raw);
+  const parsed = z.object({ categoryId: id, keywords: z.array(z.string().max(80)).max(200), kind: categoryKind }).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Those keywords could not be read." };
-  return categoryTree((db, uid) => setCategoryKeywords(db, uid, parsed.data), "set keywords");
+  return categoryTree((db, uid) => setCategoryKeywords(db, uid, { categoryId: parsed.data.categoryId, keywords: parsed.data.keywords }), "set keywords", parsed.data.kind);
 }
 
 // ───────────────────────── Customized settings: banks and categories ─────────────────────────
@@ -474,12 +485,14 @@ async function bankTree(run: (db: ReturnType<typeof getPrisma>, userId: string) 
   }
 }
 
-async function categoryTree(run: (db: ReturnType<typeof getPrisma>, userId: string) => Promise<unknown>, label: string): Promise<CategoryTreeResult> {
+const categoryKind = z.enum(["DEBIT", "CREDIT"]).optional();
+
+async function categoryTree(run: (db: ReturnType<typeof getPrisma>, userId: string) => Promise<unknown>, label: string, kind: "DEBIT" | "CREDIT" = "DEBIT"): Promise<CategoryTreeResult> {
   try {
     const { user, db } = await context();
     await run(db, user.id);
     refresh();
-    return { ok: true, tree: await getCategoryTree(db, user.id) };
+    return { ok: true, tree: await getCategoryTree(db, user.id, kind) };
   } catch (error) {
     return failure(error, label);
   }
@@ -510,9 +523,9 @@ export async function removeBankAction(raw: unknown): Promise<BankTreeResult> {
 }
 
 export async function addCategoryAction(raw: unknown): Promise<CategoryTreeResult> {
-  const p = z.object({ name }).safeParse(raw);
+  const p = z.object({ name, kind: categoryKind }).safeParse(raw);
   if (!p.success) return bad(p.error.issues[0]?.message ?? "Enter a name.");
-  return categoryTree((db, uid) => addMainCategory(db, uid, p.data), "add category");
+  return categoryTree((db, uid) => addMainCategory(db, uid, p.data), "add category", p.data.kind);
 }
 export async function addSubCategoryAction(raw: unknown): Promise<CategoryTreeResult> {
   const p = z.object({ mainId: id, name }).safeParse(raw);
@@ -520,14 +533,14 @@ export async function addSubCategoryAction(raw: unknown): Promise<CategoryTreeRe
   return categoryTree((db, uid) => addSubCategory(db, uid, p.data), "add sub-category");
 }
 export async function renameCategoryAction(raw: unknown): Promise<CategoryTreeResult> {
-  const p = z.object({ id, name }).safeParse(raw);
+  const p = z.object({ id, name, kind: categoryKind }).safeParse(raw);
   if (!p.success) return bad(p.error.issues[0]?.message ?? "Enter a name.");
-  return categoryTree((db, uid) => renameCategory(db, uid, p.data), "rename category");
+  return categoryTree((db, uid) => renameCategory(db, uid, { id: p.data.id, name: p.data.name }), "rename category", p.data.kind);
 }
 export async function removeCategoryAction(raw: unknown): Promise<CategoryTreeResult> {
-  const p = z.object({ id }).safeParse(raw);
+  const p = z.object({ id, kind: categoryKind }).safeParse(raw);
   if (!p.success) return bad("That category could not be found.");
-  return categoryTree((db, uid) => removeCategory(db, uid, p.data), "remove category");
+  return categoryTree((db, uid) => removeCategory(db, uid, { id: p.data.id }), "remove category", p.data.kind);
 }
 
 /** The action set the Quick Pay screens use. Passed in as props so the components can also run against stand-ins. */
@@ -537,6 +550,8 @@ export interface QuickPayActions {
   getEntry: typeof getEntryAction;
   getRecentCredits: typeof getRecentCreditsAction;
   getOptions: typeof getOptionsAction;
+  /** Lets the Bank Through list open the Self Transfer pop-up. */
+  saveTransfer?: typeof saveTransferAction;
 }
 
 /** What the "add here" boxes in the entry form call, so a category or person can be added without leaving the page. */

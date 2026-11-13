@@ -44,7 +44,8 @@ export function emptyState(settings: QuickPaySettingsData, options?: Pick<QuickP
   const { fields, split } = settings;
   // A default that has since been removed is ignored instead of leaving a dead selection.
   const bank = options && fields.defaults.bankId && !options.banks.some((b) => b.id === fields.defaults.bankId) ? null : fields.defaults.bankId;
-  const category = options && fields.defaults.categoryId && !options.categories.some((c) => c.id === fields.defaults.categoryId) ? null : fields.defaults.categoryId;
+  // The default category is a Debit category, so it is only used when the form opens as a Debit.
+  const category = fields.defaults.type !== "DEBIT" || (options && fields.defaults.categoryId && !options.categories.some((c) => c.id === fields.defaults.categoryId)) ? null : fields.defaults.categoryId;
   const party = options && split.defaultPartyId && !options.persons.some((p) => p.id === split.defaultPartyId) ? null : split.defaultPartyId;
   return {
     amount: "",
@@ -89,12 +90,12 @@ export function fromEntry(entry: EntryDetails, settings: QuickPaySettingsData): 
 }
 
 /**
- * The form after the Reason changes. If you have not chosen the category yourself, a keyword in the Reason picks it;
+ * The form after the Reason changes. `keywords` are the ones for this kind of entry (see keywordsFor). If you have not chosen the category yourself, a keyword in the Reason picks it;
  * if a keyword picked it earlier and no longer matches, it is cleared again. A category you chose is never touched.
  */
 export function withReason(form: FormState, reason: string, keywords: QuickPayOptions["keywords"]): FormState {
   const next = { ...form, reason };
-  if (form.type === "CREDIT" || form.categoryManual) return next;
+  if (form.categoryManual) return next;
   const matched = matchCategory(reason, keywords);
   if (matched) return { ...next, categoryId: matched, categoryAuto: true };
   if (form.categoryAuto) return { ...next, categoryId: null, categoryAuto: false };
@@ -155,7 +156,7 @@ export function withShareValue(form: FormState, partyId: string, method: SplitMe
   return { ...form, shares: form.shares.map((s) => (s.partyId === partyId ? { ...s, method, value, edited: true } : s)) };
 }
 
-/** What the form sends to be validated and saved. A Credit never carries a category, a Debt or Credits Added. */
+/** What the form sends to be validated and saved. A Credit carries a Credit category but never a Debt or Credits Added. */
 export function toQuickPayInput(form: FormState): QuickPayInput {
   const debit = form.type === "DEBIT";
   return {
@@ -163,7 +164,7 @@ export function toQuickPayInput(form: FormState): QuickPayInput {
     type: form.type,
     reason: form.reason,
     accountId: form.accountId,
-    categoryId: debit ? form.categoryId : null,
+    categoryId: form.categoryId,
     split: {
       enabled: form.splitKind !== null && (debit || form.splitKind === "SPLIT"),
       kind: form.splitKind ?? "SPLIT",

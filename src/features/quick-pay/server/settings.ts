@@ -68,9 +68,13 @@ export async function removeBank(db: PrismaClient, userId: string, input: { id: 
 
 // ───────────────────────── Categories ─────────────────────────
 
-export async function getCategoryTree(db: PrismaClient, userId: string): Promise<CategoryTreeNode[]> {
+/** Debit categories (money out) and Credit categories (money in) are two separate lists. */
+export type CategoryKind = "DEBIT" | "CREDIT";
+const typeOfKind = (kind: CategoryKind) => (kind === "CREDIT" ? ("INCOME" as const) : ("EXPENSE" as const));
+
+export async function getCategoryTree(db: PrismaClient, userId: string, kind: CategoryKind = "DEBIT"): Promise<CategoryTreeNode[]> {
   const mains = await db.transactionCategory.findMany({
-    where: { userId, deletedAt: null, type: "EXPENSE", parentId: null },
+    where: { userId, deletedAt: null, type: typeOfKind(kind), parentId: null },
     include: { children: { where: { deletedAt: null }, orderBy: [{ createdAt: "asc" }, { name: "asc" }] } },
     orderBy: [{ createdAt: "asc" }, { name: "asc" }],
   });
@@ -85,7 +89,18 @@ export function categoryOptionsFrom(tree: readonly CategoryTreeNode[]): Category
   ]);
 }
 
-export const addMainCategory = (db: PrismaClient, userId: string, input: { name: string }) => addCategory(db, userId, input);
+/** Adds a main category to the Debit list (default) or the Credit list. A removed one with the same name is brought back. */
+export async function addMainCategory(db: PrismaClient, userId: string, input: { name: string; kind?: CategoryKind }): Promise<string> {
+  if ((input.kind ?? "DEBIT") === "DEBIT") return addCategory(db, userId, { name: input.name });
+  const name = cleanName(input.name);
+  const existing = await db.transactionCategory.findFirst({ where: { userId, type: "INCOME", parentId: null, name: { equals: name, mode: "insensitive" } } });
+  if (existing && !existing.deletedAt) throw new ExpenseError(`"${existing.name}" already exists.`, "CONFLICT");
+  if (existing) {
+    await db.transactionCategory.update({ where: { id: existing.id }, data: { deletedAt: null, createdAt: new Date() } });
+    return existing.id;
+  }
+  return (await db.transactionCategory.create({ data: { userId, name, type: "INCOME", keywords: [] } })).id;
+}
 
 export async function addSubCategory(db: PrismaClient, userId: string, input: { mainId: string; name: string }): Promise<string> {
   const name = cleanName(input.name);
@@ -137,12 +152,13 @@ export async function removeCategory(db: PrismaClient, userId: string, input: { 
 // ───────────────────────── Everything the entry forms need ─────────────────────────
 
 export async function getQuickPayOptions(db: PrismaClient, userId: string): Promise<QuickPayOptions> {
-  const [banks, categories, people] = await Promise.all([
+  const [banks, categories, creditCategories, people] = await Promise.all([
     getBankTree(db, userId),
-    getCategoryTree(db, userId),
+    getCategoryTree(db, userId, "DEBIT"),
+    getCategoryTree(db, userId, "CREDIT"),
     db.expenseParty.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: "asc" } }),
   ]);
   const persons: PersonOption[] = people.map((p) => ({ id: p.id, name: p.name }));
   const [settings, keywords] = await Promise.all([getSettings(db, userId), getKeywordEntries(db, userId)]);
-  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), persons, settings, keywords };
+  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), creditCategories: categoryOptionsFrom(creditCategories), persons, settings, keywords };
 }

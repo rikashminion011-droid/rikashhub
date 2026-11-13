@@ -146,10 +146,13 @@ describe("category rules on a sheet row (as in Quick Entry)", () => {
     const chosen = rowWithReason(r({ categoryId: "office", categoryManual: true }), "Tiffin", keywords);
     expect(chosen.categoryId).toBe("office");
   });
-  it("a credit has no category: none is picked, and typing a credit drops the one it had", () => {
-    expect(rowWithReason(r({ debit: "", credit: "50" }), "Tiffin", keywords).categoryId).toBeNull();
+  it("a credit has its own categories: the keywords it is given pick one, and turning a debit into a credit (or back) clears the category", () => {
+    expect(rowWithReason(r({ debit: "", credit: "50" }), "Salary", [{ keyword: "salary", categoryId: "income-salary" }]).categoryId).toBe("income-salary");
     const dropped = rowWithAmounts(r({ categoryId: "food", categoryAuto: true }), { debit: "", credit: "50" });
     expect(dropped).toMatchObject({ categoryId: null, categoryAuto: false });
+    const back = rowWithAmounts(r({ debit: "", credit: "50", categoryId: "income-salary" }), { credit: "", debit: "60" });
+    expect(back.categoryId).toBeNull();
+    // changing the amount without changing the kind keeps the category
     expect(rowWithAmounts(r({ categoryId: "food" }), { debit: "60" }).categoryId).toBe("food");
     expect(isCreditRow({ debit: "", credit: "5" })).toBe(true);
     expect(isCreditRow({ debit: "1", credit: "" })).toBe(false);
