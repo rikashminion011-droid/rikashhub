@@ -1,7 +1,7 @@
 "use client";
 
 import { Soup, Wallet } from "lucide-react";
-import { Fragment, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
 import { FoodEntryForm } from "./food-entry-form";
@@ -48,6 +48,14 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
   const drag = useRef(0);
 
   const index = ORDER.findIndex((p) => p.id === active);
+
+  // On a phone the three tabs can be wider than the screen. The bar scrolls (with some room at both ends so even the first and
+  // last tab can reach the middle), and whichever page you are on, by tapping or swiping, is brought to the middle of it.
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (desktop) return;
+    bar.current?.querySelector<HTMLElement>(`[data-tab="${active}"]`)?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [active, desktop]);
   const show = (next: Panel) => {
     setActive(next);
     if (next === "food") setFoodOpened(true);
@@ -104,14 +112,15 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
   const deskMode: "payment" | "food" = active === "food" ? "food" : "payment";
   const offset = desktop ? undefined : `translateX(calc(${-index * 100}% + ${dragX}px))`;
 
-  const tab = (selected: boolean, onClick: () => void, label: string, icon?: ReactNode, className?: string) => (
+  const tab = (selected: boolean, onClick: () => void, label: string, icon?: ReactNode, className?: string, id?: string) => (
     <button
+      data-tab={id}
       type="button"
       role="tab"
       aria-selected={selected}
       onClick={onClick}
       className={cn(
-        "flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-semibold whitespace-nowrap transition-colors",
+        "flex h-10 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap transition-colors",
         selected ? "bg-neutral-950 text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
         className,
       )}
@@ -124,10 +133,10 @@ export function EntryModeSwitch({ payment, sidePanels, foodActions }: { payment:
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Phone: one tab bar for all three pages */}
-      <div role="tablist" aria-label="Quick Entry pages" className="flex w-full gap-1 rounded-xl bg-muted p-1 lg:hidden">
+      <div ref={bar} role="tablist" aria-label="Quick Entry pages" className="flex w-full gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] before:w-[28%] before:shrink-0 after:w-[28%] after:shrink-0 lg:hidden [&::-webkit-scrollbar]:hidden">
         {ORDER.map((p) => (
           <Fragment key={p.id}>
-            {tab(active === p.id, () => show(p.id), p.label, p.id === "payment" ? <Wallet className="size-4" aria-hidden /> : p.id === "food" ? <Soup className="size-4" aria-hidden /> : null, "sm:flex-none sm:px-6")}
+            {tab(active === p.id, () => show(p.id), p.label, p.id === "payment" ? <Wallet className="size-4" aria-hidden /> : p.id === "food" ? <Soup className="size-4" aria-hidden /> : null, "sm:flex-none sm:px-6", p.id)}
           </Fragment>
         ))}
       </div>

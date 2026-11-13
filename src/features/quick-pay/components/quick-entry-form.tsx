@@ -233,8 +233,9 @@ export function QuickEntryForm({
 
   const when = current ? formatTransactionWhen(new Date(current.occurredAt)) : null;
 
+  // overflow-visible: the bank and category lists open over the card's edge, so the card must not clip them.
   return (
-    <Card className="gap-3 py-4">
+    <Card className="gap-3 overflow-visible py-4">
       <CardHeader className="px-4 sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">

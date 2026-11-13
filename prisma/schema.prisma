@@ -208,6 +208,7 @@ model User {
   foodItems              FoodItem[]
   foodEntries            FoodEntry[]
   quickPaySettings       QuickPaySettings?
+  navigationSettings     NavigationSettings?
   splitPayments          SplitPayment[]
   creditLinks            TransactionCreditLink[]
   transactionSplits      TransactionSplit[]
@@ -921,4 +922,18 @@ model TransactionCreditLink {
   @@unique([debitId, creditId])
   @@index([userId, debitId])
   @@map("transaction_credit_links")
+}
+
+
+// ───────────────────────── Side navigator layout ─────────────────────────
+
+/// One row per user: headings, page order, renamed pages and hidden pages in the side navigator, as validated JSON.
+model NavigationSettings {
+  userId    String   @id @db.Uuid
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("navigation_settings")
 }

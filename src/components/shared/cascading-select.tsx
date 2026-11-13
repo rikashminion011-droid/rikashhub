@@ -138,7 +138,7 @@ export function CascadingSelect({
             />
           </div>
 
-          <ul id={listId} role="menu" aria-label={ariaLabel} className="p-1">
+          <ul id={listId} role="menu" aria-label={ariaLabel} className="p-1 max-md:max-h-64 max-md:overflow-y-auto">
             {searching ? (
               matches.length === 0 ? (
                 <li className="px-2.5 py-3 text-center text-xs text-muted-foreground">{emptyText}</li>

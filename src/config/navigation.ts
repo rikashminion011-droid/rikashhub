@@ -149,7 +149,9 @@ export const ACCOUNT_ITEM: NavItem = {
   planned: [],
 };
 
-const ALL_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ...FOOD_ITEMS, ACCOUNT_ITEM];
+/** Every page that can appear in the side navigator, in its built-in order. The page address is its identity. */
+export const ALL_NAV_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ...FOOD_ITEMS, ACCOUNT_ITEM];
+const ALL_ITEMS = ALL_NAV_ITEMS;
 
 /** The item for a path. When several match (/quick-pay and /quick-pay/transactions) the most specific one wins. */
 export function findNavItem(pathname: string): NavItem | undefined {

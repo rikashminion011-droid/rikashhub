@@ -47,7 +47,7 @@ const FIELD_NAME: Record<(typeof FIELD_KEYS)[number], string> = {
 
 function SectionCard({ title, description, children, footer }: { title: string; description: string; children: ReactNode; footer: ReactNode }) {
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
