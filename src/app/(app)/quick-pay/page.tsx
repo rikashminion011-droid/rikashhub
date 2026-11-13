@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Zap } from "lucide-react";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import {
+  addCategoryAction,
   deleteEntryAction,
   getDayTotalsAction,
   getEntryAction,
@@ -10,6 +11,7 @@ import {
   getRecentCreditsAction,
   saveEntryAction,
 } from "@/features/quick-pay/actions";
+import { addPersonAction } from "@/features/users/actions";
 import { getFoodPricingAction, saveFoodEntryAction } from "@/features/food/actions";
 import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
@@ -84,6 +86,8 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
               getEntryIds: getEntryIdsAction,
               getRecentCredits: getRecentCreditsAction,
               getOptions: getOptionsAction,
+              addCategory: addCategoryAction,
+              addPerson: addPersonAction,
             }}
           />
         }

@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { deleteEntryAction, patchEntryAction, QuickPayActions } from "../actions";
+import type { deleteEntryAction, patchEntryAction, QuickAddActions, QuickPayActions } from "../actions";
 import { groupCategories } from "../cascade";
 import { formatTransactionWhen } from "../datetime";
 import { matchCategory } from "../keywords";
@@ -29,6 +29,9 @@ export interface TableActions {
   saveEntry: QuickPayActions["saveEntry"];
   getEntry: QuickPayActions["getEntry"];
   getRecentCredits: QuickPayActions["getRecentCredits"];
+  getOptions: QuickPayActions["getOptions"];
+  addCategory: QuickAddActions["addCategory"];
+  addPerson: QuickAddActions["addPerson"];
 }
 
 /**
@@ -245,7 +248,7 @@ export function TransactionsTable({
           router.refresh();
         }}
       />
-      <SplitDialog row={splitting} options={options} onClose={() => setSplitting(null)} onSave={(choice) => patch(splitting!.id, { split: choice })} />
+      <SplitDialog row={splitting} options={options} actions={actions} onClose={() => setSplitting(null)} onSave={(choice) => patch(splitting!.id, { split: choice })} />
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
@@ -319,17 +322,22 @@ function ReasonCell({ value, onCommit }: { value: string; onCommit: (text: strin
   );
 }
 
-/** The Split box: tick it to choose a person and a share; the person and share show beside it, and clicking them changes it. */
+/** The Split box: tick it to choose the people and their shares; each person and share shows beside it, and clicking them changes it. */
 function SplitCell({ row, label, onOpen, onRemove }: { row: TxRow; label: string; onOpen: () => void; onRemove: () => void }) {
-  const on = row.partyId !== null;
+  const on = row.shares.length > 0;
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <Checkbox checked={on} onCheckedChange={(next) => (next === true ? onOpen() : onRemove())} aria-label={`${label}: ${on ? "on, untick to remove" : "off, tick to split"}`} />
+    <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+      <Checkbox className="mt-0.5" checked={on} onCheckedChange={(next) => (next === true ? onOpen() : onRemove())} aria-label={`${label}: ${on ? "on, untick to remove" : "off, tick to split"}`} />
       {on ? (
-        <button type="button" onClick={onOpen} className="rounded-md bg-amber-50 px-2 py-0.5 text-left text-xs text-amber-900 hover:bg-amber-100" title="Change the split">
-          <span className="font-medium">{row.person}</span>
-          {row.splitPercent !== null ? <span> · {formatPercent(row.splitPercent)}</span> : null}
-          {row.sharePaise !== null ? <span> · {formatINR(row.sharePaise)}</span> : null}
+        <button type="button" onClick={onOpen} className="flex flex-col gap-0.5 rounded-md bg-amber-50 px-2 py-0.5 text-left text-xs text-amber-900 hover:bg-amber-100" title="Change the split">
+          {row.splitKind === "DEBT" ? <span className="text-[10px] font-semibold tracking-wide text-amber-700 uppercase">Debt</span> : null}
+          {row.shares.map((share) => (
+            <span key={share.partyId}>
+              <span className="font-medium">{share.name}</span>
+              <span> · {formatPercent(share.percent)}</span>
+              <span> · {formatINR(share.sharePaise)}</span>
+            </span>
+          ))}
         </button>
       ) : null}
     </div>

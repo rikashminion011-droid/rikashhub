@@ -4,6 +4,7 @@ import {
   Flag,
   HandCoins,
   Landmark,
+  Settings2,
   Layers,
   LayoutDashboard,
   PiggyBank,
@@ -125,6 +126,13 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
     href: "/quick-pay/transactions",
     icon: ReceiptText,
     description: "Every Quick Pay entry, with filters, balances and export.",
+    planned: [],
+  },
+  {
+    title: "Customized Settings",
+    href: "/quick-pay/settings",
+    icon: Settings2,
+    description: "Users, banks, categories, fields, Split and Credits Added in one place.",
     planned: [],
   },
 ];

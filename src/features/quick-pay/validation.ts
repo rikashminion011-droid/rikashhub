@@ -1,6 +1,6 @@
 import { parseAmountInput } from "@/lib/finance";
 import { istInstant, isValidTime } from "./datetime";
-import { resolveSplit, type SplitMethod } from "./split";
+import { resolveShares, type ResolvedShare, type ShareInput, type SplitKind } from "./shares";
 
 /** Rules for a Quick Pay entry and for the rows of a bulk entry. Used by the browser and re-checked by the server. */
 
@@ -17,12 +17,12 @@ export interface QuickPayInput {
   accountId: string | null;
   categoryId: string | null;
   split: {
+    /** Off means the entry is not shared with anyone. */
     enabled: boolean;
-    partyId: string | null;
-    /** How the person's share is given; leave out for 100% (the whole amount). */
-    method?: SplitMethod;
-    /** A percentage ("50") or, for FIXED, an amount ("200"). */
-    value?: string;
+    /** Split (you and them share it) or Debt (they owe it). Split when left out. */
+    kind?: SplitKind;
+    /** The people and each one's share. */
+    shares?: readonly ShareInput[];
   };
   /** Credits added to this debit (ids of saved credit entries). */
   creditIds?: readonly string[];
@@ -42,11 +42,10 @@ export interface ValidQuickPay {
   reason: string;
   accountId: string;
   categoryId: string | null;
-  /** The person the entry is split with. Only set when Split is on. */
-  partyId: string | null;
-  /** The person's share in paise and as a percentage of the amount (0 when not split). */
-  sharePaise: number;
-  percent: number;
+  /** Split or Debt when the entry is shared with people, otherwise null. */
+  splitKind: SplitKind | null;
+  /** Each person's share in paise and as a percentage of the amount. Empty when not shared. What is left is yours. */
+  shares: ResolvedShare[];
   /** Credits added to this debit. */
   creditIds: string[];
 }
@@ -77,17 +76,17 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
   const reason = input.reason.trim();
   if (reason.length > MAX_REASON_LENGTH) errors.reason = `Reason can be at most ${MAX_REASON_LENGTH} characters.`;
   if (!input.accountId) errors.bank = "Choose the bank this went through.";
-  if (input.split.enabled && !input.split.partyId) errors.split = "Choose the person this is split with.";
-
-  let sharePaise = 0;
-  let percent = 0;
-  if (input.split.enabled && input.split.partyId && !("error" in amount)) {
-    const resolved = resolveSplit(amount.paise, { method: input.split.method ?? "PERCENT", value: input.split.value ?? "100" }, parseAmountInput);
-    if (resolved.ok) {
-      sharePaise = resolved.sharePaise;
-      percent = resolved.percent;
-    } else errors.splitValue = resolved.error;
+  let shares: ResolvedShare[] = [];
+  if (input.split.enabled) {
+    const lines = input.split.shares ?? [];
+    if (lines.length === 0) errors.split = "Choose the people this is shared with.";
+    else if (!("error" in amount)) {
+      const resolved = resolveShares(amount.paise, lines);
+      if (resolved.ok) shares = resolved.shares;
+      else errors.splitValue = resolved.error;
+    }
   }
+  if (input.split.enabled && input.split.kind === "DEBT" && input.type === "CREDIT") errors.split = "A Debt can only be added to a Debit.";
 
   const creditIds = [...new Set(input.creditIds ?? [])];
   if (input.type === "CREDIT" && creditIds.length > 0) errors.split = "Credits can only be added to a Debit.";
@@ -101,9 +100,8 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
       reason,
       accountId: input.accountId!,
       categoryId: input.categoryId,
-      partyId: input.split.enabled ? input.split.partyId : null,
-      sharePaise,
-      percent,
+      splitKind: input.split.enabled ? (input.split.kind ?? "SPLIT") : null,
+      shares,
       creditIds,
     },
   };

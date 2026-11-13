@@ -1,21 +1,22 @@
 "use client";
 
-import { Plus } from "lucide-react";
-import { SearchableSelect } from "@/components/shared/searchable-select";
-import { Input } from "@/components/ui/input";
+import { PeoplePicker } from "./people-picker";
+import type { AddResult } from "./inline-add";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { FormState } from "../entry-state";
+import { withPeople, withShareValue, type FormShare, type FormState } from "../entry-state";
+import { resolveShares } from "../shares";
 import { formatPercent, resolveSplit } from "../split";
 import type { QuickPayOptions } from "../types";
 import type { QuickPayErrors } from "../validation";
 
 const CUSTOM = "custom";
+const rupees = (paise: number) => (paise / 100).toFixed(2).replace(/\.00$/, "");
 
 /**
- * Who a transaction is split with, and their share: a person, a percentage from your list (or one typed by hand), and the
- * calculated amount, which updates as the amount or the percentage changes. With the fixed-amount method you type the
- * share instead and the percentage is worked out.
+ * Who a transaction is shared with, for a Split or a Debt. Pick any number of people from one dropdown (or add a new one
+ * right there); each gets a line: name, percentage (from your list) and the amount, which can also be typed by hand. The
+ * amounts update as the transaction amount or the percentages change.
  */
 export function SplitControl({
   form,
@@ -24,7 +25,7 @@ export function SplitControl({
   errors,
   clearError,
   idPrefix,
-  addPersonHref,
+  onAddPerson,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -32,120 +33,132 @@ export function SplitControl({
   errors: QuickPayErrors;
   clearError: (key: keyof QuickPayErrors) => void;
   idPrefix: string;
-  addPersonHref?: string;
+  onAddPerson: (name: string) => Promise<AddResult>;
 }) {
   const { percentOptions } = options.settings.split;
-  const persons = options.persons.map((p) => ({ value: p.id, label: p.name }));
+  const kind = form.splitKind ?? "SPLIT";
   const amountPaise = parseAmountInput(form.amount);
-  const resolved = amountPaise && form.partyId ? resolveSplit(amountPaise, { method: form.splitMethod, value: form.splitValue }, parseAmountInput) : null;
+  const nameOf = (id: string) => options.persons.find((p) => p.id === id)?.name ?? "Person";
 
-  const numeric = Number(form.splitValue);
-  const inList = form.splitMethod === "PERCENT" && percentOptions.includes(numeric) && form.splitValue.trim() !== "";
-  const customOpen = form.splitMethod === "PERCENT" && !inList;
+  const totals = amountPaise ? resolveShares(amountPaise, form.shares.map(({ partyId, method, value }) => ({ partyId, method, value }))) : null;
 
   return (
     <div id={`${idPrefix}-field-split`} className="scroll-mt-24 space-y-2 rounded-xl border bg-muted/30 p-3">
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="space-y-1">
-          <SearchableSelect
-            ariaLabel="Person"
-            options={persons}
-            value={form.partyId}
-            onChange={(v) => {
-              setForm((f) => ({ ...f, partyId: v }));
-              clearError("split");
-            }}
-            placeholder="Choose a person"
-            searchPlaceholder="Search people…"
-            emptyText="No people yet. Add one in Customized Settings."
-            invalid={!!errors.split}
-            footer={
-              addPersonHref ? (
-                <a href={addPersonHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium hover:bg-accent">
-                  <Plus className="size-3.5" aria-hidden /> Add a Person
-                </a>
-              ) : null
-            }
-          />
-          {errors.split ? (
-            <p role="alert" className="text-xs text-destructive">
-              {errors.split}
-            </p>
-          ) : null}
-        </div>
-
-        {form.splitMethod === "PERCENT" ? (
-          <div className="flex items-center gap-2">
-            <select
-              aria-label="Split percentage"
-              value={inList ? String(numeric) : CUSTOM}
-              onChange={(e) => {
-                const v = e.target.value;
-                setForm((f) => ({ ...f, splitValue: v === CUSTOM ? "" : v }));
-                clearError("splitValue");
-              }}
-              className="h-10 w-28 rounded-lg border border-input bg-background px-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
-            >
-              {percentOptions.map((p) => (
-                <option key={p} value={String(p)}>
-                  {formatPercent(p)}
-                </option>
-              ))}
-              <option value={CUSTOM}>Custom…</option>
-            </select>
-            {customOpen ? (
-              <div className="relative w-24">
-                <Input
-                  aria-label="Custom percentage"
-                  inputMode="decimal"
-                  autoFocus
-                  value={form.splitValue}
-                  placeholder="e.g. 18"
-                  aria-invalid={!!errors.splitValue}
-                  onChange={(e) => {
-                    setForm((f) => ({ ...f, splitValue: e.target.value }));
-                    clearError("splitValue");
-                  }}
-                  className="h-10 pr-6 text-right text-base tabular-nums sm:text-sm"
-                />
-                <span aria-hidden className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-xs text-muted-foreground">
-                  %
-                </span>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="relative w-36">
-            <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">
-              ₹
-            </span>
-            <Input
-              aria-label="Person's share"
-              inputMode="decimal"
-              value={form.splitValue}
-              placeholder="Share"
-              aria-invalid={!!errors.splitValue}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, splitValue: e.target.value }));
-                clearError("splitValue");
-              }}
-              className="h-10 pl-6 text-right text-base tabular-nums sm:text-sm"
-            />
-          </div>
-        )}
+      <div className="space-y-1">
+        <p className="text-xs font-semibold text-muted-foreground">{kind === "DEBT" ? "Who owes this" : "Split with"}</p>
+        <PeoplePicker
+          ariaLabel="People"
+          people={options.persons}
+          selected={form.shares.map((s) => s.partyId)}
+          invalid={!!errors.split}
+          onChange={(ids) => {
+            setForm((f) => withPeople(f, ids, options.settings.split));
+            clearError("split");
+            clearError("splitValue");
+          }}
+          onAddPerson={onAddPerson}
+        />
+        {errors.split ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.split}
+          </p>
+        ) : null}
       </div>
 
+      {form.shares.length > 0 ? (
+        <ul className="space-y-1.5" aria-label="Shares">
+          {form.shares.map((share, index) => (
+            <ShareLine
+              key={share.partyId}
+              // What will really be saved (the last person takes the odd paisa), so the screen and the saved amounts agree.
+              savedPaise={totals?.ok ? (totals.shares[index]?.sharePaise ?? null) : null}
+              share={share}
+              name={nameOf(share.partyId)}
+              amountPaise={amountPaise}
+              percentOptions={percentOptions}
+              onChange={(method, value) => {
+                setForm((f) => withShareValue(f, share.partyId, method, value));
+                clearError("splitValue");
+              }}
+            />
+          ))}
+        </ul>
+      ) : null}
+
       {/* The calculation, shown as you type */}
-      <p aria-live="polite" className={cn("text-sm", errors.splitValue || (resolved && !resolved.ok) ? "text-destructive" : "text-muted-foreground")}>
+      <p aria-live="polite" className={cn("text-sm", errors.splitValue || (totals && !totals.ok && form.shares.length > 0) ? "text-destructive" : "text-muted-foreground")}>
         {errors.splitValue ??
-          (resolved?.ok
-            ? `${options.persons.find((p) => p.id === form.partyId)?.name ?? "Person"}: ${formatPercent(resolved.percent)} of ${formatINR(amountPaise!)} = ${formatINR(resolved.sharePaise)} · Your share ${formatINR(amountPaise! - resolved.sharePaise)}`
-            : resolved && !resolved.ok && form.splitValue.trim() !== ""
-              ? resolved.error
-              : amountPaise
-                ? "Choose a person and a share."
-                : "Enter the amount to see the share.")}
+          (form.shares.length === 0
+            ? "Choose one or more people."
+            : !amountPaise
+              ? "Enter the amount to see the shares."
+              : totals?.ok
+                ? kind === "DEBT"
+                  ? `They owe ${formatINR(totals.sharedPaise)}${totals.restPaise > 0 ? ` · Your share ${formatINR(totals.restPaise)}` : ""}`
+                  : `Shared ${formatINR(totals.sharedPaise)} of ${formatINR(amountPaise)} · Your share ${formatINR(totals.restPaise)}`
+                : totals && !totals.ok
+                  ? totals.error
+                  : "")}
       </p>
     </div>
+  );
+}
+
+/** One person: name, percentage list and the amount (typed or calculated), all on one line. */
+function ShareLine({
+  share,
+  name,
+  amountPaise,
+  percentOptions,
+  savedPaise,
+  onChange,
+}: {
+  savedPaise: number | null;
+  share: FormShare;
+  name: string;
+  amountPaise: number | null;
+  percentOptions: readonly number[];
+  onChange: (method: "PERCENT" | "FIXED", value: string) => void;
+}) {
+  const resolved = amountPaise ? resolveSplit(amountPaise, { method: share.method, value: share.value }, parseAmountInput) : null;
+  const percent = share.method === "PERCENT" ? Number(share.value) : resolved?.ok ? resolved.percent : null;
+  const inList = percent !== null && percentOptions.includes(percent);
+  const shown = share.method === "FIXED" ? share.value : savedPaise !== null ? rupees(savedPaise) : resolved?.ok ? rupees(resolved.sharePaise) : "";
+
+  return (
+    <li className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+      <span className="truncate text-sm font-medium" title={name}>
+        {name}
+      </span>
+      <select
+        aria-label={`${name}: split percentage`}
+        value={inList ? String(percent) : CUSTOM}
+        onChange={(e) => {
+          if (e.target.value !== CUSTOM) onChange("PERCENT", e.target.value);
+        }}
+        className="h-9 w-[5.5rem] rounded-lg border border-input bg-background px-1.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+      >
+        {percentOptions.map((p) => (
+          <option key={p} value={String(p)}>
+            {formatPercent(p)}
+          </option>
+        ))}
+        <option value={CUSTOM}>{percent !== null && !inList && Number.isFinite(percent) ? formatPercent(percent) : "Custom"}</option>
+      </select>
+      <div className="relative w-28">
+        <span aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-muted-foreground">
+          ₹
+        </span>
+        <input
+          aria-label={`${name}: amount`}
+          inputMode="decimal"
+          autoComplete="off"
+          value={shown}
+          placeholder="0"
+          onChange={(e) => onChange("FIXED", e.target.value)}
+          className="h-9 w-full rounded-lg border border-input bg-background pr-2 pl-6 text-right text-base tabular-nums outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+        />
+      </div>
+    </li>
   );
 }

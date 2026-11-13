@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  addCategoryAction,
   deleteEntryAction,
   getBalancesAction,
   getEntryAction,
@@ -16,6 +17,7 @@ import {
   saveEntryAction,
   setOpeningBalanceAction,
 } from "@/features/quick-pay/actions";
+import { addPersonAction } from "@/features/users/actions";
 import { BalancesDialog } from "@/features/quick-pay/components/balances-dialog";
 import { ImportDialog } from "@/features/quick-pay/components/import-dialog";
 import { ExportMenu } from "@/features/quick-pay/components/export-menu";
@@ -114,7 +116,16 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
           rows={rows}
           filtered={hasActiveFilters(filters)}
           options={options}
-          actions={{ patchEntry: patchEntryAction, deleteEntry: deleteEntryAction, saveEntry: saveEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction }}
+          actions={{
+            patchEntry: patchEntryAction,
+            deleteEntry: deleteEntryAction,
+            saveEntry: saveEntryAction,
+            getEntry: getEntryAction,
+            getRecentCredits: getRecentCreditsAction,
+            getOptions: getOptionsAction,
+            addCategory: addCategoryAction,
+            addPerson: addPersonAction,
+          }}
         />
 
         {pageCount > 1 ? (

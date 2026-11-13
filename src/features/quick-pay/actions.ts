@@ -83,6 +83,8 @@ const name = z.string().trim().min(1, "Enter a name.").max(60, "Use at most 60 c
 
 // ───────────────────────── Entries ─────────────────────────
 
+const shareSchema = z.object({ partyId: id, method: z.enum(["PERCENT", "FIXED"]), value: z.string().max(20) });
+
 const entrySchema = z.object({
   requestId: id,
   /** When set, the entry with this id is updated instead of a new one being created. */
@@ -92,7 +94,7 @@ const entrySchema = z.object({
   reason: z.string().max(1000),
   accountId: id.nullable(),
   categoryId: id.nullable(),
-  split: z.object({ enabled: z.boolean(), partyId: id.nullable(), method: z.enum(["PERCENT", "FIXED"]).optional(), value: z.string().max(20).optional() }),
+  split: z.object({ enabled: z.boolean(), kind: z.enum(["SPLIT", "DEBT"]).optional(), shares: z.array(shareSchema).max(30).optional() }),
   /** Credits added to this debit. */
   creditIds: z.array(id).max(50).optional(),
   /** When editing: a new date (YYYY-MM-DD) and time (HH:mm) in India time. */
@@ -185,7 +187,7 @@ const patchSchema = z.object({
   id,
   reason: z.string().max(1000).optional(),
   categoryId: id.nullable().optional(),
-  split: z.object({ partyId: id, method: z.enum(["PERCENT", "FIXED"]), value: z.string().max(20) }).nullable().optional(),
+  split: z.object({ kind: z.enum(["SPLIT", "DEBT"]), shares: z.array(shareSchema).min(1).max(30) }).nullable().optional(),
 });
 
 /** Changes one field of a saved entry in place (Reason, category or split) and returns the row as the table shows it. */
@@ -479,4 +481,10 @@ export interface QuickPayActions {
   getEntryIds: typeof getEntryIdsAction;
   getRecentCredits: typeof getRecentCreditsAction;
   getOptions: typeof getOptionsAction;
+}
+
+/** What the "add here" boxes in the entry form call, so a category or person can be added without leaving the page. */
+export interface QuickAddActions {
+  addCategory: typeof addCategoryAction;
+  addPerson: typeof import("@/features/users/actions").addPersonAction;
 }

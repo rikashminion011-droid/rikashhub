@@ -1,21 +1,21 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { Check, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatINR } from "@/lib/finance";
-import { cn } from "@/lib/utils";
-import type { QuickPayActions } from "../actions";
+import type { QuickAddActions, QuickPayActions } from "../actions";
 import { formatTransactionWhen } from "../datetime";
-import { defaultCreditSelection, emptyState, fromEntry, type FormState } from "../entry-state";
+import { defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, type FormState } from "../entry-state";
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
 import { validateQuickPayInput, type QuickPayErrors } from "../validation";
 import { EntryFields } from "./entry-fields";
+import { useQuickAdd } from "./use-quick-add";
 
 const newRequestId = () => crypto.randomUUID();
 
@@ -28,7 +28,7 @@ export function QuickEntryForm({
   initialOptions: QuickPayOptions;
   /** Set when the page was opened to edit one saved entry (?entry=…). */
   initialEntry: EntryDetails | null;
-  actions: QuickPayActions;
+  actions: QuickPayActions & QuickAddActions;
 }) {
   const [options, setOptions] = useState(initialOptions);
   const [form, setFormState] = useState<FormState>(() => (initialEntry ? fromEntry(initialEntry, initialOptions.settings) : emptyState(initialOptions.settings, initialOptions)));
@@ -37,11 +37,8 @@ export function QuickEntryForm({
   const [saving, setSaving] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
 
-  // Walking through saved entries: ids newest first; no current entry means "a new entry".
-  const [ids, setIds] = useState<string[]>([]);
+  // The saved entry being edited (opened with ?entry=…); none means a new entry.
   const [current, setCurrent] = useState<EntryDetails | null>(initialEntry);
-  const [loadingEntry, setLoadingEntry] = useState(false);
-  const draft = useRef<FormState | null>(null);
 
   const [credits, setCredits] = useState<RecentCredit[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -49,24 +46,9 @@ export function QuickEntryForm({
 
   const setForm = useCallback((update: (f: FormState) => FormState) => setFormState((f) => update(f)), []);
   const clearError = useCallback((key: keyof QuickPayErrors) => setErrors((e) => (e[key] ? { ...e, [key]: undefined } : e)), []);
-  const index = current ? ids.indexOf(current.id) : -1;
+  const adders = useQuickAdd(actions, setOptions);
 
   // ── Loading data the form needs ─────────────────────────────────────────
-
-  const refreshIds = useCallback(async () => {
-    const result = await actions.getEntryIds();
-    if (result.ok) setIds(result.ids);
-  }, [actions]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void actions.getEntryIds().then((result) => {
-      if (!cancelled && result.ok) setIds(result.ids);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [actions]);
 
   /** Pick up banks, categories, people and settings changed in another tab as soon as you come back to this one. */
   useEffect(() => {
@@ -111,40 +93,16 @@ export function QuickEntryForm({
     if (!on) setCredits(null); // fetched fresh the next time it is opened
   }
 
-  // ── Switching between saved entries ─────────────────────────────────────
-
-  async function goTo(target: number) {
-    if (loadingEntry) return;
-    // Leaving a new entry: remember what was typed so coming back restores it.
-    if (!current) draft.current = form;
-
-    if (target < 0) {
-      setCurrent(null);
-      setFormState(draft.current ?? emptyState(options.settings, options));
-      setCredits(null);
-      setErrors({});
-      setFormError(null);
-      return;
-    }
-    const id = ids[target];
-    if (!id) return;
-    setLoadingEntry(true);
-    const result = await actions.getEntry({ id });
-    setLoadingEntry(false);
-    if (!result.ok) {
-      toast.error(result.error);
-      void refreshIds();
-      return;
-    }
-    setCurrent(result.entry);
-    setFormState(fromEntry(result.entry, options.settings));
+  /** Leaves the entry being edited and starts a fresh one. */
+  function startNew() {
+    setCurrent(null);
+    setFormState(emptyState(options.settings, options));
+    setRequestId(newRequestId());
     setCredits(null);
     setErrors({});
     setFormError(null);
+    router.replace("/quick-pay");
   }
-
-  const olderDisabled = loadingEntry || ids.length === 0 || (current ? index < 0 || index >= ids.length - 1 : false);
-  const newerDisabled = loadingEntry || !current;
 
   // ── Save and delete ─────────────────────────────────────────────────────
 
@@ -153,15 +111,7 @@ export function QuickEntryForm({
     if (saving) return;
     setFormError(null);
 
-    const input = {
-      amount: form.amount,
-      type: form.type,
-      reason: form.reason,
-      accountId: form.accountId,
-      categoryId: form.categoryId,
-      split: { enabled: form.splitEnabled, partyId: form.partyId, method: form.splitMethod, value: form.splitValue },
-      creditIds: form.type === "DEBIT" ? form.creditIds : [],
-    };
+    const input = toQuickPayInput(form);
     const checked = validateQuickPayInput(input);
     if (!checked.ok) {
       setErrors(checked.errors);
@@ -195,10 +145,10 @@ export function QuickEntryForm({
         amountPaise: result.amountPaise,
         reason: form.reason.trim(),
         accountId: form.accountId!,
-        categoryId: form.categoryId,
-        partyId: form.splitEnabled ? form.partyId : null,
-        splitPercent: checked.value.partyId ? checked.value.percent : null,
-        creditIds: input.creditIds,
+        categoryId: input.categoryId,
+        splitKind: checked.value.splitKind,
+        shares: checked.value.shares.map((x) => ({ partyId: x.partyId, name: options.persons.find((p) => p.id === x.partyId)?.name ?? "", percent: x.percent, sharePaise: x.sharePaise })),
+        creditIds: [...(input.creditIds ?? [])],
       });
     } else {
       toast.success(result.duplicate ? "That entry was already saved." : `${form.type === "CREDIT" ? "Credit" : "Debit"} of ${formatINR(result.amountPaise)} saved.`, {
@@ -206,12 +156,10 @@ export function QuickEntryForm({
         action: { label: "View", onClick: () => router.push("/quick-pay/transactions") },
       });
       setFormState(emptyState(options.settings, options));
-      draft.current = null;
       setRequestId(newRequestId());
       setCredits(null);
       router.refresh(); // today's summary and recent entries
     }
-    void refreshIds();
   }
 
   async function removeEntry(): Promise<string | null> {
@@ -221,11 +169,10 @@ export function QuickEntryForm({
     toast.success("Entry deleted.");
     setCurrent(null);
     setFormState(emptyState(options.settings, options));
-    draft.current = null;
     setRequestId(newRequestId());
     setCredits(null);
-    void refreshIds();
     router.refresh();
+    router.replace("/quick-pay");
     return null;
   }
 
@@ -243,28 +190,16 @@ export function QuickEntryForm({
             {when ? <p className="truncate text-xs text-muted-foreground">{when.date} · {when.timeAndDay}</p> : null}
           </div>
 
-          {/* Switch between saved entries */}
-          <div className="flex items-center gap-1" role="group" aria-label="Switch between saved entries">
-            <Button type="button" variant="outline" size="icon-sm" aria-label="Older entry" disabled={olderDisabled} onClick={() => goTo(current ? index + 1 : 0)}>
-              <ChevronLeft />
+          {current ? (
+            <Button type="button" variant="ghost" size="sm" onClick={startNew}>
+              <Plus /> New
             </Button>
-            <span className="min-w-16 text-center text-xs text-muted-foreground tabular-nums" aria-live="polite">
-              {loadingEntry ? "Loading…" : current ? (index >= 0 ? `${index + 1} of ${ids.length}` : "Saved") : ids.length ? `New · ${ids.length}` : "New"}
-            </span>
-            <Button type="button" variant="outline" size="icon-sm" aria-label="Newer entry" disabled={newerDisabled} onClick={() => goTo(index > 0 ? index - 1 : -1)}>
-              <ChevronRight />
-            </Button>
-            {current ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => goTo(-1)}>
-                <Plus /> New
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       </CardHeader>
 
       <CardContent className="px-4 sm:px-5">
-        <form onSubmit={onSubmit} noValidate method="post" className={cn("space-y-3", loadingEntry && "pointer-events-none opacity-60")} aria-busy={loadingEntry}>
+        <form onSubmit={onSubmit} noValidate method="post" className="space-y-3">
           <EntryFields
             form={form}
             setForm={setForm}
@@ -275,6 +210,8 @@ export function QuickEntryForm({
             credits={credits}
             loadingCredits={loadingCredits}
             onToggleCredits={toggleCredits}
+            onAddCategory={adders.addCategory}
+            onAddPerson={adders.addPerson}
           />
 
           {formError ? (
@@ -284,7 +221,7 @@ export function QuickEntryForm({
           ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving || loadingEntry}>
+            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving}>
               {saving ? <Loader2 className="animate-spin" /> : <Check />}
               {saving ? "Saving…" : current ? "Update Entry" : "Save Entry"}
             </Button>

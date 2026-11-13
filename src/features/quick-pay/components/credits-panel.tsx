@@ -17,6 +17,7 @@ export function CreditsPanel({
   loading,
   selected,
   onToggle,
+  onSetAll,
   source,
   debitAmount,
 }: {
@@ -24,6 +25,8 @@ export function CreditsPanel({
   loading: boolean;
   selected: readonly string[];
   onToggle: (id: string, on: boolean) => void;
+  /** Ticks every credit that can be added, or clears the ticks. */
+  onSetAll: (on: boolean) => void;
   source: CreditSource;
   debitAmount: string;
 }) {
@@ -33,7 +36,20 @@ export function CreditsPanel({
 
   return (
     <div className="rounded-xl border bg-muted/30 p-3" aria-live="polite">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">{CREDIT_SOURCE_LABEL[source]}: tick the credits to add to this debit</p>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">{CREDIT_SOURCE_LABEL[source]}: tick one or more credits to add to this debit</p>
+        {credits && credits.some((c) => c.type === "CREDIT") ? (
+          <span className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground tabular-nums">{chosen.length} selected</span>
+            <button type="button" onClick={() => onSetAll(true)} className="font-medium underline-offset-2 hover:underline">
+              Select all
+            </button>
+            <button type="button" onClick={() => onSetAll(false)} className="font-medium underline-offset-2 hover:underline">
+              Clear
+            </button>
+          </span>
+        ) : null}
+      </div>
       {loading ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" /> Loading…

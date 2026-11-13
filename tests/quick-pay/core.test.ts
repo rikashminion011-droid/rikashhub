@@ -151,27 +151,28 @@ describe("filters", () => {
 });
 
 describe("validateQuickPayInput", () => {
-  const base: QuickPayInput = { amount: "250.50", type: "DEBIT", reason: " Lunch ", accountId: "a1", categoryId: "c1", split: { enabled: false, partyId: null } };
+  const base: QuickPayInput = { amount: "250.50", type: "DEBIT", reason: " Lunch ", accountId: "a1", categoryId: "c1", split: { enabled: false } };
 
   it("accepts a debit and a credit, trimming the reason", () => {
     expect(validateQuickPayInput(base)).toEqual({
       ok: true,
-      value: { type: "DEBIT", amountPaise: 25050, reason: "Lunch", accountId: "a1", categoryId: "c1", partyId: null, sharePaise: 0, percent: 0, creditIds: [] },
+      value: { type: "DEBIT", amountPaise: 25050, reason: "Lunch", accountId: "a1", categoryId: "c1", splitKind: null, shares: [], creditIds: [] },
     });
     const credit = validateQuickPayInput({ ...base, type: "CREDIT" });
     expect(credit.ok && credit.value.type).toBe("CREDIT");
   });
 
-  it("only keeps the person when Split is on", () => {
-    const off = validateQuickPayInput({ ...base, split: { enabled: false, partyId: "p1" } });
-    expect(off.ok && off.value.partyId).toBeNull();
-    const on = validateQuickPayInput({ ...base, split: { enabled: true, partyId: "p1" } });
-    expect(on.ok && on.value.partyId).toBe("p1");
+  it("only keeps the people when Split is on", () => {
+    const shares = [{ partyId: "p1", method: "PERCENT" as const, value: "50" }];
+    const off = validateQuickPayInput({ ...base, split: { enabled: false, shares } });
+    expect(off.ok && [off.value.splitKind, off.value.shares]).toEqual([null, []]);
+    const on = validateQuickPayInput({ ...base, split: { enabled: true, shares } });
+    expect(on.ok && [on.value.splitKind, on.value.shares.map((s) => s.partyId)]).toEqual(["SPLIT", ["p1"]]);
   });
 
   it("needs a bank, a valid amount, and a person when splitting; category and reason are optional", () => {
-    const empty = validateQuickPayInput({ ...base, amount: "", accountId: null, split: { enabled: true, partyId: null } });
-    expect(empty).toEqual({ ok: false, errors: { amount: "Enter the amount.", bank: "Choose the bank this went through.", split: "Choose the person this is split with." } });
+    const empty = validateQuickPayInput({ ...base, amount: "", accountId: null, split: { enabled: true, shares: [] } });
+    expect(empty).toEqual({ ok: false, errors: { amount: "Enter the amount.", bank: "Choose the bank this went through.", split: "Choose the people this is shared with." } });
     expect(validateQuickPayInput({ ...base, categoryId: null, reason: "" }).ok).toBe(true);
   });
 

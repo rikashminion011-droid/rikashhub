@@ -36,7 +36,8 @@ const weekdayOf = (instant: Date) => formatTransactionWhen(instant).timeAndDay.s
 const COLUMNS = ["Date", "Time", "Day", "Debit", "Credit", "Transaction details", "Reason", "Bank", "Category", "Split"] as const;
 
 /** "Mukesh" or, with a share, "Mukesh (50%)". */
-const splitLabel = (row: TxRow) => (row.person ? (row.splitPercent !== null && row.splitPercent < 100 ? `${row.person} (${Number(row.splitPercent.toFixed(2))}%)` : row.person) : "");
+const splitLabel = (row: TxRow) =>
+  row.shares.map((s) => (s.percent < 100 ? `${s.name} (${Number(s.percent.toFixed(2))}%)` : s.name)).join(", ");
 
 export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();

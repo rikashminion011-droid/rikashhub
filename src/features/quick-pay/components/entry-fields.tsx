@@ -7,16 +7,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { groupBanks, groupCategories } from "../cascade";
-import { withCategory, withReason, type FormState } from "../entry-state";
+import { withCategory, withKind, withReason, type FormState } from "../entry-state";
 import type { QuickPayOptions, RecentCredit } from "../types";
 import { MAX_REASON_LENGTH, type QuickPayErrors } from "../validation";
 import { CreditsPanel } from "./credits-panel";
+import { InlineAdd, type AddResult } from "./inline-add";
 import { SplitControl } from "./split-control";
 
 const SETTINGS = {
   banks: "/quick-pay/settings?tab=banks",
-  categories: "/quick-pay/settings?tab=categories",
-  users: "/quick-pay/settings?tab=users",
 };
 
 /** A link at the bottom of a dropdown that opens the right settings section in a new tab (so nothing typed is lost). */
@@ -48,6 +47,8 @@ export function EntryFields({
   credits,
   loadingCredits,
   onToggleCredits,
+  onAddCategory,
+  onAddPerson,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -58,11 +59,16 @@ export function EntryFields({
   credits: RecentCredit[] | null;
   loadingCredits: boolean;
   onToggleCredits: (on: boolean) => void;
+  /** Adds a category right here (no trip to Customized Settings). Resolves with the new id. */
+  onAddCategory: (name: string) => Promise<AddResult>;
+  /** Adds a person right here. Resolves with the new id. */
+  onAddPerson: (name: string) => Promise<AddResult>;
 }) {
   const labels = options.settings.fields.labels;
   const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
   const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
   const showCredits = form.type === "DEBIT" && form.creditsAdded;
+  const isDebit = form.type === "DEBIT";
   const id = (name: string) => `${idPrefix}-${name}`;
 
   return (
@@ -106,7 +112,14 @@ export function EntryFields({
                   type="button"
                   role="radio"
                   aria-checked={on}
-                  onClick={() => setForm((f) => ({ ...f, type: t, ...(t === "CREDIT" ? { creditsAdded: false, creditIds: [] } : {}) }))}
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      type: t,
+                      // A Credit has no category, no Debt and no Credits Added.
+                      ...(t === "CREDIT" ? { creditsAdded: false, creditIds: [], categoryId: null, categoryAuto: false, ...(f.splitKind === "DEBT" ? { splitKind: null, shares: [] } : {}) } : {}),
+                    }))
+                  }
                   className={cn(
                     "flex h-10 items-center justify-center gap-1 rounded-xl border px-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-3.5",
                     on
@@ -132,8 +145,8 @@ export function EntryFields({
         ) : null}
       </div>
 
-      {/* Reason and Category on one line */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* Reason and Category on one line (a Credit has no category) */}
+      <div className={cn("grid gap-2", isDebit ? "grid-cols-2" : "grid-cols-1")}>
         <div className="min-w-0 space-y-1">
           <label htmlFor={id("reason")} className={labelClass}>
             {labels.reason}
@@ -151,67 +164,58 @@ export function EntryFields({
             className="h-10 text-base sm:text-sm"
           />
         </div>
-        <div className="min-w-0 space-y-1">
-          <label htmlFor={id("category")} className={labelClass}>
-            {labels.category}
-            {form.categoryAuto ? <span className="ml-1 font-normal text-amber-600">· auto</span> : null}
-          </label>
-          <CascadingSelect
-            id={id("category")}
-            ariaLabel={labels.category}
-            groups={categoryGroups}
-            value={form.categoryId}
-            onChange={(v) => setForm((f) => withCategory(f, v))}
-            placeholder="Optional"
-            searchPlaceholder="Search categories…"
-            emptyText="No category found."
-            clearable
-            footer={<AddLink href={SETTINGS.categories}>Add Category</AddLink>}
-          />
-        </div>
+        {isDebit ? (
+          <div className="min-w-0 space-y-1">
+            <label htmlFor={id("category")} className={labelClass}>
+              {labels.category}
+              {form.categoryAuto ? <span className="ml-1 font-normal text-amber-600">· auto</span> : null}
+            </label>
+            <CascadingSelect
+              id={id("category")}
+              ariaLabel={labels.category}
+              groups={categoryGroups}
+              value={form.categoryId}
+              onChange={(v) => setForm((f) => withCategory(f, v))}
+              placeholder="Optional"
+              searchPlaceholder="Search categories…"
+              emptyText="No category found. Add one below."
+              clearable
+              footer={
+                <InlineAdd
+                  label="New category"
+                  placeholder="Add a category…"
+                  onAdd={async (name) => {
+                    const result = await onAddCategory(name);
+                    if (result.ok) setForm((f) => withCategory(f, result.id));
+                    return result;
+                  }}
+                />
+              }
+            />
+          </div>
+        ) : null}
       </div>
 
-      {/* Bank Through, Split and Credits Added on one line */}
-      <div className="flex items-end gap-2">
-        <div id={id("field-bank")} className="min-w-0 flex-1 scroll-mt-24 space-y-1">
-          <label htmlFor={id("bank")} className={labelClass}>
-            {labels.bank}
-          </label>
-          <CascadingSelect
-            id={id("bank")}
-            ariaLabel={labels.bank}
-            groups={bankGroups}
-            value={form.accountId}
-            onChange={(v) => {
-              setForm((f) => ({ ...f, accountId: v }));
-              clearError("bank");
-            }}
-            placeholder="Choose a bank"
-            searchPlaceholder="Search banks…"
-            emptyText="No bank found. Use Add Details to create one."
-            invalid={!!errors.bank}
-            footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
-          />
-        </div>
-        <label className="flex h-10 shrink-0 cursor-pointer items-center gap-2 text-sm font-semibold">
-          <Checkbox
-            checked={form.splitEnabled}
-            onCheckedChange={(next) => {
-              setForm((f) => ({ ...f, splitEnabled: next === true, partyId: next === true ? (f.partyId ?? options.settings.split.defaultPartyId) : null }));
-              clearError("split");
-            }}
-          />
-          {labels.split}
+      {/* Bank Through on its own line */}
+      <div id={id("field-bank")} className="scroll-mt-24 space-y-1">
+        <label htmlFor={id("bank")} className={labelClass}>
+          {labels.bank}
         </label>
-        {form.type === "DEBIT" ? (
-          <label className="flex h-10 shrink-0 cursor-pointer items-center gap-2 text-sm font-semibold">
-            <Checkbox checked={form.creditsAdded} onCheckedChange={(next) => onToggleCredits(next === true)} />
-            <span className="whitespace-nowrap">
-              <span className="hidden sm:inline">{labels.creditsAdded}</span>
-              <span className="sm:hidden">Credits</span>
-            </span>
-          </label>
-        ) : null}
+        <CascadingSelect
+          id={id("bank")}
+          ariaLabel={labels.bank}
+          groups={bankGroups}
+          value={form.accountId}
+          onChange={(v) => {
+            setForm((f) => ({ ...f, accountId: v }));
+            clearError("bank");
+          }}
+          placeholder="Choose a bank"
+          searchPlaceholder="Search banks…"
+          emptyText="No bank found. Use Add Details to create one."
+          invalid={!!errors.bank}
+          footer={<AddLink href={SETTINGS.banks}>Add Details</AddLink>}
+        />
       </div>
       {errors.bank ? (
         <p role="alert" className="-mt-2 text-xs text-destructive">
@@ -219,7 +223,43 @@ export function EntryFields({
         </p>
       ) : null}
 
-      {form.splitEnabled ? <SplitControl form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} addPersonHref={SETTINGS.users} /> : null}
+      {/* Split, Debt and Credits Added, below Bank Through. Split and Debt cannot both be on; Credits Added is separate. */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" role="group" aria-label="Share and credits">
+        <label className={cn("flex h-9 items-center gap-2 text-sm font-semibold", form.splitKind === "DEBT" ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
+          <Checkbox
+            checked={form.splitKind === "SPLIT"}
+            disabled={form.splitKind === "DEBT"}
+            onCheckedChange={(next) => {
+              setForm((f) => withKind(f, next === true ? "SPLIT" : null, options.settings.split, options.settings.split.defaultPartyId));
+              clearError("split");
+              clearError("splitValue");
+            }}
+          />
+          {labels.split}
+        </label>
+        {isDebit ? (
+          <label className={cn("flex h-9 items-center gap-2 text-sm font-semibold", form.splitKind === "SPLIT" ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
+            <Checkbox
+              checked={form.splitKind === "DEBT"}
+              disabled={form.splitKind === "SPLIT"}
+              onCheckedChange={(next) => {
+                setForm((f) => withKind(f, next === true ? "DEBT" : null, options.settings.split, options.settings.split.defaultPartyId));
+                clearError("split");
+                clearError("splitValue");
+              }}
+            />
+            Debt
+          </label>
+        ) : null}
+        {isDebit ? (
+          <label className="flex h-9 cursor-pointer items-center gap-2 text-sm font-semibold">
+            <Checkbox checked={form.creditsAdded} onCheckedChange={(next) => onToggleCredits(next === true)} />
+            <span className="whitespace-nowrap">{labels.creditsAdded}</span>
+          </label>
+        ) : null}
+      </div>
+
+      {form.splitKind ? <SplitControl form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} /> : null}
 
       {showCredits ? (
         <CreditsPanel
@@ -227,6 +267,7 @@ export function EntryFields({
           loading={loadingCredits}
           selected={form.creditIds}
           onToggle={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [...new Set([...f.creditIds, creditId])] : f.creditIds.filter((x) => x !== creditId) }))}
+          onSetAll={(on) => setForm((f) => ({ ...f, creditIds: on ? (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id) : [] }))}
           source={options.settings.credits.source}
           debitAmount={form.amount}
         />

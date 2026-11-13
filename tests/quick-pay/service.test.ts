@@ -54,8 +54,9 @@ const person = (o: QuickPayOptions, name: string) => o.persons.find((p) => p.nam
 const options = (userId = ME.id) => getQuickPayOptions(db, userId);
 const noFilters = parseTxFilters({});
 
-const entry = (over: Partial<ValidQuickPay> & Pick<ValidQuickPay, "accountId">): ValidQuickPay => ({
-  type: "DEBIT", amountPaise: 10000, reason: "", categoryId: null, partyId: null, sharePaise: over.partyId ? (over.amountPaise ?? 10000) : 0, percent: over.partyId ? 100 : 0, creditIds: [], ...over,
+/** `partyId` is a shortcut for "the whole amount goes to this person". */
+const entry = ({ partyId, ...over }: Partial<ValidQuickPay> & Pick<ValidQuickPay, "accountId"> & { partyId?: string | null }): ValidQuickPay => ({
+  type: "DEBIT", amountPaise: 10000, reason: "", categoryId: null, splitKind: partyId ? "SPLIT" : null, shares: partyId ? [{ partyId, sharePaise: over.amountPaise ?? 10000, percent: 100 }] : [], creditIds: [], ...over,
 });
 
 const currentOf = async (accountId: string) => Number((await db.account.findUniqueOrThrow({ where: { id: accountId } })).currentBalance.toString());
@@ -282,7 +283,7 @@ describe("editing and deleting", () => {
 
     await updateEntry(db, ME.id, saved.id, entry({ accountId: b, type: "CREDIT", amountPaise: 5000, reason: "Refund", categoryId: cat(o, "Food"), partyId: person(o, "Balan") }));
     const got = (await getEntry(db, ME.id, saved.id))!;
-    expect(got).toMatchObject({ type: "CREDIT", amountPaise: 5000, reason: "Refund", accountId: b, partyId: person(o, "Balan"), occurredAt: when.toISOString() });
+    expect(got).toMatchObject({ type: "CREDIT", amountPaise: 5000, reason: "Refund", accountId: b, shares: [expect.objectContaining({ partyId: person(o, "Balan") })], occurredAt: when.toISOString() });
     expect(await currentOf(a)).toBe(aBefore + 100);
     const hdfcRow = (await getBalances(db, ME.id)).groups.find((g) => g.name === "HDFC")!;
     expect(hdfcRow.total.creditsPaise).toBeGreaterThanOrEqual(5000);
@@ -293,7 +294,7 @@ describe("editing and deleting", () => {
     const o = await options();
     const saved = await createEntry(db, ME.id, rid(), entry({ accountId: bank(o, "HDFC"), partyId: person(o, "Save") }));
     await updateEntry(db, ME.id, saved.id, entry({ accountId: bank(o, "HDFC"), partyId: null }));
-    expect((await getEntry(db, ME.id, saved.id))!.partyId).toBeNull();
+    expect((await getEntry(db, ME.id, saved.id))!.shares).toEqual([]);
     expect((await db.transaction.findUniqueOrThrow({ where: { id: saved.id } })).isSplit).toBe(false);
   });
 
@@ -338,7 +339,7 @@ describe("bulk entry", () => {
     expect(await currentOf(hdfc)).toBe(before - 50 + 200 - 7);
     const rows = (await listTransactions(db, ME.id, parseTxFilters({ q: "bulk-" }))).rows;
     expect(rows.map((r) => r.reason)).toEqual(["bulk-three", "bulk-two", "bulk-one"]); // newest first
-    expect(rows.find((r) => r.reason === "bulk-two")).toMatchObject({ type: "CREDIT", person: "Mukesh" });
+    expect(rows.find((r) => r.reason === "bulk-two")).toMatchObject({ type: "CREDIT", shares: [expect.objectContaining({ name: "Mukesh" })] });
   });
 
   it("saves nothing at all if one row points at something that does not exist", async () => {
@@ -419,9 +420,9 @@ describe("GPay Transactions: filters, search, totals, paging", () => {
 
   it("describes each row: bank, category and person as shown in the table", async () => {
     const petrol = (await list({ q: "petrol" })).rows[0]!;
-    expect(petrol).toMatchObject({ bank: "HDFC", category: "Food", person: "Balan", type: "DEBIT", amountPaise: 20000 });
+    expect(petrol).toMatchObject({ bank: "HDFC", category: "Food", shares: [expect.objectContaining({ name: "Balan" })], type: "DEBIT", amountPaise: 20000 });
     const tea = (await list({ q: "tea" })).rows[0]!;
-    expect(tea).toMatchObject({ bank: "GPay → DBS", category: "", person: null });
+    expect(tea).toMatchObject({ bank: "GPay → DBS", category: "", shares: [] });
   });
 
   it("pages through long lists and keeps totals for the whole set", async () => {

@@ -55,15 +55,16 @@ describe("split maths", () => {
   });
   it("validateQuickPayInput carries the calculated share", () => {
     const input = { amount: "400", type: "DEBIT" as const, reason: "Lunch", accountId: "a", categoryId: null };
-    const out = validateQuickPayInput({ ...input, split: { enabled: true, partyId: "p", method: "PERCENT", value: "18" } });
-    expect(out.ok && [out.value.sharePaise, out.value.percent]).toEqual([7200, 18]);
-    const whole = validateQuickPayInput({ ...input, split: { enabled: true, partyId: "p" } });
-    expect(whole.ok && [whole.value.sharePaise, whole.value.percent]).toEqual([40000, 100]);
-    const bad = validateQuickPayInput({ ...input, split: { enabled: true, partyId: "p", method: "PERCENT", value: "150" } });
+    const line = (value: string, method: "PERCENT" | "FIXED" = "PERCENT") => ({ partyId: "p", method, value });
+    const out = validateQuickPayInput({ ...input, split: { enabled: true, shares: [line("18")] } });
+    expect(out.ok && out.value.shares.map((s) => [s.sharePaise, s.percent])).toEqual([[7200, 18]]);
+    const whole = validateQuickPayInput({ ...input, split: { enabled: true, shares: [line("100")] } });
+    expect(whole.ok && whole.value.shares.map((s) => [s.sharePaise, s.percent])).toEqual([[40000, 100]]);
+    const bad = validateQuickPayInput({ ...input, split: { enabled: true, shares: [line("150")] } });
     expect(bad).toMatchObject({ ok: false, errors: { splitValue: expect.any(String) } });
-    const off = validateQuickPayInput({ ...input, split: { enabled: false, partyId: "p", method: "PERCENT", value: "150" } });
-    expect(off.ok && off.value.sharePaise).toBe(0);
-    const credit = validateQuickPayInput({ ...input, type: "CREDIT", split: { enabled: false, partyId: null }, creditIds: ["x"] });
+    const off = validateQuickPayInput({ ...input, split: { enabled: false, shares: [line("150")] } });
+    expect(off.ok && off.value.shares).toEqual([]);
+    const credit = validateQuickPayInput({ ...input, type: "CREDIT", split: { enabled: false }, creditIds: ["x"] });
     expect(credit).toMatchObject({ ok: false });
   });
 });
@@ -114,10 +115,11 @@ let food = "";
 let dosa = "";
 let travel = "";
 
-const entry = (over: Partial<ValidQuickPay> = {}): ValidQuickPay => ({
-  type: "DEBIT", amountPaise: 40000, reason: "", accountId: canara, categoryId: null, partyId: null, sharePaise: 0, percent: 0, creditIds: [], ...over,
+const entry = ({ partyId, sharePaise, percent, ...over }: Partial<ValidQuickPay> & { partyId?: string; sharePaise?: number; percent?: number } = {}): ValidQuickPay => ({
+  type: "DEBIT", amountPaise: 40000, reason: "", accountId: canara, categoryId: null,
+  splitKind: partyId ? "SPLIT" : null, shares: partyId ? [{ partyId, sharePaise: sharePaise ?? 0, percent: percent ?? 0 }] : [], creditIds: [], ...over,
 });
-const split = (partyId: string, percent: number, amountPaise = 40000): Partial<ValidQuickPay> => ({ partyId, percent, sharePaise: shareOf(amountPaise, percent), amountPaise });
+const split = (partyId: string, percent: number, amountPaise = 40000): { partyId: string; percent: number; sharePaise: number; amountPaise?: number } => ({ partyId, percent, sharePaise: shareOf(amountPaise, percent), amountPaise });
 
 const rowsOf = (id: string) => db.transactionSplit.findMany({ where: { transactionId: id }, include: { party: true }, orderBy: { amount: "asc" } });
 
@@ -141,12 +143,42 @@ afterAll(async () => {
   await database.close();
 });
 
+describe("sharing one transaction between several people", () => {
+  const shares = (...parts: [string, number, number][]) => parts.map(([partyId, percent, sharePaise]) => ({ partyId, percent, sharePaise }));
+
+  it("₹50 between two people is ₹25 each, with nothing left for you", async () => {
+    const saved = await createEntry(db, ME.id, rid(), entry({ amountPaise: 5000, splitKind: "SPLIT", shares: shares([userA, 50, 2500], [userB, 50, 2500]) }));
+    const rows = await rowsOf(saved.id);
+    expect(rows.map((r) => [r.party.name, Number(r.amount), Number(r.percentage)]).sort()).toEqual([["Balan", 25, 50], ["Mukesh", 25, 50]]);
+    expect(await getEntry(db, ME.id, saved.id)).toMatchObject({ splitKind: "SPLIT", shares: [expect.objectContaining({ name: "Mukesh", sharePaise: 2500 }), expect.objectContaining({ name: "Balan", sharePaise: 2500 })] });
+  });
+
+  it("keeps what is left as your own share, and remembers a Debt", async () => {
+    const saved = await createEntry(db, ME.id, rid(), entry({ amountPaise: 10000, splitKind: "DEBT", shares: shares([userA, 30, 3000], [userB, 20, 2000]) }));
+    expect((await rowsOf(saved.id)).map((r) => [r.party.name, Number(r.amount)]).sort()).toEqual([["Balan", 20], ["Mukesh", 30], ["Personal", 50]]);
+    expect(await getEntry(db, ME.id, saved.id)).toMatchObject({ splitKind: "DEBT" });
+    expect((await db.transaction.findUniqueOrThrow({ where: { id: saved.id } })).splitKind).toBe("DEBT");
+  });
+
+  it("refuses shares that add up to more than the amount", async () => {
+    await expect(createEntry(db, ME.id, rid(), entry({ amountPaise: 5000, splitKind: "SPLIT", shares: shares([userA, 70, 3500], [userB, 60, 3000]) }))).rejects.toThrow();
+  });
+
+  it("changing the people from the table replaces the rows and turns Debt back into a Split", async () => {
+    const saved = await createEntry(db, ME.id, rid(), entry({ amountPaise: 4000, splitKind: "DEBT", shares: shares([userA, 100, 4000]) }));
+    const row = await patchEntry(db, ME.id, saved.id, { split: { kind: "SPLIT", shares: [{ partyId: userA, method: "PERCENT", value: "50" }, { partyId: userB, method: "PERCENT", value: "50" }] } });
+    expect(row.splitKind).toBe("SPLIT");
+    expect(row.shares.map((s) => [s.name, s.sharePaise])).toEqual([["Mukesh", 2000], ["Balan", 2000]]);
+    expect(await patchEntry(db, ME.id, saved.id, { split: null })).toMatchObject({ splitKind: null, shares: [] });
+  });
+});
+
 describe("saving a split with a percentage", () => {
   it("₹400 at 50% gives the person ₹200 and keeps ₹200 as Personal, adding up to ₹400", async () => {
     const saved = await createEntry(db, ME.id, rid(), entry({ reason: "Dinner", ...split(userA, 50) }));
     const rows = await rowsOf(saved.id);
     expect(rows.map((r) => [r.party.name, r.amount.toString(), r.percentage?.toString()]).sort()).toEqual([["Mukesh", "200", "50"], ["Personal", "200", "50"]]);
-    expect(await getEntry(db, ME.id, saved.id)).toMatchObject({ partyId: userA, splitPercent: 50 });
+    expect(await getEntry(db, ME.id, saved.id)).toMatchObject({ splitKind: "SPLIT", shares: [{ partyId: userA, percent: 50 }] });
   });
 
   it("₹400 at 18% gives ₹72 and keeps ₹328", async () => {
@@ -159,7 +191,7 @@ describe("saving a split with a percentage", () => {
     const whole = await createEntry(db, ME.id, rid(), entry(split(userB, 100)));
     expect((await rowsOf(whole.id)).map((r) => [r.party.name, Number(r.amount), Number(r.percentage)])).toEqual([["Balan", 400, 100]]);
     const fixed = await createEntry(db, ME.id, rid(), entry({ partyId: userB, sharePaise: 15000, percent: 37.5 }));
-    expect((await getEntry(db, ME.id, fixed.id))!.splitPercent).toBe(37.5);
+    expect((await getEntry(db, ME.id, fixed.id))!.shares[0]?.percent).toBe(37.5);
   });
 
   it("editing changes the percentage and the rows still add up; removing the split removes the rows", async () => {
@@ -168,13 +200,13 @@ describe("saving a split with a percentage", () => {
     expect((await rowsOf(saved.id)).map((r) => [r.party.name, Number(r.amount)])).toEqual([["Mukesh", 150], ["Personal", 450]]);
     await updateEntry(db, ME.id, saved.id, entry({ amountPaise: 60000 }));
     expect(await rowsOf(saved.id)).toEqual([]);
-    expect((await getEntry(db, ME.id, saved.id))!.partyId).toBeNull();
+    expect((await getEntry(db, ME.id, saved.id))!.shares).toEqual([]);
   });
 
   it("the table row shows the person (not Personal), their share and percentage", async () => {
     const saved = await createEntry(db, ME.id, rid(), entry({ reason: "Row check", ...split(userA, 30) }));
     const row = (await listTransactions(db, ME.id, parseTxFilters({ q: "Row check" }))).rows.find((r) => r.id === saved.id)!;
-    expect(row).toMatchObject({ person: "Mukesh", partyId: userA, sharePaise: 12000, splitPercent: 30, bankName: "Canara", bankId: canara });
+    expect(row).toMatchObject({ shares: [{ partyId: userA, name: "Mukesh", sharePaise: 12000, percent: 30 }], splitKind: "SPLIT", bankName: "Canara", bankId: canara });
     expect(row.bank).toBe("GPay2 → Canara");
   });
 });
@@ -197,13 +229,14 @@ describe("editing in place", () => {
   });
   it("turns a split on with a percentage, changes it, and turns it off", async () => {
     const saved = await createEntry(db, ME.id, rid(), entry({ amountPaise: 20000 }));
-    let row = await patchEntry(db, ME.id, saved.id, { split: { partyId: userA, method: "PERCENT", value: "40" } });
-    expect([row.person, row.sharePaise, row.splitPercent]).toEqual(["Mukesh", 8000, 40]);
-    row = await patchEntry(db, ME.id, saved.id, { split: { partyId: userB, method: "FIXED", value: "50" } });
-    expect([row.person, row.sharePaise, row.splitPercent]).toEqual(["Balan", 5000, 25]);
+    const one = (r: Awaited<ReturnType<typeof patchEntry>>) => [r.shares[0]?.name ?? null, r.shares[0]?.sharePaise ?? null, r.shares[0]?.percent ?? null];
+    let row = await patchEntry(db, ME.id, saved.id, { split: { kind: "SPLIT", shares: [{ partyId: userA, method: "PERCENT", value: "40" }] } });
+    expect(one(row)).toEqual(["Mukesh", 8000, 40]);
+    row = await patchEntry(db, ME.id, saved.id, { split: { kind: "SPLIT", shares: [{ partyId: userB, method: "FIXED", value: "50" }] } });
+    expect(one(row)).toEqual(["Balan", 5000, 25]);
     row = await patchEntry(db, ME.id, saved.id, { split: null });
-    expect([row.person, row.sharePaise]).toEqual([null, null]);
-    await expect(patchEntry(db, ME.id, saved.id, { split: { partyId: userA, method: "PERCENT", value: "0" } })).rejects.toThrow();
+    expect(row.shares).toEqual([]);
+    await expect(patchEntry(db, ME.id, saved.id, { split: { kind: "SPLIT", shares: [{ partyId: userA, method: "PERCENT", value: "0" }] } })).rejects.toThrow();
   });
   it("never touches another user's entry", async () => {
     const saved = await createEntry(db, ME.id, rid(), entry());
@@ -327,7 +360,7 @@ describe("Debt Management", () => {
     c = people.find((p) => p.name === "Office")!.id;
   });
 
-  const make = (over: Partial<ValidQuickPay>) => ({ ...entry({ accountId: bank }), ...over });
+  const make = (over: Parameters<typeof entry>[0]) => entry({ accountId: bank, ...over });
 
   it("adds each person's share automatically: ₹200 of ₹400, and 18% = ₹72", async () => {
     await createEntry(db, DEBT_USER.id, rid(), make({ reason: "Dinner", ...split(a, 50) }), istInstant("2026-06-01", "20:00"));

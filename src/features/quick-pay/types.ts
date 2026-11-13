@@ -2,6 +2,7 @@ import type { MethodKind } from "@/features/expenses/types";
 import type { BalanceGroup } from "./balances";
 import type { KeywordEntry } from "./keywords";
 import type { QuickPaySettingsData } from "./settings-model";
+import type { SplitKind } from "./shares";
 import type { EntryType } from "./validation";
 
 /** Shapes shared by the server and the browser. */
@@ -27,6 +28,15 @@ export interface CategoryOption {
 export interface PersonOption {
   id: string;
   name: string;
+}
+
+/** One person's part of a shared transaction. */
+export interface ShareDetail {
+  partyId: string;
+  name: string;
+  /** Their share as a percentage of the amount. */
+  percent: number;
+  sharePaise: number;
 }
 
 export interface QuickPayOptions {
@@ -61,9 +71,10 @@ export interface EntryDetails {
   reason: string;
   accountId: string;
   categoryId: string | null;
-  partyId: string | null;
-  /** The person's share as a percentage, when split. */
-  splitPercent: number | null;
+  /** Split or Debt when shared with people, otherwise null. */
+  splitKind: SplitKind | null;
+  /** The people it is shared with, each with their share. */
+  shares: ShareDetail[];
   /** Credits added to this debit, newest first. */
   creditIds: string[];
   /** ISO instant */
@@ -86,11 +97,10 @@ export interface TxRow {
   bankId: string | null;
   category: string;
   categoryId: string | null;
-  person: string | null;
-  partyId: string | null;
-  /** The person's share in paise and as a percentage, when split. */
-  sharePaise: number | null;
-  splitPercent: number | null;
+  /** Split or Debt when shared with people, otherwise null. */
+  splitKind: SplitKind | null;
+  /** The people it is shared with, each with their share. */
+  shares: ShareDetail[];
   /** Total of the credits added to this debit, in paise (0 when none). */
   linkedCreditsPaise: number;
 }

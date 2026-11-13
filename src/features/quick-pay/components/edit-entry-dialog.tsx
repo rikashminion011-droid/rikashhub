@@ -6,14 +6,15 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { QuickPayActions } from "../actions";
+import type { QuickAddActions, QuickPayActions } from "../actions";
 import { istDateOf, istTimeOf } from "../datetime";
-import { defaultCreditSelection, fromEntry, type FormState } from "../entry-state";
+import { defaultCreditSelection, fromEntry, toQuickPayInput, type FormState } from "../entry-state";
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
 import { validateQuickPayInput, type QuickPayErrors } from "../validation";
 import { EntryFields } from "./entry-fields";
+import { useQuickAdd } from "./use-quick-add";
 
-export type EditActions = Pick<QuickPayActions, "saveEntry" | "getEntry" | "getRecentCredits">;
+export type EditActions = Pick<QuickPayActions, "saveEntry" | "getEntry" | "getRecentCredits" | "getOptions"> & QuickAddActions;
 
 /** Edit a saved transaction in a pop-up on the same page: every field, including its date and time. */
 export function EditEntryDialog({
@@ -40,7 +41,10 @@ export function EditEntryDialog({
   );
 }
 
-function EditBody({ entryId, options, actions, onClose, onSaved }: { entryId: string; options: QuickPayOptions; actions: EditActions; onClose: () => void; onSaved: () => void }) {
+function EditBody({ entryId, options: initialOptions, actions, onClose, onSaved }: { entryId: string; options: QuickPayOptions; actions: EditActions; onClose: () => void; onSaved: () => void }) {
+  // A copy, so a category or person added from inside this pop-up shows up in its lists straight away.
+  const [options, setOptions] = useState(initialOptions);
+  const adders = useQuickAdd(actions, setOptions);
   const [entry, setEntry] = useState<EntryDetails | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setFormState] = useState<FormState | null>(null);
@@ -89,15 +93,7 @@ function EditBody({ entryId, options, actions, onClose, onSaved }: { entryId: st
     event.preventDefault();
     if (!form || !entry || saving) return;
     setFormError(null);
-    const input = {
-      amount: form.amount,
-      type: form.type,
-      reason: form.reason,
-      accountId: form.accountId,
-      categoryId: form.categoryId,
-      split: { enabled: form.splitEnabled, partyId: form.partyId, method: form.splitMethod, value: form.splitValue },
-      creditIds: form.type === "DEBIT" ? form.creditIds : [],
-    };
+    const input = toQuickPayInput(form);
     const checked = validateQuickPayInput(input);
     if (!checked.ok) return setErrors(checked.errors);
     setErrors({});
@@ -150,6 +146,8 @@ function EditBody({ entryId, options, actions, onClose, onSaved }: { entryId: st
               setFormState((f) => (f ? { ...f, creditsAdded: on, creditIds: on ? f.creditIds : [] } : f));
               if (!on) setCredits(null);
             }}
+            onAddCategory={adders.addCategory}
+            onAddPerson={adders.addPerson}
           />
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">

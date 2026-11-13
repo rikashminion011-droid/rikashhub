@@ -15,10 +15,8 @@ const row = (i: number, over: Partial<TxRow> = {}): TxRow => ({
   bankId: null,
   category: "Food → Dosa",
   categoryId: null,
-  person: i % 2 ? "Mukesh" : null,
-  partyId: null,
-  sharePaise: null,
-  splitPercent: null,
+  splitKind: i % 2 ? "SPLIT" : null,
+  shares: i % 2 ? [{ partyId: "p1", name: "Mukesh", percent: 100, sharePaise: 12345 }] : [],
   linkedCreditsPaise: 0,
   ...over,
 });
@@ -49,7 +47,7 @@ describe("Excel export", () => {
   }
 
   it("has the period, totals, headers and one line per transaction", async () => {
-    const sheet = await read([row(1), row(2, { type: "CREDIT", amountPaise: 50000, reason: "Salary", bank: "HDFC", category: "", person: null })]);
+    const sheet = await read([row(1), row(2, { type: "CREDIT", amountPaise: 50000, reason: "Salary", bank: "HDFC", category: "", shares: [], splitKind: null })]);
     expect(sheet.getCell("A1").value).toBe("GPay Transactions");
     expect(sheet.getCell("B2").value).toBe("June 1, 2026 – June 30, 2026");
     expect(sheet.getCell("B4").value).toBe(123.45);

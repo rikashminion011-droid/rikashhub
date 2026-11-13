@@ -402,6 +402,8 @@ model Transaction {
   notes            String?
   /// True when the expense was split between several people (see transaction_splits).
   isSplit          Boolean         @default(false)
+  /// "SPLIT" or "DEBT" for a Quick Pay entry shared with people; null when not shared.
+  splitKind        String?
   /// The exact moment of the entry (date and time). `date` stays the calendar date of this moment in IST.
   occurredAt       DateTime?       @db.Timestamptz(3)
   /// Created through the Quick Pay module (single or bulk entry): these are the rows GPay Transactions shows.

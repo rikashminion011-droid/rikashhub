@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultCreditSelection, emptyState, fromEntry, withCategory, withReason } from "@/features/quick-pay/entry-state";
+import { defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, withCategory, withKind, withPeople, withReason, withShareValue } from "@/features/quick-pay/entry-state";
 import { DEFAULT_SETTINGS, type QuickPaySettingsData } from "@/features/quick-pay/settings-model";
 import type { EntryDetails, RecentCredit } from "@/features/quick-pay/types";
 
@@ -16,26 +16,62 @@ const options = {
 
 describe("emptyState", () => {
   it("starts empty with the built-in defaults: a Debit, nothing chosen, Split off", () => {
-    expect(emptyState(DEFAULT_SETTINGS)).toMatchObject({ amount: "", type: "DEBIT", accountId: null, categoryId: null, splitEnabled: false, partyId: null, splitMethod: "PERCENT", splitValue: "50", creditsAdded: false, creditIds: [] });
+    expect(emptyState(DEFAULT_SETTINGS)).toMatchObject({ amount: "", type: "DEBIT", accountId: null, categoryId: null, splitKind: null, shares: [], creditsAdded: false, creditIds: [] });
   });
   it("uses the defaults chosen in Customized Settings", () => {
     const s = settings({
       fields: { ...DEFAULT_SETTINGS.fields, defaults: { type: "CREDIT", bankId: "b1", categoryId: "c1" } },
       split: { ...DEFAULT_SETTINGS.split, enabledByDefault: true, defaultPercent: 25, defaultPartyId: "p1" },
     });
-    expect(emptyState(s, options)).toMatchObject({ type: "CREDIT", accountId: "b1", categoryId: "c1", splitEnabled: true, partyId: "p1", splitValue: "25" });
+    expect(emptyState(s, options)).toMatchObject({ type: "CREDIT", accountId: "b1", categoryId: "c1", splitKind: "SPLIT", shares: [{ partyId: "p1", method: "PERCENT", value: "25" }] });
   });
   it("ignores a default whose bank, category or person has since been removed", () => {
     const s = settings({
       fields: { ...DEFAULT_SETTINGS.fields, defaults: { type: "DEBIT", bankId: "gone", categoryId: "gone" } },
       split: { ...DEFAULT_SETTINGS.split, enabledByDefault: true, defaultPartyId: "gone" },
     });
-    expect(emptyState(s, options)).toMatchObject({ accountId: null, categoryId: null, partyId: null, splitEnabled: true });
+    expect(emptyState(s, options)).toMatchObject({ accountId: null, categoryId: null, splitKind: "SPLIT", shares: [] });
   });
   it("starts the fixed-amount method with the default share, or empty", () => {
-    expect(emptyState(settings({ split: { ...DEFAULT_SETTINGS.split, method: "FIXED", defaultFixedPaise: 15050 } })).splitValue).toBe("150.50");
-    expect(emptyState(settings({ split: { ...DEFAULT_SETTINGS.split, method: "FIXED", defaultFixedPaise: 20000 } })).splitValue).toBe("200");
-    expect(emptyState(settings({ split: { ...DEFAULT_SETTINGS.split, method: "FIXED", defaultFixedPaise: 0 } })).splitValue).toBe("");
+    const fixed = (defaultFixedPaise: number) => settings({ split: { ...DEFAULT_SETTINGS.split, enabledByDefault: true, defaultPartyId: "p1", method: "FIXED", defaultFixedPaise } });
+    expect(emptyState(fixed(15050), options).shares[0]).toMatchObject({ method: "FIXED", value: "150.50" });
+    expect(emptyState(fixed(20000), options).shares[0]?.value).toBe("200");
+    expect(emptyState(fixed(0), options).shares[0]?.value).toBe("");
+  });
+});
+
+describe("choosing people for a Split or a Debt", () => {
+  const split = DEFAULT_SETTINGS.split;
+  const start = emptyState(DEFAULT_SETTINGS);
+
+  it("one person starts at 50% for a Split and 100% for a Debt", () => {
+    const withOne = (kind: "SPLIT" | "DEBT") => withPeople({ ...start, splitKind: kind }, ["a"], split).shares.map((s) => s.value);
+    expect(withOne("SPLIT")).toEqual(["50"]);
+    expect(withOne("DEBT")).toEqual(["100"]);
+  });
+  it("several people divide the amount equally: two people are 50% each, three are 33.33%, 33.33% and 33.34%", () => {
+    const form = { ...start, splitKind: "SPLIT" as const };
+    expect(withPeople(form, ["a", "b"], split).shares.map((s) => s.value)).toEqual(["50", "50"]);
+    expect(withPeople(form, ["a", "b", "c"], split).shares.map((s) => s.value)).toEqual(["33.33", "33.33", "33.34"]);
+  });
+  it("keeps a share you typed when someone is added", () => {
+    let form = withPeople({ ...start, splitKind: "SPLIT" }, ["a"], split);
+    form = withShareValue(form, "a", "PERCENT", "30");
+    form = withPeople(form, ["a", "b"], split);
+    expect(form.shares.map((s) => [s.partyId, s.value])).toEqual([["a", "30"], ["b", "50"]]);
+  });
+  it("Split and Debt switch the shares and keep the chosen people; off clears them", () => {
+    let form = withPeople({ ...start, splitKind: "SPLIT" }, ["a"], split);
+    form = withKind(form, "DEBT", split, null);
+    expect(form).toMatchObject({ splitKind: "DEBT", shares: [{ partyId: "a", value: "100" }] });
+    expect(withKind(form, null, split, null)).toMatchObject({ splitKind: null, shares: [] });
+  });
+  it("a Credit never gets a category from the reason", () => {
+    expect(withReason({ ...start, type: "CREDIT" }, "dosa", keywords).categoryId).toBeNull();
+  });
+  it("what is sent to be saved leaves out the category and the Debt of a Credit", () => {
+    const form = { ...start, type: "CREDIT" as const, categoryId: "c1", splitKind: "DEBT" as const, shares: [{ partyId: "a", method: "PERCENT" as const, value: "100", edited: false }] };
+    expect(toQuickPayInput(form)).toMatchObject({ categoryId: null, split: { enabled: false } });
   });
 });
 
@@ -74,12 +110,12 @@ describe("keyword category", () => {
 });
 
 describe("fromEntry", () => {
-  const entry: EntryDetails = { id: "e", type: "DEBIT", amountPaise: 15050, reason: "Dosa", accountId: "b1", categoryId: "c1", partyId: "p1", splitPercent: 33.3333, creditIds: ["x"], occurredAt: "2026-06-01T05:00:00.000Z" };
+  const entry: EntryDetails = { id: "e", type: "DEBIT", amountPaise: 15050, reason: "Dosa", accountId: "b1", categoryId: "c1", splitKind: "SPLIT", shares: [{ partyId: "p1", name: "Mukesh", percent: 33.3333, sharePaise: 5000 }], creditIds: ["x"], occurredAt: "2026-06-01T05:00:00.000Z" };
   it("fills the form from a saved entry and treats its category as yours", () => {
-    expect(fromEntry(entry, DEFAULT_SETTINGS)).toMatchObject({ amount: "150.50", reason: "Dosa", accountId: "b1", categoryId: "c1", categoryManual: true, splitEnabled: true, partyId: "p1", splitMethod: "PERCENT", splitValue: "33.33", creditsAdded: true, creditIds: ["x"] });
+    expect(fromEntry(entry, DEFAULT_SETTINGS)).toMatchObject({ amount: "150.50", reason: "Dosa", accountId: "b1", categoryId: "c1", categoryManual: true, splitKind: "SPLIT", shares: [{ partyId: "p1", method: "PERCENT", value: "33.33", edited: true }], creditsAdded: true, creditIds: ["x"] });
   });
   it("shows no split for an entry without one", () => {
-    expect(fromEntry({ ...entry, partyId: null, splitPercent: null, creditIds: [] }, DEFAULT_SETTINGS)).toMatchObject({ splitEnabled: false, partyId: null, creditsAdded: false });
+    expect(fromEntry({ ...entry, splitKind: null, shares: [], creditIds: [] }, DEFAULT_SETTINGS)).toMatchObject({ splitKind: null, shares: [], creditsAdded: false });
   });
 });
 

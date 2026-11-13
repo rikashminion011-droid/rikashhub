@@ -5,11 +5,11 @@ import { recomputeBalances, sinceOpening } from "@/lib/db/balances";
 import { paiseToDecimalString, parseAmountInput, parseISODate, toPaise } from "@/lib/finance";
 import { buildBalanceGroups, type AccountBalanceInput } from "../balances";
 import { istDateOf, rangeToInstants } from "../datetime";
-import { resolveSplit, type SplitMethod } from "../split";
+import { resolveShares, type ResolvedShare, type ShareInput, type SplitKind } from "../shares";
 import type { CreditSource } from "../settings-model";
 import type { PlannedEntry } from "../import/plan";
 import { PAGE_SIZE, effectiveRange, type TxFilters } from "../filters";
-import type { BalancesData, EntryDetails, RecentCredit, TxRow, TxTotals } from "../types";
+import type { BalancesData, EntryDetails, RecentCredit, ShareDetail, TxRow, TxTotals } from "../types";
 import { MAX_REASON_LENGTH, type EntryType, type ValidBulkRow, type ValidQuickPay } from "../validation";
 
 /** Saving, reading, editing and deleting Quick Pay entries (single and bulk), and the bank balances. Every query is scoped to `userId`. */
@@ -68,30 +68,34 @@ async function selfPartyId(tx: Prisma.TransactionClient, userId: string): Promis
 }
 
 interface SplitWrite {
-  partyId: string | null;
-  sharePaise: number;
-  percent: number;
+  kind: SplitKind;
+  shares: readonly ResolvedShare[];
 }
 
 /**
- * Replaces the split rows of a transaction. The person gets their share; whatever is left is your own share, saved under
- * "Personal", so the rows always add up to the amount (the database checks this too). 100% is a single row.
+ * Replaces the split rows of a transaction. Each chosen person gets their share; whatever is left is your own share,
+ * saved under "Personal", so the rows always add up to the amount (the database checks this too).
  */
 async function writeSplits(tx: Prisma.TransactionClient, userId: string, transactionId: string, amountPaise: number, split: SplitWrite | null): Promise<void> {
   await tx.transactionSplit.deleteMany({ where: { transactionId, userId } });
-  await tx.transaction.update({ where: { id: transactionId }, data: { isSplit: split?.partyId != null } });
-  if (!split || !split.partyId) return;
+  const shares = split ? split.shares.filter((s) => s.sharePaise > 0) : [];
+  await tx.transaction.update({ where: { id: transactionId }, data: { isSplit: shares.length > 0, splitKind: shares.length > 0 ? split!.kind : null } });
+  if (!split || shares.length === 0) return;
 
   const self = await selfPartyId(tx, userId);
-  const share = Math.min(split.sharePaise, amountPaise);
-  const rest = amountPaise - share;
-  if (rest <= 0 || split.partyId === self) {
-    await tx.transactionSplit.create({ data: { userId, transactionId, partyId: split.partyId, amount: paiseToDecimalString(amountPaise), percentage: "100" } });
-    return;
+  // A share given to "Personal" is simply part of your own share.
+  const people = shares.filter((s) => s.partyId !== self);
+  const given = people.reduce((sum, s) => sum + s.sharePaise, 0);
+  if (given > amountPaise) throw new ExpenseError("The shares add up to more than the amount.");
+  const rest = amountPaise - given;
+
+  for (const share of people) {
+    await tx.transactionSplit.create({ data: { userId, transactionId, partyId: share.partyId, amount: paiseToDecimalString(share.sharePaise), percentage: String(share.percent) } });
   }
-  const restPercent = Math.round((rest / amountPaise) * 100 * 10_000) / 10_000;
-  await tx.transactionSplit.create({ data: { userId, transactionId, partyId: split.partyId, amount: paiseToDecimalString(share), percentage: String(split.percent) } });
-  await tx.transactionSplit.create({ data: { userId, transactionId, partyId: self, amount: paiseToDecimalString(rest), percentage: String(restPercent) } });
+  if (rest > 0) {
+    const restPercent = Math.round((rest / amountPaise) * 100 * 10_000) / 10_000;
+    await tx.transactionSplit.create({ data: { userId, transactionId, partyId: self, amount: paiseToDecimalString(rest), percentage: String(restPercent) } });
+  }
 }
 
 /** Replaces the credits added to a debit. Only your own saved credit entries can be added. */
@@ -124,7 +128,7 @@ export async function createEntry(
 
       await resolveBanks(tx, userId, [entry.accountId]);
       await resolveCategories(tx, userId, [entry.categoryId]);
-      await resolvePersons(tx, userId, [entry.partyId]);
+      await resolvePersons(tx, userId, entry.shares.map((x) => x.partyId));
 
       const amount = paiseToDecimalString(entry.amountPaise);
       const created = await tx.transaction.create({
@@ -142,7 +146,7 @@ export async function createEntry(
         },
         select: { id: true },
       });
-      await writeSplits(tx, userId, created.id, entry.amountPaise, entry.partyId ? { partyId: entry.partyId, sharePaise: entry.sharePaise, percent: entry.percent } : null);
+      await writeSplits(tx, userId, created.id, entry.amountPaise, entry.splitKind ? { kind: entry.splitKind, shares: entry.shares } : null);
       await writeCreditLinks(tx, userId, created.id, entry.type === "DEBIT" ? entry.creditIds : []);
       await recomputeBalances(tx, userId, [entry.accountId]);
       await tx.auditLog.create({
@@ -167,7 +171,7 @@ export async function updateEntry(db: PrismaClient, userId: string, id: string, 
 
     await resolveBanks(tx, userId, [entry.accountId]);
     await resolveCategories(tx, userId, [entry.categoryId]);
-    await resolvePersons(tx, userId, [entry.partyId]);
+    await resolvePersons(tx, userId, entry.shares.map((x) => x.partyId));
 
     const amount = paiseToDecimalString(entry.amountPaise);
     await tx.transaction.update({
@@ -180,7 +184,7 @@ export async function updateEntry(db: PrismaClient, userId: string, id: string, 
         ...(occurredAt ? { occurredAt, date: parseISODate(istDateOf(occurredAt)) } : {}),
       },
     });
-    await writeSplits(tx, userId, id, entry.amountPaise, entry.partyId ? { partyId: entry.partyId, sharePaise: entry.sharePaise, percent: entry.percent } : null);
+    await writeSplits(tx, userId, id, entry.amountPaise, entry.splitKind ? { kind: entry.splitKind, shares: entry.shares } : null);
     await writeCreditLinks(tx, userId, id, entry.type === "DEBIT" ? entry.creditIds : []);
 
     await recomputeBalances(tx, userId, [existing.accountId ?? existing.toAccountId ?? entry.accountId, entry.accountId]);
@@ -265,10 +269,10 @@ export async function createBulk(
 export async function getEntry(db: PrismaClient, userId: string, id: string): Promise<EntryDetails | null> {
   const row = await db.transaction.findFirst({
     where: { id, userId, quickPay: true, deletedAt: null },
-    include: { splits: { include: { party: { select: { nameKey: true } } } }, creditLinksAsDebit: { select: { creditId: true } } },
+    include: { splits: { include: { party: { select: { name: true, nameKey: true } } }, orderBy: { createdAt: "asc" } }, creditLinksAsDebit: { select: { creditId: true } } },
   });
   if (!row || !row.occurredAt) return null;
-  const person = personSplit(row.splits);
+  const shares = sharesOf(row.splits, paiseOf(row.amount));
   return {
     id: row.id,
     type: typeOf(row),
@@ -276,8 +280,8 @@ export async function getEntry(db: PrismaClient, userId: string, id: string): Pr
     reason: row.description ?? "",
     accountId: (row.accountId ?? row.toAccountId)!,
     categoryId: row.categoryId,
-    partyId: person?.partyId ?? null,
-    splitPercent: person ? splitPercentOf(person, paiseOf(row.amount)) : null,
+    splitKind: kindOf(row, shares),
+    shares,
     creditIds: row.creditLinksAsDebit.map((l) => l.creditId),
     occurredAt: row.occurredAt.toISOString(),
   };
@@ -327,10 +331,25 @@ const includeForRows = {
   creditLinksAsDebit: { select: { credit: { select: { amount: true } } } },
 } satisfies Prisma.TransactionInclude;
 
-/** The split row that belongs to the person (not your own "Personal" remainder), or the only row there is. */
-function personSplit<T extends { party: { nameKey: string } }>(splits: readonly T[]): T | undefined {
-  return splits.find((s) => s.party.nameKey !== SELF_KEY) ?? splits[0];
+/**
+ * The people a transaction is shared with, with their shares. Your own "Personal" remainder is not one of them (unless it
+ * is the only row there is, as on older entries).
+ */
+function sharesOf<T extends { partyId: string; amount: { toString(): string }; percentage: { toString(): string } | null; party: { name: string; nameKey: string } }>(
+  splits: readonly T[],
+  txAmountPaise: number,
+): ShareDetail[] {
+  const people = splits.filter((s) => s.party.nameKey !== SELF_KEY);
+  return (people.length > 0 ? people : splits).map((s) => ({
+    partyId: s.partyId,
+    name: s.party.name,
+    percent: splitPercentOf(s, txAmountPaise),
+    sharePaise: paiseOf(s.amount),
+  }));
 }
+
+const kindOf = (row: { splitKind: string | null }, shares: readonly unknown[]): SplitKind | null =>
+  shares.length === 0 ? null : row.splitKind === "DEBT" ? "DEBT" : "SPLIT";
 
 function splitPercentOf(split: { amount: { toString(): string }; percentage: { toString(): string } | null }, txAmountPaise: number): number {
   if (split.percentage !== null) return Number(split.percentage.toString());
@@ -362,8 +381,8 @@ type RowWithRelations = Prisma.TransactionGetPayload<{ include: typeof includeFo
 
 function toRow(row: RowWithRelations): TxRow {
   const bankAccount = row.account ?? row.toAccount;
-  const person = personSplit(row.splits);
   const amountPaise = paiseOf(row.amount);
+  const shares = sharesOf(row.splits, amountPaise);
   return {
     id: row.id,
     occurredAt: (row.occurredAt ?? row.createdAt).toISOString(),
@@ -376,10 +395,8 @@ function toRow(row: RowWithRelations): TxRow {
     bankId: row.accountId ?? row.toAccountId ?? null,
     category: row.category ? arrow(row.category.parent?.name, row.category.name) : "",
     categoryId: row.categoryId,
-    person: person?.party.name ?? null,
-    partyId: person?.partyId ?? null,
-    sharePaise: person ? paiseOf(person.amount) : null,
-    splitPercent: person ? splitPercentOf(person, amountPaise) : null,
+    splitKind: kindOf(row, shares),
+    shares,
     linkedCreditsPaise: row.creditLinksAsDebit.reduce((sum, l) => sum + paiseOf(l.credit.amount), 0),
   };
 }
@@ -540,8 +557,8 @@ export interface EntryPatch {
   /** The Reason (an empty string clears it). */
   reason?: string;
   categoryId?: string | null;
-  /** A person with their share, or null to remove the split. */
-  split?: { partyId: string; method: SplitMethod; value: string } | null;
+  /** The people and their shares (as a Split or a Debt), or null to remove the sharing. */
+  split?: { kind: SplitKind; shares: readonly ShareInput[] } | null;
 }
 
 /**
@@ -568,10 +585,12 @@ export async function patchEntry(db: PrismaClient, userId: string, id: string, p
     if (patch.split !== undefined) {
       if (patch.split === null) await writeSplits(tx, userId, id, paiseOf(existing.amount), null);
       else {
-        await resolvePersons(tx, userId, [patch.split.partyId]);
-        const resolved = resolveSplit(paiseOf(existing.amount), { method: patch.split.method, value: patch.split.value }, parseAmountInput);
+        await resolvePersons(tx, userId, patch.split.shares.map((x) => x.partyId));
+        const amountPaise = paiseOf(existing.amount);
+        const resolved = resolveShares(amountPaise, patch.split.shares, parseAmountInput);
         if (!resolved.ok) throw new ExpenseError(resolved.error);
-        await writeSplits(tx, userId, id, paiseOf(existing.amount), { partyId: patch.split.partyId, sharePaise: resolved.sharePaise, percent: resolved.percent });
+        if (patch.split.kind === "DEBT" && existing.type !== "EXPENSE") throw new ExpenseError("A Debt can only be added to a Debit.");
+        await writeSplits(tx, userId, id, amountPaise, { kind: patch.split.kind, shares: resolved.shares });
       }
     }
     await tx.auditLog.create({ data: { userId, action: "quickpay.patch", entity: "transaction", entityId: id, after: { fields: Object.keys(patch) } } });

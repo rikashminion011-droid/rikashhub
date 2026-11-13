@@ -1,8 +1,9 @@
 import { matchCategory } from "./keywords";
 import type { QuickPaySettingsData } from "./settings-model";
+import { evenPercents, singlePercent, type SplitKind } from "./shares";
 import type { SplitMethod } from "./split";
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "./types";
-import type { EntryType } from "./validation";
+import type { EntryType, QuickPayInput } from "./validation";
 
 /**
  * The state of the Quick Entry form, shared by the page form and the edit pop-up, and the rules for filling it:
@@ -19,13 +20,21 @@ export interface FormState {
   categoryManual: boolean;
   /** True while the category on screen was chosen by a keyword (so it can follow the Reason as you type). */
   categoryAuto: boolean;
-  splitEnabled: boolean;
-  partyId: string | null;
-  splitMethod: SplitMethod;
-  /** A percentage ("50") or, for FIXED, an amount ("200"). */
-  splitValue: string;
+  /** Split or Debt when the entry is shared with people; null when it is not. Only one of the two can be on. */
+  splitKind: SplitKind | null;
+  /** The chosen people with their shares, in the order chosen. */
+  shares: FormShare[];
   creditsAdded: boolean;
   creditIds: string[];
+}
+
+/** One chosen person. `edited` is true once you typed their share yourself, so choosing more people never changes it. */
+export interface FormShare {
+  partyId: string;
+  method: SplitMethod;
+  /** A percentage ("50") or, for FIXED, an amount ("25"). */
+  value: string;
+  edited: boolean;
 }
 
 const rupees = (paise: number) => (paise / 100).toFixed(2).replace(/\.00$/, "");
@@ -45,10 +54,15 @@ export function emptyState(settings: QuickPaySettingsData, options?: Pick<QuickP
     categoryId: category,
     categoryManual: false,
     categoryAuto: false,
-    splitEnabled: split.enabledByDefault,
-    partyId: split.enabledByDefault ? party : null,
-    splitMethod: split.method,
-    splitValue: split.method === "PERCENT" ? String(split.defaultPercent) : split.defaultFixedPaise > 0 ? rupees(split.defaultFixedPaise) : "",
+    splitKind: split.enabledByDefault ? "SPLIT" : null,
+    shares:
+      split.enabledByDefault && party
+        ? [
+            split.method === "PERCENT"
+              ? { partyId: party, method: "PERCENT", value: String(split.defaultPercent), edited: false }
+              : { partyId: party, method: "FIXED", value: split.defaultFixedPaise > 0 ? rupees(split.defaultFixedPaise) : "", edited: true },
+          ]
+        : [],
     creditsAdded: false,
     creditIds: [],
   };
@@ -66,10 +80,9 @@ export function fromEntry(entry: EntryDetails, settings: QuickPaySettingsData): 
     categoryId: entry.categoryId,
     categoryManual: true,
     categoryAuto: false,
-    splitEnabled: entry.partyId !== null,
-    partyId: entry.partyId,
-    splitMethod: "PERCENT",
-    splitValue: entry.splitPercent !== null ? String(Number(entry.splitPercent.toFixed(2))) : "100",
+    splitKind: entry.splitKind,
+    // What was saved is kept as it is: opening an entry to edit it never re-divides anyone's share.
+    shares: entry.shares.map((x) => ({ partyId: x.partyId, method: "PERCENT" as const, value: String(Number(x.percent.toFixed(2))), edited: true })),
     creditsAdded: entry.creditIds.length > 0,
     creditIds: [...entry.creditIds],
   };
@@ -81,7 +94,7 @@ export function fromEntry(entry: EntryDetails, settings: QuickPaySettingsData): 
  */
 export function withReason(form: FormState, reason: string, keywords: QuickPayOptions["keywords"]): FormState {
   const next = { ...form, reason };
-  if (form.categoryManual) return next;
+  if (form.type === "CREDIT" || form.categoryManual) return next;
   const matched = matchCategory(reason, keywords);
   if (matched) return { ...next, categoryId: matched, categoryAuto: true };
   if (form.categoryAuto) return { ...next, categoryId: null, categoryAuto: false };
@@ -97,4 +110,51 @@ export function defaultCreditSelection(choices: readonly RecentCredit[], setting
   if (settings.defaultSelection === "latest") return credits.slice(0, 1).map((c) => c.id);
   if (settings.defaultSelection === "custom") return credits.slice(0, settings.customCount).map((c) => c.id);
   return [];
+}
+
+/**
+ * The people chosen for a Split or Debt. A person's share you have not typed yourself is worked out again whenever the
+ * group changes: one person gets 50% (a Split) or 100% (a Debt), several divide the amount equally. Shares you typed stay as they are.
+ */
+export function withPeople(form: FormState, ids: readonly string[], settings: QuickPaySettingsData["split"]): FormState {
+  if (!form.splitKind) return form;
+  const kind = form.splitKind;
+  const existing = new Map(form.shares.map((s) => [s.partyId, s]));
+  const people = ids.map((id) => existing.get(id) ?? ({ partyId: id, method: "PERCENT", value: "", edited: false } satisfies FormShare));
+  const autos = evenPercents(people.length, singlePercent(kind, settings.defaultPercent));
+  return {
+    ...form,
+    shares: people.map((p, i) => (p.edited ? p : { ...p, method: "PERCENT", value: String(autos[i]) })),
+  };
+}
+
+/** Switches between Split and Debt (or off), keeping the chosen people and working their shares out again. */
+export function withKind(form: FormState, kind: SplitKind | null, settings: QuickPaySettingsData["split"], defaultPartyId: string | null): FormState {
+  if (kind === null) return { ...form, splitKind: null, shares: [] };
+  const ids = form.shares.length > 0 ? form.shares.map((s) => s.partyId) : defaultPartyId ? [defaultPartyId] : [];
+  // The shares are re-divided for the new kind, so a Debt starts at 100% where a Split starts at 50%.
+  return withPeople({ ...form, splitKind: kind, shares: form.shares.map((s) => ({ ...s, edited: false })) }, ids, settings);
+}
+
+/** You typed one person's share (a percentage or an amount). */
+export function withShareValue(form: FormState, partyId: string, method: SplitMethod, value: string): FormState {
+  return { ...form, shares: form.shares.map((s) => (s.partyId === partyId ? { ...s, method, value, edited: true } : s)) };
+}
+
+/** What the form sends to be validated and saved. A Credit never carries a category, a Debt or Credits Added. */
+export function toQuickPayInput(form: FormState): QuickPayInput {
+  const debit = form.type === "DEBIT";
+  return {
+    amount: form.amount,
+    type: form.type,
+    reason: form.reason,
+    accountId: form.accountId,
+    categoryId: debit ? form.categoryId : null,
+    split: {
+      enabled: form.splitKind !== null && (debit || form.splitKind === "SPLIT"),
+      kind: form.splitKind ?? "SPLIT",
+      shares: form.shares.map(({ partyId, method, value }) => ({ partyId, method, value })),
+    },
+    creditIds: debit ? form.creditIds : [],
+  };
 }
