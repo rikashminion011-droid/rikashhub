@@ -138,7 +138,7 @@ export function SearchableSelect({
       </button>
 
       {open ? (
-        <div className={cn("absolute z-50 mt-1 w-full min-w-56 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg", alignRight ? "right-0" : "left-0")}>
+        <div data-popup="" className={cn("absolute z-50 mt-1 w-full min-w-56 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg", alignRight ? "right-0" : "left-0")}>
           <div className="flex items-center gap-2 border-b px-2.5">
             <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
             <input

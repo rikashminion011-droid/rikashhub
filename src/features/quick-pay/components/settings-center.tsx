@@ -10,6 +10,7 @@ import type { PersonRow } from "@/features/users/types";
 import { cn } from "@/lib/utils";
 import type { addBankAction, addCategoryAction, addSubBankAction, addSubCategoryAction, removeBankAction, removeCategoryAction, renameBankAction, renameCategoryAction, setKeywordsAction } from "../actions";
 import type { QuickPaySettingsData } from "../settings-model";
+import type { SettingsTab } from "../settings-tabs";
 import type { BankTreeNode, CategoryTreeNode, QuickPayOptions } from "../types";
 import { KeywordEditor } from "./keyword-editor";
 import { CreditsSection, FieldsSection, SplitSection, type SettingsFormActions } from "./settings-sections";
@@ -27,9 +28,6 @@ export interface SettingsActions extends SettingsFormActions {
   setKeywords: typeof setKeywordsAction;
   people: Pick<UserActions, "addPerson" | "renamePerson" | "removePerson">;
 }
-
-export const SETTINGS_TABS = ["users", "banks", "categories", "fields", "split", "credits"] as const;
-export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const SECTIONS: { id: SettingsTab; label: string; hint: string; icon: LucideIcon }[] = [
   { id: "users", label: "Users", hint: "People for Split and Debt", icon: UsersRound },

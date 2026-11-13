@@ -16,7 +16,8 @@ import {
   saveSettingsAction,
   setKeywordsAction,
 } from "@/features/quick-pay/actions";
-import { SETTINGS_TABS, SettingsCenter, type SettingsTab } from "@/features/quick-pay/components/settings-center";
+import { SettingsCenter } from "@/features/quick-pay/components/settings-center";
+import { isSettingsTab, type SettingsTab } from "@/features/quick-pay/settings-tabs";
 import { getBankTree, getCategoryTree, getQuickPayOptions } from "@/features/quick-pay/server/settings";
 import type { BankTreeNode, CategoryTreeNode, QuickPayOptions } from "@/features/quick-pay/types";
 import { ensureUserSetup } from "@/features/expenses/server/service";
@@ -31,7 +32,7 @@ export const metadata: Metadata = { title: "Customized Settings" };
 export default async function SettingsPage({ searchParams }: PageProps<"/quick-pay/settings">) {
   const user = await requireUser();
   const params = await searchParams;
-  const tab: SettingsTab = (SETTINGS_TABS as readonly string[]).includes(String(params.tab)) ? (params.tab as SettingsTab) : "users";
+  const tab: SettingsTab = isSettingsTab(params.tab) ? params.tab : "users";
 
   let banks: BankTreeNode[];
   let categories: CategoryTreeNode[];
