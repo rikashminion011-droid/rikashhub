@@ -27,6 +27,7 @@ import {
   setOpeningBalance,
   updateEntry,
 } from "./server/entries";
+import { clearBulkDraft, getBulkDraft, saveBulkDraft } from "./server/bulk-draft";
 import { getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
 import { SECTION_SCHEMAS, SETTINGS_SECTIONS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
 import type { EntryPatch } from "./server/entries";
@@ -331,6 +332,46 @@ export async function saveBulkAction(
     return { ok: true, count: saved.count, duplicate: saved.duplicate };
   } catch (error) {
     return failure(error, "save bulk");
+  }
+}
+
+// ───────────────────────── Add Bulk draft ─────────────────────────
+
+export interface BulkDraftActions {
+  load: typeof loadBulkDraftAction;
+  save: typeof saveBulkDraftAction;
+  clear: typeof clearBulkDraftAction;
+}
+
+/** The saved Add Bulk draft, if there is one. */
+export async function loadBulkDraftAction(): Promise<QuickPayResult<{ draft: { rows: unknown[]; savedAt: number; count: number } | null }>> {
+  try {
+    const user = await requireUser();
+    return { ok: true, draft: await getBulkDraft(getPrisma(), user.id) };
+  } catch (error) {
+    return failure(error, "load draft");
+  }
+}
+
+/** Keeps the sheet as the draft (an empty sheet clears it). */
+export async function saveBulkDraftAction(raw: unknown): Promise<QuickPayResult<{ count: number; savedAt: number }>> {
+  try {
+    const parsed = z.object({ rows: z.array(z.record(z.string(), z.unknown())).max(MAX_BULK_ROWS + 200) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That draft could not be read." };
+    const { user, db } = await context();
+    return { ok: true, ...(await saveBulkDraft(db, user.id, parsed.data.rows)) };
+  } catch (error) {
+    return failure(error, "save draft");
+  }
+}
+
+export async function clearBulkDraftAction(): Promise<QuickPayResult> {
+  try {
+    const { user, db } = await context();
+    await clearBulkDraft(db, user.id);
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "clear draft");
   }
 }
 

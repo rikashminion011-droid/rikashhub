@@ -59,12 +59,12 @@ afterAll(async () => {
 });
 
 describe("migrations", () => {
-  it("create all 29 tables", async () => {
+  it("create all 30 tables", async () => {
     const { rows } = await db.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1`,
     );
     expect(rows.map((r) => r.table_name)).toEqual([
-      "accounts", "attachments", "audit_logs", "credit_card_statements", "credit_cards",
+      "accounts", "attachments", "audit_logs", "bulk_drafts", "credit_card_statements", "credit_cards",
       "debt_payments", "debts", "expense_parties", "food_entries", "food_items", "food_meal_prices",
       "milestone_contributions", "milestones",
       "monthly_dues", "monthly_summaries", "navigation_settings", "payment_records", "quick_pay_settings", "recurring_payments", "reminders",
@@ -79,7 +79,7 @@ describe("migrations", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind = 'r'`,
     );
-    expect(rows).toHaveLength(29);
+    expect(rows).toHaveLength(30);
     expect(rows.filter((r) => !r.relrowsecurity).map((r) => r.relname)).toEqual([]);
   });
 

@@ -209,6 +209,7 @@ model User {
   foodEntries            FoodEntry[]
   quickPaySettings       QuickPaySettings?
   navigationSettings     NavigationSettings?
+  bulkDraft              BulkDraft?
   splitPayments          SplitPayment[]
   creditLinks            TransactionCreditLink[]
   transactionSplits      TransactionSplit[]
@@ -938,4 +939,20 @@ model NavigationSettings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("navigation_settings")
+}
+
+
+// ───────────────────────── Add Bulk draft ─────────────────────────
+
+/// One row per user: the Add Bulk sheet as it was left, kept until it is saved or cancelled. Rows are stored as JSON.
+model BulkDraft {
+  userId    String   @id @db.Uuid
+  data      Json
+  /// How many rows have something typed in them (shown on the Draft button).
+  rowCount  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("bulk_drafts")
 }

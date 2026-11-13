@@ -14,9 +14,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { saveBulkAction, saveTransferAction } from "../actions";
+import type { BulkDraftActions, saveBulkAction, saveTransferAction } from "../actions";
 import { availablePersons, keywordsFor } from "../availability";
-import { clearDraft, readDraft, writeDraft } from "../bulk-draft";
+import { cleanDraftRows, clearLocalDraft, readLocalDraft, writeLocalDraft } from "../bulk-draft";
 import { addNextDay, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type BulkRow, type Direction, type RowChange } from "../bulk-rows";
 import { groupBanks, groupCategories } from "../cascade";
 import { istTimeOf } from "../datetime";
@@ -88,7 +88,10 @@ export function BulkEntry({
   nowTime,
   saveBulk,
   quickActions,
+  draftActions,
 }: {
+  /** Keeps the sheet as a draft on the server, so it is the same on every device. */
+  draftActions: BulkDraftActions;
   options: QuickPayOptions;
   /** Today's date (YYYY-MM-DD) and the current time (HH:mm) in IST, used to pre-fill new rows. */
   today: string;
@@ -123,17 +126,49 @@ export function BulkEntry({
   const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
   const creditCategoryGroups = useMemo(() => groupCategories(options.creditCategories), [options.creditCategories]);
 
-  // Bring back what was typed before the page was refreshed.
+  // Bring back the draft: the one saved on the server (the same on every device), or this browser's copy if that is newer.
   useEffect(() => {
-    const draft = readDraft();
-    // Reading the browser's storage can only happen after the page is shown, so the saved rows are put in now.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (draft) setRows(draft);
-    setRestored(true);
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      const local = readLocalDraft();
+      let server: { rows: BulkRow[]; savedAt: number } | null = null;
+      try {
+        const result = await draftActions.load();
+        const rows = result.ok && result.draft ? cleanDraftRows(result.draft.rows) : null;
+        if (result.ok && result.draft && rows) server = { rows, savedAt: result.draft.savedAt };
+      } catch {
+        // Offline: this browser's copy is used.
+      }
+      if (cancelled) return;
+      const pick = server && (!local || server.savedAt >= local.savedAt) ? server : local;
+      // The draft can only be read once the page is shown, so it is put in now.
+      if (pick) setRows(pick.rows);
+      setRestored(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draftActions]);
+
+  // Keep the draft as it is typed: this browser at once, the server a moment after typing stops (and straight away on leaving).
+  const latestRows = useRef(rows);
   useEffect(() => {
-    if (restored) writeDraft(rows);
-  }, [rows, restored]);
+    latestRows.current = rows;
+  }, [rows]);
+  useEffect(() => {
+    if (!restored) return;
+    writeLocalDraft(rows);
+    const timer = setTimeout(() => void draftActions.save({ rows }).catch(() => undefined), 800);
+    return () => clearTimeout(timer);
+  }, [rows, restored, draftActions]);
+  useEffect(() => {
+    if (!restored) return;
+    const flush = () => {
+      if (document.visibilityState === "hidden") void draftActions.save({ rows: latestRows.current }).catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", flush);
+    return () => document.removeEventListener("visibilitychange", flush);
+  }, [restored, draftActions]);
 
   const totals = useMemo(() => {
     let debit = 0;
@@ -347,7 +382,8 @@ export function BulkEntry({
     toast.success(result.duplicate ? "That sheet was already saved." : `${result.count} transaction${result.count === 1 ? "" : "s"} saved.`, {
       description: "Totals, the table and bank balances are updated.",
     });
-    clearDraft();
+    clearLocalDraft();
+    void draftActions.clear().catch(() => undefined);
     setRows(startingRows(today, nowTime));
     setSelected(new Set());
     setRequestId(newRequestId());
@@ -355,7 +391,9 @@ export function BulkEntry({
 
   /** Cancel, once confirmed: the sheet and its draft are thrown away (nothing is kept), and the page goes back to GPay Transactions. */
   async function cancelSheet(): Promise<string | null> {
-    clearDraft();
+    clearLocalDraft();
+    // Waited for, so a draft saved a moment ago cannot come back after the page changes.
+    await draftActions.clear().catch(() => undefined);
     setRows(startingRows(today, nowTime));
     setErrors({});
     setSelected(new Set());

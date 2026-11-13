@@ -127,3 +127,13 @@ export function rowWithAmounts<T extends BulkRow>(row: T, changes: Partial<Pick<
   const next = { ...row, ...changes };
   return isCreditRow(next) !== isCreditRow(row) ? { ...next, categoryId: null, categoryAuto: false, categoryManual: false } : next;
 }
+
+/** How many rows of a sheet have something typed in them. Reads rows loosely, so a damaged saved draft cannot break it. */
+export function countFilledRows(rows: readonly unknown[]): number {
+  const text = (v: unknown) => typeof v === "string" && v.trim() !== "";
+  return rows.filter((r) => {
+    if (!r || typeof r !== "object") return false;
+    const row = r as Record<string, unknown>;
+    return text(row.debit) || text(row.credit) || text(row.reason) || text(row.accountId) || text(row.categoryId) || (Array.isArray(row.shares) && row.shares.length > 0) || !!row.transfer;
+  }).length;
+}

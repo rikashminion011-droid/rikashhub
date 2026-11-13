@@ -5,16 +5,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { draftRowCount } from "../bulk-draft";
+import { localDraftCount } from "../bulk-draft";
 
 /** "Draft": goes back to the Add Bulk sheet exactly where it was left. Shows how many rows are waiting in it. */
-export function DraftLink() {
-  const [count, setCount] = useState(0);
+export function DraftLink({ savedCount = 0 }: { /** Rows waiting in the draft saved on the server. */ savedCount?: number }) {
+  const [localCount, setLocal] = useState(0);
+  const count = Math.max(savedCount, localCount);
   useEffect(() => {
     // The draft lives in this browser, so it can only be counted once the page is shown.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCount(draftRowCount());
-    const onShow = () => setCount(draftRowCount());
+    setLocal(localDraftCount());
+    const onShow = () => setLocal(localDraftCount());
     window.addEventListener("focus", onShow);
     window.addEventListener("pageshow", onShow);
     return () => {

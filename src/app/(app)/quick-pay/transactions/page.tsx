@@ -18,6 +18,7 @@ import {
   setOpeningBalanceAction,
 } from "@/features/quick-pay/actions";
 import { addPersonAction } from "@/features/users/actions";
+import { getBulkDraftCount } from "@/features/quick-pay/server/bulk-draft";
 import { DraftLink } from "@/features/quick-pay/components/draft-link";
 import { BalancesDialog } from "@/features/quick-pay/components/balances-dialog";
 import { ImportDialog } from "@/features/quick-pay/components/import-dialog";
@@ -45,10 +46,11 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
 
   let result: Awaited<ReturnType<typeof listTransactions>>;
   let options: QuickPayOptions;
+  let draftCount = 0;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    [result, options] = await Promise.all([listTransactions(db, user.id, filters), getQuickPayOptions(db, user.id)]);
+    [result, options, draftCount] = await Promise.all([listTransactions(db, user.id, filters), getQuickPayOptions(db, user.id), getBulkDraftCount(db, user.id).catch(() => 0)]);
   } catch (error) {
     console.error("[quick-pay] could not load transactions", error);
     return (
@@ -79,7 +81,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
             <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))}>
               <FilePlus2 /> Add Bulk
             </Link>
-            <DraftLink />
+            <DraftLink savedCount={draftCount} />
             <ImportDialog actions={{ getOptions: getOptionsAction, importGpay: importGpayAction }} />
             <ExportMenu query={query} />
           </>

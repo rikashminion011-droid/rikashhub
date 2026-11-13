@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addParty, archiveOption, createExpense, ensureUserSetup, getExpenseFormData } from "@/features/expenses/server/service";
 import { istInstant } from "@/features/quick-pay/datetime";
+import { clearBulkDraft, getBulkDraft, getBulkDraftCount, saveBulkDraft } from "@/features/quick-pay/server/bulk-draft";
 import { parseTxFilters } from "@/features/quick-pay/filters";
 import {
   createBulk,
@@ -625,5 +626,44 @@ describe("self transfers saved with the rest of an Add Bulk sheet", () => {
       createBulk(db, ME.id, rid(), [{ key: "y", type: "DEBIT", amountPaise: 100, occurredAt: istInstant("2026-12-21", "10:00"), reason: "", accountId: bank(o, "HDFC"), categoryId: null, shares: [], transfer: { toId: bank(theirs, "HDFC") } }]),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(await db.transaction.count({ where: { userId: ME.id } })).toBe(before);
+  });
+});
+
+describe("the Add Bulk draft kept on the server", () => {
+  const draftRows = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `d${i}`, date: "2026-11-01", time: "10:00", debit: "10", credit: "", reason: `draft ${i}`, accountId: null, categoryId: null, shares: [] }));
+
+  it("keeps the sheet and gives it back as it was left, with how many rows are waiting", async () => {
+    expect(await getBulkDraft(db, ME.id)).toBeNull();
+    const saved = await saveBulkDraft(db, ME.id, [...draftRows(3), { key: "blank", date: "2026-11-01", time: "10:00", debit: "", credit: "", reason: "", accountId: null, categoryId: null, shares: [] }]);
+    expect(saved.count).toBe(3);
+    const back = (await getBulkDraft(db, ME.id))!;
+    expect(back.count).toBe(3);
+    expect(back.rows).toHaveLength(4);
+    expect(back.savedAt).toBeGreaterThan(0);
+    expect(await getBulkDraftCount(db, ME.id)).toBe(3);
+  });
+
+  it("is private to each user, and one draft per user is replaced by the next", async () => {
+    await saveBulkDraft(db, ME.id, draftRows(2));
+    expect(await getBulkDraft(db, OTHER.id)).toBeNull();
+    await saveBulkDraft(db, OTHER.id, draftRows(5));
+    expect((await getBulkDraft(db, ME.id))!.count).toBe(2);
+    expect((await getBulkDraft(db, OTHER.id))!.count).toBe(5);
+    await clearBulkDraft(db, OTHER.id);
+    expect(await getBulkDraft(db, OTHER.id)).toBeNull();
+    expect((await getBulkDraft(db, ME.id))!.count).toBe(2);
+  });
+
+  it("a sheet with nothing typed clears the draft, as does cancelling", async () => {
+    await saveBulkDraft(db, ME.id, draftRows(2));
+    await saveBulkDraft(db, ME.id, [{ key: "a", debit: "", credit: "", reason: "" }]);
+    expect(await getBulkDraft(db, ME.id)).toBeNull();
+    await saveBulkDraft(db, ME.id, draftRows(1));
+    await clearBulkDraft(db, ME.id);
+    expect(await getBulkDraftCount(db, ME.id)).toBe(0);
+  });
+
+  it("refuses a sheet that is far too long", async () => {
+    await expect(saveBulkDraft(db, ME.id, draftRows(1300))).rejects.toThrow();
   });
 });
