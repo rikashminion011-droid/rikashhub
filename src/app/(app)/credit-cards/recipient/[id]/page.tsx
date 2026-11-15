@@ -22,7 +22,7 @@ const when = (iso: string) => {
 };
 
 /** Everything on one portal for one person: their statement lines, and their unbilled transactions not yet on a statement. */
-export default async function RecipientPage({ params, searchParams }: PageProps<"/credit-portal/recipient/[id]">) {
+export default async function RecipientPage({ params, searchParams }: PageProps<"/credit-cards/recipient/[id]">) {
   const user = await requireUser();
   const { id } = await params;
   const query = await searchParams;
@@ -61,7 +61,7 @@ export default async function RecipientPage({ params, searchParams }: PageProps<
         title={person.name}
         description={`${portal.name}: statement lines and unbilled transactions for this person.`}
         actions={
-          <Link href={`/credit-portal?portal=${portal.id}&tab=statement`} className={cn(buttonVariants({ variant: "outline" }))}>
+          <Link href={`/credit-cards?portal=${portal.id}&tab=statement`} className={cn(buttonVariants({ variant: "outline" }))}>
             <ChevronLeft /> Back
           </Link>
         }

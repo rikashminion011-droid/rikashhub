@@ -94,7 +94,7 @@ export function StatementTab({
     else router.refresh();
   }
 
-  const recipientPage = (id: string) => `/credit-portal/recipient/${id}?portal=${portalId}`;
+  const recipientPage = (id: string) => `/credit-cards/recipient/${id}?portal=${portalId}`;
 
   return (
     <div className="space-y-4">
@@ -252,7 +252,7 @@ function ImportBody({ portalId, actions, onClose, onDone }: { portalId: string; 
       const body = new FormData();
       body.set("file", file);
       body.set("portalId", portalId);
-      const res = await fetch("/credit-portal/statement", { method: "POST", body });
+      const res = await fetch("/credit-cards/statement", { method: "POST", body });
       const json = (await res.json().catch(() => null)) as ({ ok: true } & Preview) | { ok: false; error: string } | null;
       if (!json || !json.ok) return setError(json && !json.ok ? json.error : "Could not read that file. Please try again.");
       setPreview(json);

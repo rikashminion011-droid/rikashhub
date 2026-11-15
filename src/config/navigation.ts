@@ -38,15 +38,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
     ],
   },
   {
-    title: "Credit Cards",
+    title: "Credit Portal",
     href: "/credit-cards",
     icon: CreditCard,
-    description: "Balances, limits, statements and due dates for every card.",
-    planned: [
-      "Multiple cards with masked numbers (CVV and PIN are never stored)",
-      "Credit utilisation, statements, minimum and total due",
-      "Payment history, reminders and card-wise spending",
-    ],
+    description: "Unbilled transactions and statements of each credit portal.",
+    planned: [],
   },
   {
     title: "Monthly Due",
@@ -126,13 +122,6 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
     href: "/quick-pay/transactions",
     icon: ReceiptText,
     description: "Every Quick Pay entry, with filters, balances and export.",
-    planned: [],
-  },
-  {
-    title: "Credit Portal",
-    href: "/credit-portal",
-    icon: CreditCard,
-    description: "Unbilled transactions and statements of each credit portal.",
     planned: [],
   },
   {

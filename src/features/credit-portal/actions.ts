@@ -45,7 +45,7 @@ function failure(error: unknown, label: string): { ok: false; error: string } {
   return { ok: false, error: GENERIC_ERROR };
 }
 
-const refresh = () => revalidatePath("/credit-portal", "layout");
+const refresh = () => revalidatePath("/credit-cards", "layout");
 const id = z.uuid();
 const name = z.string().trim().min(1, "Enter a name.").max(60, "Use at most 60 characters.");
 
