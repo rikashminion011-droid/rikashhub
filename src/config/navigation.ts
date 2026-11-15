@@ -129,6 +129,13 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
     planned: [],
   },
   {
+    title: "Credit Portal",
+    href: "/credit-portal",
+    icon: CreditCard,
+    description: "Unbilled transactions and statements of each credit portal.",
+    planned: [],
+  },
+  {
     title: "Customized Settings",
     href: "/quick-pay/settings",
     icon: Settings2,

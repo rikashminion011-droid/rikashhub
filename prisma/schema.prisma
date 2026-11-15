@@ -210,6 +210,9 @@ model User {
   quickPaySettings       QuickPaySettings?
   navigationSettings     NavigationSettings?
   bulkDraft              BulkDraft?
+  creditPortals          CreditPortal[]
+  creditPortalEntries    CreditPortalEntry[]
+  creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
   creditLinks            TransactionCreditLink[]
   transactionSplits      TransactionSplit[]
@@ -955,4 +958,85 @@ model BulkDraft {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("bulk_drafts")
+}
+
+
+// ───────────────────────── Credit Portal ─────────────────────────
+
+/// A card or pay-later account (HDFC, Slice, Amazon Pay Later, ...) with its credit limit.
+model CreditPortal {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  name          String
+  /// Lower-cased, trimmed name: makes "hdfc" and "HDFC" the same portal.
+  nameKey       String
+  totalCredit   Decimal   @default(0) @db.Decimal(14, 2)
+  usedCredit    Decimal   @default(0) @db.Decimal(14, 2)
+  /// False until card information was entered, so a new portal asks for it.
+  cardInfoSaved Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries          CreditPortalEntry[]
+  statementEntries CreditStatementEntry[]
+
+  @@unique([userId, nameKey])
+  @@index([userId, deletedAt])
+  @@map("credit_portals")
+}
+
+/// An unbilled transaction on a portal (not yet on a statement). reconciledStatementId is set once the statement shows it.
+model CreditPortalEntry {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @db.Uuid
+  portalId              String    @db.Uuid
+  occurredAt            DateTime  @db.Timestamptz(3)
+  reason                String?
+  /// What the card said (the merchant), when it came from an image or a statement.
+  details               String?
+  /// DEBIT (money spent) or CREDIT (a refund or payment).
+  kind                  String    @default("DEBIT")
+  amount                Decimal   @db.Decimal(14, 2)
+  /// The people this purchase is for (ids of expense_parties).
+  recipientIds          String[]  @db.Uuid
+  reconciledStatementId String?   @db.Uuid
+  dedupeKey             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portal CreditPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, portalId, deletedAt, occurredAt])
+  @@map("credit_portal_entries")
+}
+
+/// A line of an imported statement. It is a debit or a credit (never both).
+model CreditStatementEntry {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  portalId     String    @db.Uuid
+  occurredAt   DateTime  @db.Timestamptz(3)
+  details      String
+  reason       String?
+  debit        Decimal   @default(0) @db.Decimal(14, 2)
+  credit       Decimal   @default(0) @db.Decimal(14, 2)
+  recipientIds String[]  @db.Uuid
+  categoryId   String?   @db.Uuid
+  /// Stops the same statement line being imported twice.
+  dedupeKey    String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portal CreditPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, portalId, deletedAt, occurredAt])
+  @@map("credit_statement_entries")
 }
