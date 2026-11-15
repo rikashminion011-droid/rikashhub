@@ -26,6 +26,8 @@ export interface FormState {
   shares: FormShare[];
   creditsAdded: boolean;
   creditIds: string[];
+  /** The Shopping Records platform of this Debit (Shopping Portals), or null. */
+  shoppingPlatformId: string | null;
 }
 
 /** One chosen person. `edited` is true once you typed their share yourself, so choosing more people never changes it. */
@@ -66,6 +68,7 @@ export function emptyState(settings: QuickPaySettingsData, options?: Pick<QuickP
         : [],
     creditsAdded: false,
     creditIds: [],
+    shoppingPlatformId: null,
   };
 }
 
@@ -86,6 +89,7 @@ export function fromEntry(entry: EntryDetails, settings: QuickPaySettingsData): 
     shares: entry.shares.map((x) => ({ partyId: x.partyId, method: "PERCENT" as const, value: String(Number(x.percent.toFixed(2))), edited: true })),
     creditsAdded: entry.creditIds.length > 0,
     creditIds: [...entry.creditIds],
+    shoppingPlatformId: entry.shoppingPlatformId,
   };
 }
 
@@ -171,5 +175,6 @@ export function toQuickPayInput(form: FormState): QuickPayInput {
       shares: form.shares.map(({ partyId, method, value }) => ({ partyId, method, value })),
     },
     creditIds: debit ? form.creditIds : [],
+    shoppingPlatformId: debit ? form.shoppingPlatformId : null,
   };
 }

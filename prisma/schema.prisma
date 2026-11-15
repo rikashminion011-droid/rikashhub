@@ -212,6 +212,8 @@ model User {
   bulkDraft              BulkDraft?
   creditPortals          CreditPortal[]
   creditPortalEntries    CreditPortalEntry[]
+  shoppingPlatforms      ShoppingPlatform[]
+  shoppingPurchases      ShoppingPurchase[]
   creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
   creditLinks            TransactionCreditLink[]
@@ -234,16 +236,16 @@ model User {
 }
 
 model UserProfile {
-  userId           String   @id @db.Uuid
-  fullName         String?
-  currency         String   @default("INR")
-  locale           String   @default("en-IN")
-  timezone         String   @default("Asia/Kolkata")
-  reminderLeadDays Int      @default(3)
+  userId                  String    @id @db.Uuid
+  fullName                String?
+  currency                String    @default("INR")
+  locale                  String    @default("en-IN")
+  timezone                String    @default("Asia/Kolkata")
+  reminderLeadDays        Int       @default(3)
   /// Set once the starter payment methods, users and categories have been created for this user.
   expenseDefaultsSeededAt DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -255,37 +257,37 @@ model UserProfile {
 /// Bank accounts, cash, wallets, debit cards and credit-line accounts such as Slice.
 /// For kind=ASSET `currentBalance` is money held. For kind=CREDIT_LINE it is the amount owed.
 model Account {
-  id             String        @id @default(uuid()) @db.Uuid
-  userId         String        @db.Uuid
-  name           String
-  provider       String?
-  type           AccountType
-  kind           AccountKind   @default(ASSET)
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @db.Uuid
+  name            String
+  provider        String?
+  type            AccountType
+  kind            AccountKind   @default(ASSET)
   /// Only the last 4 digits are ever stored or shown.
-  maskedNumber   String?       @db.VarChar(4)
-  openingBalance Decimal       @default(0) @db.Decimal(14, 2)
+  maskedNumber    String?       @db.VarChar(4)
+  openingBalance  Decimal       @default(0) @db.Decimal(14, 2)
   /// The moment the opening balance is "as of". Only entries at or after it count towards the balance. Null = every entry counts.
-  openingAt      DateTime?     @db.Timestamptz(3)
-  currentBalance Decimal       @default(0) @db.Decimal(14, 2)
-  creditLimit    Decimal?      @db.Decimal(14, 2)
-  linkedCardLast4 String?      @db.VarChar(4)
+  openingAt       DateTime?     @db.Timestamptz(3)
+  currentBalance  Decimal       @default(0) @db.Decimal(14, 2)
+  creditLimit     Decimal?      @db.Decimal(14, 2)
+  linkedCardLast4 String?       @db.VarChar(4)
   /// A payment method is a top-level account (GPay, HDFC, Slice). Accounts under it (Canara, IDFC,
   /// DBS under GPay) point to it here. Only one level deep.
-  parentId       String?       @db.Uuid
-  status         AccountStatus @default(ACTIVE)
-  notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  deletedAt      DateTime?
+  parentId        String?       @db.Uuid
+  status          AccountStatus @default(ACTIVE)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  parent             Account?           @relation("AccountChildren", fields: [parentId], references: [id], onDelete: Restrict)
-  children           Account[]          @relation("AccountChildren")
-  txFrom             Transaction[]      @relation("TxFromAccount")
-  txTo               Transaction[]      @relation("TxToAccount")
-  recurringPayments  RecurringPayment[]
-  monthlyDues        MonthlyDue[]
+  parent            Account?           @relation("AccountChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children          Account[]          @relation("AccountChildren")
+  txFrom            Transaction[]      @relation("TxFromAccount")
+  txTo              Transaction[]      @relation("TxToAccount")
+  recurringPayments RecurringPayment[]
+  monthlyDues       MonthlyDue[]
 
   @@index([userId, deletedAt])
   @@index([userId, type])
@@ -294,31 +296,31 @@ model Account {
 }
 
 model CreditCard {
-  id             String     @id @default(uuid()) @db.Uuid
-  userId         String     @db.Uuid
-  bankName       String
-  cardName       String
+  id            String     @id @default(uuid()) @db.Uuid
+  userId        String     @db.Uuid
+  bankName      String
+  cardName      String
   /// Last 4 digits: the only part shown in the UI.
-  cardLast4      String     @db.VarChar(4)
+  cardLast4     String     @db.VarChar(4)
   /// Full number encrypted server-side (AES-256-GCM). Never sent to the client. CVV/PIN are never stored.
-  cardNumberEnc  String?
-  network        String?
-  creditLimit    Decimal    @db.Decimal(14, 2)
+  cardNumberEnc String?
+  network       String?
+  creditLimit   Decimal    @db.Decimal(14, 2)
   /// Amount currently owed. Available credit = creditLimit - outstanding (derived, never stored).
-  outstanding    Decimal    @default(0) @db.Decimal(14, 2)
+  outstanding   Decimal    @default(0) @db.Decimal(14, 2)
   /// Day of month (1-31).
-  billingDay     Int
-  statementDay   Int
-  dueDay         Int
-  minimumDue     Decimal    @default(0) @db.Decimal(14, 2)
-  totalDue       Decimal    @default(0) @db.Decimal(14, 2)
-  annualFee      Decimal    @default(0) @db.Decimal(14, 2)
-  rewardPoints   Int        @default(0)
-  status         CardStatus @default(ACTIVE)
-  notes          String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  deletedAt      DateTime?
+  billingDay    Int
+  statementDay  Int
+  dueDay        Int
+  minimumDue    Decimal    @default(0) @db.Decimal(14, 2)
+  totalDue      Decimal    @default(0) @db.Decimal(14, 2)
+  annualFee     Decimal    @default(0) @db.Decimal(14, 2)
+  rewardPoints  Int        @default(0)
+  status        CardStatus @default(ACTIVE)
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -333,19 +335,19 @@ model CreditCard {
 }
 
 model CreditCardStatement {
-  id           String          @id @default(uuid()) @db.Uuid
-  userId       String          @db.Uuid
-  creditCardId String          @db.Uuid
-  periodStart  DateTime        @db.Date
-  periodEnd    DateTime        @db.Date
-  statementDate DateTime       @db.Date
-  dueDate      DateTime        @db.Date
-  totalDue     Decimal         @db.Decimal(14, 2)
-  minimumDue   Decimal         @db.Decimal(14, 2)
-  paidAmount   Decimal         @default(0) @db.Decimal(14, 2)
-  status       StatementStatus @default(OPEN)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @db.Uuid
+  creditCardId  String          @db.Uuid
+  periodStart   DateTime        @db.Date
+  periodEnd     DateTime        @db.Date
+  statementDate DateTime        @db.Date
+  dueDate       DateTime        @db.Date
+  totalDue      Decimal         @db.Decimal(14, 2)
+  minimumDue    Decimal         @db.Decimal(14, 2)
+  paidAmount    Decimal         @default(0) @db.Decimal(14, 2)
+  status        StatementStatus @default(OPEN)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   creditCard CreditCard @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
@@ -472,32 +474,32 @@ model Attachment {
 // ───────────────────────── Monthly dues ─────────────────────────
 
 model RecurringPayment {
-  id                  String        @id @default(uuid()) @db.Uuid
-  userId              String        @db.Uuid
-  name                String
-  category            DueCategory
-  amount              Decimal       @db.Decimal(14, 2)
-  recurrence          Recurrence
-  startDate           DateTime      @db.Date
-  endDate             DateTime?     @db.Date
-  dayOfMonth          Int?
-  paymentMethod       PaymentMethod?
-  accountId           String?       @db.Uuid
-  creditCardId        String?       @db.Uuid
-  debtId              String?       @db.Uuid
-  reminderDaysBefore  Int           @default(3)
-  active              Boolean       @default(true)
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @db.Uuid
+  name               String
+  category           DueCategory
+  amount             Decimal        @db.Decimal(14, 2)
+  recurrence         Recurrence
+  startDate          DateTime       @db.Date
+  endDate            DateTime?      @db.Date
+  dayOfMonth         Int?
+  paymentMethod      PaymentMethod?
+  accountId          String?        @db.Uuid
+  creditCardId       String?        @db.Uuid
+  debtId             String?        @db.Uuid
+  reminderDaysBefore Int            @default(3)
+  active             Boolean        @default(true)
   /// Dues have been generated up to and including this date.
-  generatedThrough    DateTime?     @db.Date
-  notes               String?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  deletedAt           DateTime?
+  generatedThrough   DateTime?      @db.Date
+  notes              String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  deletedAt          DateTime?
 
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account    Account?    @relation(fields: [accountId], references: [id])
-  creditCard CreditCard? @relation(fields: [creditCardId], references: [id])
-  debt       Debt?       @relation(fields: [debtId], references: [id])
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account    Account?     @relation(fields: [accountId], references: [id])
+  creditCard CreditCard?  @relation(fields: [creditCardId], references: [id])
+  debt       Debt?        @relation(fields: [debtId], references: [id])
   dues       MonthlyDue[]
 
   @@index([userId, active])
@@ -505,24 +507,24 @@ model RecurringPayment {
 }
 
 model MonthlyDue {
-  id                 String      @id @default(uuid()) @db.Uuid
-  userId             String      @db.Uuid
-  recurringPaymentId String?     @db.Uuid
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @db.Uuid
+  recurringPaymentId String?        @db.Uuid
   name               String
   category           DueCategory
-  amount             Decimal     @db.Decimal(14, 2)
-  paidAmount         Decimal     @default(0) @db.Decimal(14, 2)
-  dueDate            DateTime    @db.Date
-  reminderDate       DateTime?   @db.Date
-  status             DueStatus   @default(UPCOMING)
+  amount             Decimal        @db.Decimal(14, 2)
+  paidAmount         Decimal        @default(0) @db.Decimal(14, 2)
+  dueDate            DateTime       @db.Date
+  reminderDate       DateTime?      @db.Date
+  status             DueStatus      @default(UPCOMING)
   paymentMethod      PaymentMethod?
-  accountId          String?     @db.Uuid
-  creditCardId       String?     @db.Uuid
-  debtId             String?     @db.Uuid
+  accountId          String?        @db.Uuid
+  creditCardId       String?        @db.Uuid
+  debtId             String?        @db.Uuid
   notes              String?
   paidAt             DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
   deletedAt          DateTime?
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -541,15 +543,15 @@ model MonthlyDue {
 }
 
 model PaymentRecord {
-  id            String   @id @default(uuid()) @db.Uuid
-  userId        String   @db.Uuid
-  monthlyDueId  String   @db.Uuid
-  transactionId String?  @unique @db.Uuid
-  amount        Decimal  @db.Decimal(14, 2)
-  paidOn        DateTime @db.Date
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  monthlyDueId  String    @db.Uuid
+  transactionId String?   @unique @db.Uuid
+  amount        Decimal   @db.Decimal(14, 2)
+  paidOn        DateTime  @db.Date
   notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -642,10 +644,10 @@ model SavingsAccount {
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
 
-  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  milestone    Milestone?              @relation(fields: [milestoneId], references: [id])
-  entries      SavingsTransaction[]
-  transactions Transaction[]
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestone     Milestone?              @relation(fields: [milestoneId], references: [id])
+  entries       SavingsTransaction[]
+  transactions  Transaction[]
   contributions MilestoneContribution[]
 
   @@index([userId, deletedAt])
@@ -790,8 +792,8 @@ model ExpenseParty {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  user   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  splits TransactionSplit[]
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  splits   TransactionSplit[]
   payments SplitPayment[]
 
   @@unique([userId, nameKey])
@@ -820,7 +822,6 @@ model TransactionSplit {
   @@index([userId, partyId])
   @@map("transaction_splits")
 }
-
 
 // ───────────────────────── Monthly Food Tracking ─────────────────────────
 
@@ -880,7 +881,6 @@ model FoodEntry {
   @@map("food_entries")
 }
 
-
 // ───────────────────────── Customized Settings, split payments, credit links ─────────────────────────
 
 /// One row per user: field labels and defaults, split settings and Credits Added settings, as validated JSON.
@@ -930,7 +930,6 @@ model TransactionCreditLink {
   @@map("transaction_credit_links")
 }
 
-
 // ───────────────────────── Side navigator layout ─────────────────────────
 
 /// One row per user: headings, page order, renamed pages and hidden pages in the side navigator, as validated JSON.
@@ -943,7 +942,6 @@ model NavigationSettings {
 
   @@map("navigation_settings")
 }
-
 
 // ───────────────────────── Add Bulk draft ─────────────────────────
 
@@ -959,7 +957,6 @@ model BulkDraft {
 
   @@map("bulk_drafts")
 }
-
 
 // ───────────────────────── Credit Portal ─────────────────────────
 
@@ -1039,4 +1036,74 @@ model CreditStatementEntry {
   @@unique([userId, dedupeKey])
   @@index([userId, portalId, deletedAt, occurredAt])
   @@map("credit_statement_entries")
+}
+
+// ───────────────────────── Shopping Records ─────────────────────────
+
+/// A shop or platform purchases are grouped under ("D Mart", "AB Supermarket").
+model ShoppingPlatform {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  name      String
+  nameKey   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchases ShoppingPurchase[]
+
+  @@unique([userId, nameKey])
+  @@index([userId, deletedAt])
+  @@map("shopping_platforms")
+}
+
+/// One shopping trip. It stays Pending until its image, recipients and item table are filled in.
+model ShoppingPurchase {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  platformId    String    @db.Uuid
+  occurredAt    DateTime  @db.Timestamptz(3)
+  reason        String
+  amount        Decimal   @db.Decimal(14, 2)
+  /// People the purchase is for (ids of expense_parties).
+  recipientIds  String[]  @db.Uuid
+  imageData     Bytes?
+  imageType     String?
+  /// True once the item table has been saved.
+  detailsSaved  Boolean   @default(false)
+  /// "MANUAL" or "QUICK_ENTRY".
+  source        String    @default("MANUAL")
+  /// The Quick Entry transaction this came from, so it is never created twice.
+  transactionId String?   @db.Uuid
+  dedupeKey     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform ShoppingPlatform       @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  items    ShoppingPurchaseItem[]
+
+  @@unique([userId, dedupeKey])
+  @@unique([userId, transactionId])
+  @@index([userId, platformId, deletedAt, occurredAt])
+  @@map("shopping_purchases")
+}
+
+/// A row of a purchase's item table. `total` is always quantity x rate.
+model ShoppingPurchaseItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  purchaseId   String   @db.Uuid
+  position     Int
+  name         String
+  quantity     Decimal  @db.Decimal(12, 3)
+  rate         Decimal  @db.Decimal(14, 2)
+  total        Decimal  @db.Decimal(14, 2)
+  recipientIds String[] @db.Uuid
+
+  purchase ShoppingPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId, position])
+  @@map("shopping_purchase_items")
 }

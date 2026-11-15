@@ -27,6 +27,7 @@ import {
   setOpeningBalance,
   updateEntry,
 } from "./server/entries";
+import { syncQuickEntryPurchase } from "@/features/shopping/server/service";
 import { clearBulkDraft, getBulkDraft, saveBulkDraft } from "./server/bulk-draft";
 import { getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
 import { SECTION_SCHEMAS, SETTINGS_SECTIONS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
@@ -103,10 +104,20 @@ const entrySchema = z.object({
   split: z.object({ enabled: z.boolean(), kind: z.enum(["SPLIT", "DEBT"]).optional(), shares: z.array(shareSchema).max(30).optional() }),
   /** Credits added to this debit. */
   creditIds: z.array(id).max(50).optional(),
+  /** The Shopping Records platform of this Debit (Shopping Portals). */
+  shoppingPlatformId: id.nullable().optional(),
   /** When editing: a new date (YYYY-MM-DD) and time (HH:mm) in India time. */
   date: z.string().max(10).optional(),
   time: z.string().max(5).optional(),
 });
+
+/** Files a saved Debit under its Shopping Records platform (or takes it out), so the two never drift apart. */
+async function syncShopping(db: ReturnType<typeof getPrisma>, userId: string, transactionId: string, value: { shoppingPlatformId?: string | null; reason: string; amountPaise: number }) {
+  const row = await db.transaction.findFirst({ where: { id: transactionId, userId }, select: { occurredAt: true } });
+  if (!row?.occurredAt) return;
+  await syncQuickEntryPurchase(db, userId, transactionId, value.shoppingPlatformId ?? null, { occurredAt: row.occurredAt, reason: value.reason, amountPaise: value.amountPaise });
+  revalidatePath("/shopping", "layout");
+}
 
 export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id: string; updated: boolean; duplicate: boolean; amountPaise: number }>> {
   try {
@@ -121,6 +132,10 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
     }
 
     const { user, db } = await context();
+    if (checked.value.shoppingPlatformId) {
+      const platform = await db.shoppingPlatform.findFirst({ where: { id: checked.value.shoppingPlatformId, userId: user.id, deletedAt: null }, select: { id: true } });
+      if (!platform) return { ok: false, error: "That shopping platform no longer exists. Choose another." };
+    }
     if (entryId) {
       let occurredAt: Date | undefined;
       if (date) {
@@ -132,10 +147,12 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
         if (occurredAt.getTime() > Date.now() + 5 * 60_000) return { ok: false, error: "The date and time cannot be in the future." };
       }
       await updateEntry(db, user.id, entryId, checked.value, occurredAt);
+      await syncShopping(db, user.id, entryId, checked.value);
       refresh();
       return { ok: true, id: entryId, updated: true, duplicate: false, amountPaise: checked.value.amountPaise };
     }
     const saved = await createEntry(db, user.id, requestId, checked.value);
+    await syncShopping(db, user.id, saved.id, checked.value);
     refresh();
     return { ok: true, id: saved.id, updated: false, duplicate: saved.duplicate, amountPaise: checked.value.amountPaise };
   } catch (error) {

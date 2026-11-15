@@ -46,6 +46,8 @@ export interface QuickPayOptions {
   /** Categories for a Credit (money in). */
   creditCategories: CategoryOption[];
   persons: PersonOption[];
+  /** Shopping platforms, for the Shopping Portals option. */
+  shoppingPlatforms: { id: string; name: string }[];
   /** Words that pick a category from the Reason. */
   keywords: KeywordEntry[];
   /** Field labels, defaults, Split and Credits Added settings. */
@@ -80,6 +82,8 @@ export interface EntryDetails {
   shares: ShareDetail[];
   /** Credits added to this debit, newest first. */
   creditIds: string[];
+  /** The shopping platform it is filed under (Shopping Portals), or null. */
+  shoppingPlatformId: string | null;
   /** ISO instant */
   occurredAt: string;
 }

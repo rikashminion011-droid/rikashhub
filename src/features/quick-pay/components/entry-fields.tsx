@@ -286,6 +286,12 @@ export function EntryFields({
             Debt
           </label>
         ) : null}
+        {isDebit && options.shoppingPlatforms.length > 0 ? (
+          <label className="flex h-9 cursor-pointer items-center gap-2 text-sm font-semibold">
+            <Checkbox checked={form.shoppingPlatformId !== null} onCheckedChange={(next) => setForm((f) => ({ ...f, shoppingPlatformId: next === true ? (f.shoppingPlatformId ?? options.shoppingPlatforms[0]!.id) : null }))} />
+            <span className="whitespace-nowrap">Shopping Portals</span>
+          </label>
+        ) : null}
         {isDebit ? (
           <label className="flex h-9 cursor-pointer items-center gap-2 text-sm font-semibold">
             <Checkbox checked={form.creditsAdded} onCheckedChange={(next) => onToggleCredits(next === true)} />
@@ -293,6 +299,24 @@ export function EntryFields({
           </label>
         ) : null}
       </div>
+
+      {isDebit && form.shoppingPlatformId !== null ? (
+        <div className="space-y-1.5">
+          <select
+            aria-label="Shopping platform"
+            value={form.shoppingPlatformId}
+            onChange={(e) => setForm((f) => ({ ...f, shoppingPlatformId: e.target.value }))}
+            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:max-w-xs sm:text-sm"
+          >
+            {options.shoppingPlatforms.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">Saving adds this purchase to Shopping Records as Pending. Add the image, recipients and items there.</p>
+        </div>
+      ) : null}
 
       {form.splitKind ? <SplitControl form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} /> : null}
 

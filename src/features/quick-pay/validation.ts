@@ -26,6 +26,8 @@ export interface QuickPayInput {
   };
   /** Credits added to this debit (ids of saved credit entries). */
   creditIds?: readonly string[];
+  /** The Shopping Records platform this Debit is a purchase on (Shopping Portals), or null. */
+  shoppingPlatformId?: string | null;
 }
 
 export interface QuickPayErrors {
@@ -48,6 +50,8 @@ export interface ValidQuickPay {
   shares: ResolvedShare[];
   /** Credits added to this debit. */
   creditIds: string[];
+  /** The shopping platform of this Debit, or null. */
+  shoppingPlatformId?: string | null;
 }
 
 /** An opening balance typed by hand: "2,000", "₹2000.50" or "-500". Returns paise (may be negative), or null if invalid. */
@@ -103,6 +107,7 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
       splitKind: input.split.enabled ? (input.split.kind ?? "SPLIT") : null,
       shares,
       creditIds,
+      shoppingPlatformId: input.type === "DEBIT" ? (input.shoppingPlatformId ?? null) : null,
     },
   };
 }

@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError, addAccount, addCategory, addPaymentMethod, archiveOption, kindOfAccount } from "@/features/expenses/server/service";
 import type { MethodKind } from "@/features/expenses/types";
+import { listPlatforms } from "@/features/shopping/server/service";
 import { getKeywordEntries, getSettings } from "./prefs";
 import type { BankOption, BankTreeNode, CategoryOption, CategoryTreeNode, PersonOption, QuickPayOptions } from "../types";
 
@@ -152,13 +153,14 @@ export async function removeCategory(db: PrismaClient, userId: string, input: { 
 // ───────────────────────── Everything the entry forms need ─────────────────────────
 
 export async function getQuickPayOptions(db: PrismaClient, userId: string): Promise<QuickPayOptions> {
-  const [banks, categories, creditCategories, people] = await Promise.all([
+  const [banks, categories, creditCategories, people, shoppingPlatforms] = await Promise.all([
     getBankTree(db, userId),
     getCategoryTree(db, userId, "DEBIT"),
     getCategoryTree(db, userId, "CREDIT"),
     db.expenseParty.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: "asc" } }),
+    listPlatforms(db, userId),
   ]);
   const persons: PersonOption[] = people.map((p) => ({ id: p.id, name: p.name }));
   const [settings, keywords] = await Promise.all([getSettings(db, userId), getKeywordEntries(db, userId)]);
-  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), creditCategories: categoryOptionsFrom(creditCategories), persons, settings, keywords };
+  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), creditCategories: categoryOptionsFrom(creditCategories), persons, shoppingPlatforms, settings, keywords };
 }

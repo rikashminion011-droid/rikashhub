@@ -8,6 +8,7 @@ import { istDateOf, rangeToInstants } from "../datetime";
 import { resolveShares, type ResolvedShare, type ShareInput, type SplitKind } from "../shares";
 import type { CreditSource } from "../settings-model";
 import type { PlannedEntry } from "../import/plan";
+import { platformOfEntry } from "@/features/shopping/server/service";
 import { PAGE_SIZE, effectiveRange, type TxFilters } from "../filters";
 import type { BalancesData, EntryDetails, RecentCredit, ShareDetail, TxRow, TxTotals } from "../types";
 import { MAX_REASON_LENGTH, type EntryType, type ValidBulkRow, type ValidQuickPay } from "../validation";
@@ -249,6 +250,8 @@ export async function deleteEntry(db: PrismaClient, userId: string, id: string):
     const existing = await tx.transaction.findFirst({ where: { id, userId, quickPay: true, deletedAt: null } });
     if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
     await tx.transaction.update({ where: { id }, data: { deletedAt: new Date() } });
+    // The shopping record this entry made goes with it.
+    await tx.shoppingPurchase.updateMany({ where: { userId, transactionId: id, deletedAt: null }, data: { deletedAt: new Date() } });
     // A self transfer touches two banks; both are recalculated.
     const accountIds = [existing.accountId, existing.toAccountId].filter((x): x is string => x !== null);
     if (accountIds.length > 0) await recomputeBalances(tx, userId, accountIds);
@@ -347,6 +350,7 @@ export async function getEntry(db: PrismaClient, userId: string, id: string): Pr
     splitKind: kindOf(row, shares),
     shares,
     creditIds: row.creditLinksAsDebit.map((l) => l.creditId),
+    shoppingPlatformId: await platformOfEntry(db, userId, row.id),
     occurredAt: row.occurredAt.toISOString(),
   };
 }
