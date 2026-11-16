@@ -2,7 +2,7 @@
 
 import { Popover } from "@base-ui/react/popover";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MONTH_NAMES, calendarWeeks, formatClock, formatLongDate, formatMonthYear, fromClock12, toClock12, type Clock12 } from "@/features/quick-pay/date-format";
 import { cn } from "@/lib/utils";
 
@@ -256,12 +256,17 @@ export function TimePicker({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Clock12>({ hour: 12, minute: 0, pm: false });
   const [stage, setStage] = useState<"hour" | "minute">("hour");
+  // What is being typed in the hour or minute box. Null means the box shows the clock's own value.
+  const [typed, setTyped] = useState<{ field: "hour" | "minute"; text: string } | null>(null);
+  const minuteBox = useRef<HTMLInputElement>(null);
+  const hourBox = useRef<HTMLInputElement>(null);
 
   function onOpen(next: boolean) {
     setOpen(next);
     if (next) {
       setDraft(toClock12(value) ?? { hour: 12, minute: 0, pm: false });
       setStage("hour");
+      setTyped(null);
     }
   }
 
@@ -282,6 +287,31 @@ export function TimePicker({
     } else setDraft((d) => ({ ...d, minute: n }));
   }
 
+  /**
+   * Typing an hour: 1 to 12 as it is; 13 to 23 are taken as the 24-hour clock (so 23 means 11 PM); 0 means 12. Anything above 23
+   * is not a time and is left out. Typing a minute: 0 to 59, any minute, not only the fives on the dial.
+   */
+  function type(field: "hour" | "minute", text: string) {
+    const digits = text.replace(/\D/g, "").slice(0, 2);
+    setTyped({ field, text: digits });
+    if (digits === "") return;
+    const n = Number(digits);
+    if (field === "minute") {
+      if (n <= 59) setDraft((d) => ({ ...d, minute: n }));
+      return;
+    }
+    if (n === 0) setDraft((d) => ({ ...d, hour: 12 }));
+    else if (n <= 12) setDraft((d) => ({ ...d, hour: n }));
+    else if (n <= 23) setDraft((d) => ({ ...d, hour: n - 12, pm: true }));
+    // Two digits typed in the hour box: on to the minutes.
+    if (field === "hour" && digits.length === 2 && n <= 23) {
+      setStage("minute");
+      minuteBox.current?.focus();
+    }
+  }
+  const badTime = (field: "hour" | "minute") => typed?.field === field && typed.text !== "" && Number(typed.text) > (field === "hour" ? 23 : 59);
+  const shown = (field: "hour" | "minute") => (typed?.field === field ? typed.text : String(field === "hour" ? draft.hour : draft.minute).padStart(2, "0"));
+
   const seg = (active: boolean) => cn("rounded-lg px-2 py-1 text-5xl font-light tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-blue-100 text-blue-600" : "text-foreground/80 hover:bg-muted");
 
   return (
@@ -292,16 +322,51 @@ export function TimePicker({
       </Popover.Trigger>
       <PopupShell width="w-[22rem]">
         <div className="flex items-center justify-center gap-1">
-          <button type="button" className={seg(stage === "hour")} onClick={() => setStage("hour")} aria-label="Hour">
-            {String(draft.hour).padStart(2, "0")}
-          </button>
+          <input
+            ref={hourBox}
+            inputMode="numeric"
+            autoComplete="off"
+            aria-label="Hour"
+            aria-invalid={badTime("hour") || undefined}
+            value={shown("hour")}
+            onFocus={(e) => {
+              setStage("hour");
+              setTyped({ field: "hour", text: "" });
+              e.currentTarget.select();
+            }}
+            onBlur={() => setTyped(null)}
+            onChange={(e) => type("hour", e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), minuteBox.current?.focus())}
+            className={cn(seg(stage === "hour"), "w-[4.5rem] text-center", badTime("hour") && "bg-red-100 text-red-600")}
+          />
           <span className="text-5xl font-light text-muted-foreground">:</span>
-          <button type="button" className={seg(stage === "minute")} onClick={() => setStage("minute")} aria-label="Minute">
-            {String(draft.minute).padStart(2, "0")}
-          </button>
+          <input
+            ref={minuteBox}
+            inputMode="numeric"
+            autoComplete="off"
+            aria-label="Minute"
+            aria-invalid={badTime("minute") || undefined}
+            value={shown("minute")}
+            onFocus={(e) => {
+              setStage("minute");
+              setTyped({ field: "minute", text: "" });
+              e.currentTarget.select();
+            }}
+            onBlur={() => setTyped(null)}
+            onChange={(e) => type("minute", e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (badTime("minute")) return;
+                onChange(fromClock12(draft));
+                setOpen(false);
+              }
+            }}
+            className={cn(seg(stage === "minute"), "w-[4.5rem] text-center", badTime("minute") && "bg-red-100 text-red-600")}
+          />
           <span className="ml-2 text-lg font-medium text-muted-foreground">{draft.pm ? "PM" : "AM"}</span>
         </div>
-        <p className="mb-2 text-center text-xs text-muted-foreground">{stage === "hour" ? "Pick the hour" : "Pick the minute"}</p>
+        <p className="mb-2 text-center text-xs text-muted-foreground">{badTime("hour") ? "Hours go up to 23" : badTime("minute") ? "Minutes go up to 59" : stage === "hour" ? "Pick or type the hour" : "Pick or type the minute"}</p>
 
         <div className="flex items-center gap-3">
           <div className="relative shrink-0 rounded-full bg-muted/70" style={{ width: DIAL, height: DIAL }}>
@@ -359,11 +424,12 @@ export function TimePicker({
             </button>
             <button
               type="button"
+              disabled={badTime("hour") || badTime("minute")}
               onClick={() => {
                 onChange(fromClock12(draft));
                 setOpen(false);
               }}
-              className="h-9 rounded-lg bg-[#3b5bdb] px-5 text-sm font-semibold text-white hover:bg-[#3451c7]"
+              className="h-9 rounded-lg bg-[#3b5bdb] disabled:opacity-50 px-5 text-sm font-semibold text-white hover:bg-[#3451c7]"
             >
               OK
             </button>
