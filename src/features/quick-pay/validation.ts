@@ -28,6 +28,8 @@ export interface QuickPayInput {
   creditIds?: readonly string[];
   /** The Shopping Records platform this Debit is a purchase on (Shopping Portals), or null. */
   shoppingPlatformId?: string | null;
+  /** For a Credit: the person who gave the money. Left out or null means Others. */
+  creditedById?: string | null;
 }
 
 export interface QuickPayErrors {
@@ -52,6 +54,8 @@ export interface ValidQuickPay {
   creditIds: string[];
   /** The shopping platform of this Debit, or null. */
   shoppingPlatformId?: string | null;
+  /** The person who credited this (a Credit only), or null for Others. */
+  creditedById?: string | null;
 }
 
 /** An opening balance typed by hand: "2,000", "₹2000.50" or "-500". Returns paise (may be negative), or null if invalid. */
@@ -84,6 +88,7 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
   if (input.split.enabled) {
     const lines = input.split.shares ?? [];
     if (lines.length === 0) errors.split = "Choose the people this is shared with.";
+    else if (input.split.kind === "DEBT" && lines.length > 1) errors.split = "A Debt is for one person. Choose only one.";
     else if (!("error" in amount)) {
       const resolved = resolveShares(amount.paise, lines);
       if (resolved.ok) shares = resolved.shares;
@@ -108,6 +113,7 @@ export function validateQuickPayInput(input: QuickPayInput): { ok: true; value: 
       shares,
       creditIds,
       shoppingPlatformId: input.type === "DEBIT" ? (input.shoppingPlatformId ?? null) : null,
+      creditedById: input.type === "CREDIT" ? (input.creditedById ?? null) : null,
     },
   };
 }

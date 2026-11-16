@@ -108,3 +108,22 @@ export async function setCategoryKeywords(db: PrismaClient, userId: string, inpu
     await tx.transactionCategory.update({ where: { id: category.id }, data: { keywords: keys } });
   });
 }
+
+/**
+ * Makes a Reason pick a category: the reason becomes one of the category's keywords. If another category in the same list
+ * (Debit or Credit) already used the word, it is moved, so a Reason always has exactly one answer.
+ */
+export async function assignReasonToCategory(db: PrismaClient, userId: string, input: { reason: string; categoryId: string }): Promise<void> {
+  const key = keywordKey(input.reason);
+  if (!key) throw new ExpenseError("Type a reason first.");
+  if (key.length > MAX_KEYWORD_LENGTH) throw new ExpenseError(`Use at most ${MAX_KEYWORD_LENGTH} characters in a reason that picks a category.`);
+  await db.$transaction(async (tx) => {
+    const target = await tx.transactionCategory.findFirst({ where: { id: input.categoryId, userId, deletedAt: null, type: { in: ["EXPENSE", "INCOME"] } } });
+    if (!target) throw new ExpenseError("That category no longer exists.", "NOT_FOUND");
+    const holders = await tx.transactionCategory.findMany({ where: { userId, deletedAt: null, type: target.type, id: { not: target.id }, keywords: { has: key } }, select: { id: true, keywords: true } });
+    for (const h of holders) await tx.transactionCategory.update({ where: { id: h.id }, data: { keywords: h.keywords.filter((k) => k !== key) } });
+    if (target.keywords.includes(key)) return;
+    if (target.keywords.length >= MAX_KEYWORDS_PER_CATEGORY) throw new ExpenseError(`At most ${MAX_KEYWORDS_PER_CATEGORY} keywords per category.`);
+    await tx.transactionCategory.update({ where: { id: target.id }, data: { keywords: [...target.keywords, key] } });
+  });
+}

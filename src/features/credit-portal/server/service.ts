@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
 import { rangeToInstants } from "@/features/quick-pay/datetime";
-import { paiseToDecimalString, toPaise } from "@/lib/finance";
+import { divideEvenly, paiseToDecimalString, toPaise } from "@/lib/finance";
 import { reconcile } from "../model";
 
 /**
@@ -394,4 +394,91 @@ export async function listForRecipient(
     settledIds(db, userId, portalId),
   ]);
   return { statement: statementRows.map((r) => toStatement(r, settled)), unbilled: unbilledRows.map(toUnbilled) };
+}
+
+// ───────────────────────── For Debt Management ─────────────────────────
+
+/** One person's part of a credit-portal transaction. A refund or credit counts as negative. */
+export interface PortalShare {
+  id: string;
+  partyId: string;
+  amountPaise: number;
+  occurredAt: string;
+  reason: string;
+  portalId: string;
+  portal: string;
+  category: string;
+  source: "STATEMENT" | "UNBILLED";
+}
+
+/**
+ * What each person owes from credit portals in the period. A statement line with recipients counts; an unbilled transaction with
+ * recipients counts only until a statement line settles it, so nothing is counted twice. Several recipients share evenly.
+ */
+export async function portalShares(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<PortalShare[]> {
+  const bounds = rangeToInstants(range.from, range.to);
+  const when: Prisma.DateTimeFilter | undefined = bounds.gte || bounds.lt ? bounds : undefined;
+  const [statement, unbilled, portals, categories] = await Promise.all([
+    db.creditStatementEntry.findMany({ where: { userId, deletedAt: null, portal: { deletedAt: null }, recipientIds: { isEmpty: false }, ...(when ? { occurredAt: when } : {}) }, orderBy: { occurredAt: "asc" } }),
+    db.creditPortalEntry.findMany({ where: { userId, deletedAt: null, portal: { deletedAt: null }, reconciledStatementId: null, recipientIds: { isEmpty: false }, ...(when ? { occurredAt: when } : {}) }, orderBy: { occurredAt: "asc" } }),
+    db.creditPortal.findMany({ where: { userId }, select: { id: true, name: true } }),
+    db.transactionCategory.findMany({ where: { userId }, select: { id: true, name: true } }),
+  ]);
+  const portalName = new Map(portals.map((p) => [p.id, p.name]));
+  const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const out: PortalShare[] = [];
+  for (const s of statement) {
+    const signed = paiseOf(s.debit) - paiseOf(s.credit);
+    for (const part of divideEvenly(signed, s.recipientIds)) {
+      out.push({ id: s.id, partyId: part.id, amountPaise: part.paise, occurredAt: s.occurredAt.toISOString(), reason: s.reason || s.details, portalId: s.portalId, portal: portalName.get(s.portalId) ?? "", category: s.categoryId ? (categoryName.get(s.categoryId) ?? "") : "", source: "STATEMENT" });
+    }
+  }
+  for (const u of unbilled) {
+    const signed = u.kind === "CREDIT" ? -paiseOf(u.amount) : paiseOf(u.amount);
+    for (const part of divideEvenly(signed, u.recipientIds)) {
+      out.push({ id: u.id, partyId: part.id, amountPaise: part.paise, occurredAt: u.occurredAt.toISOString(), reason: u.reason || u.details || "", portalId: u.portalId, portal: portalName.get(u.portalId) ?? "", category: "", source: "UNBILLED" });
+    }
+  }
+  return out;
+}
+
+/**
+ * Keeps the Unbilled row of a Quick Entry or GPay transaction in step with it. When the bank it went through is one of your
+ * credit portals (by name, for example HDFC), the transaction is listed under that portal's Unbilled Transactions; if it is
+ * changed to another bank, or deleted, the row follows. The row starts without recipients, so it adds nothing to Debt
+ * Management until you choose some (the transaction's own Split or Debt is counted on its own).
+ */
+export async function syncQuickEntryUnbilled(
+  db: PrismaClient,
+  userId: string,
+  transactionId: string,
+  entry: { accountId: string | null; kind: "DEBIT" | "CREDIT"; occurredAt: Date; reason: string; amountPaise: number } | null,
+): Promise<void> {
+  const existing = await db.creditPortalEntry.findUnique({ where: { userId_transactionId: { userId, transactionId } } });
+  let portalId: string | null = null;
+  if (entry?.accountId) {
+    const account = await db.account.findFirst({ where: { id: entry.accountId, userId }, select: { name: true, parent: { select: { name: true } } } });
+    const names = [account?.name, account?.parent?.name].filter((n): n is string => !!n).map(keyOf);
+    if (names.length > 0) {
+      const portals = await listPortals(db, userId);
+      portalId = portals.find((p) => names.includes(keyOf(p.name)))?.id ?? null;
+    }
+  }
+  if (!entry || !portalId) {
+    if (existing && !existing.deletedAt) {
+      await db.creditPortalEntry.update({ where: { id: existing.id }, data: { deletedAt: new Date(), reconciledStatementId: null } });
+      await reconcilePortal(db, userId, existing.portalId);
+    }
+    return;
+  }
+  const data = { portalId, occurredAt: entry.occurredAt, reason: entry.reason.trim() || null, kind: entry.kind, amount: paiseToDecimalString(entry.amountPaise) };
+  if (!existing) {
+    await db.creditPortalEntry.create({ data: { userId, transactionId, ...data } });
+  } else {
+    const changed = existing.deletedAt !== null || existing.portalId !== portalId || existing.kind !== entry.kind || existing.occurredAt.getTime() !== entry.occurredAt.getTime() || paiseOf(existing.amount) !== entry.amountPaise;
+    // A changed amount, day or portal no longer matches the statement line it settled, so it is matched again.
+    await db.creditPortalEntry.update({ where: { id: existing.id }, data: { ...data, deletedAt: null, ...(changed ? { reconciledStatementId: null } : {}) } });
+    if (existing.portalId !== portalId) await reconcilePortal(db, userId, existing.portalId);
+  }
+  await reconcilePortal(db, userId, portalId);
 }

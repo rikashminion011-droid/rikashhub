@@ -54,7 +54,15 @@ export interface PricedItem {
   pricePaise: number;
   /** True when the price came from the customised list, false when the meal's default price was used. */
   custom: boolean;
+  /** When the typed word only matched part of a priced item ("Fish" for "Fish Gravy"), the item it matched. */
+  matched?: string;
+  /** When several priced items fit what was typed, their names, so the person can choose one. The default price is used until then. */
+  choices?: string[];
 }
+
+/** What is typed as notes for a meal that was not eaten. It is saved with an amount of zero. */
+export const NIL_NOTES = "Nil";
+export const isNilNotes = (notes: string) => foodKey(notes) === "nil";
 
 export interface PriceResult {
   items: PricedItem[];
@@ -68,6 +76,8 @@ export interface PriceResult {
 export function priceNotes(notes: string, customPrices: ReadonlyMap<string, number>, defaultPaise: number): PriceResult {
   const names = splitItems(notes);
   if (names.length === 0) return { items: [], totalPaise: 0 };
+  // Nil means no meal: it costs nothing whatever the default price is.
+  if (isNilNotes(notes)) return { items: [{ name: NIL_NOTES, pricePaise: 0, custom: true }], totalPaise: 0 };
 
   // The whole text as one item first: an item whose own name contains a comma or slash still matches.
   const whole = notes.trim().replace(/\s+/g, " ");
@@ -75,10 +85,30 @@ export function priceNotes(notes: string, customPrices: ReadonlyMap<string, numb
   if (wholePrice !== undefined) return { items: [{ name: whole, pricePaise: wholePrice, custom: true }], totalPaise: wholePrice };
 
   const items = names.map((name): PricedItem => {
-    const price = customPrices.get(foodKey(name));
-    return price === undefined ? { name, pricePaise: defaultPaise, custom: false } : { name, pricePaise: price, custom: true };
+    const key = foodKey(name);
+    const price = customPrices.get(key);
+    if (price !== undefined) return { name, pricePaise: price, custom: true };
+    // Not an exact match: a word that is part of a priced item still finds it ("Fish" finds "Fish Gravy" and sets its price).
+    const near = partialMatches(key, customPrices);
+    if (near.length === 1) return { name, pricePaise: customPrices.get(near[0]!)!, custom: true, matched: near[0]! };
+    if (near.length > 1) return { name, pricePaise: defaultPaise, custom: false, choices: near };
+    return { name, pricePaise: defaultPaise, custom: false };
   });
   return { items, totalPaise: items.reduce((sum, item) => sum + item.pricePaise, 0) };
+}
+
+/**
+ * The priced items whose name contains what was typed: the whole name, a whole word of it, or its beginning. At least two
+ * letters are needed, so a single letter never picks an item by accident. Keys are returned (already lower case).
+ */
+export function partialMatches(typedKey: string, customPrices: ReadonlyMap<string, number>): string[] {
+  if (typedKey.length < 2) return [];
+  const hits: string[] = [];
+  for (const itemKey of customPrices.keys()) {
+    const words = itemKey.split(" ");
+    if (itemKey.startsWith(typedKey) || words.some((w) => w === typedKey || w.startsWith(typedKey)) || itemKey.includes(typedKey)) hits.push(itemKey);
+  }
+  return hits;
 }
 
 export interface FoodInputErrors {

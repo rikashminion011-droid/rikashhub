@@ -8,6 +8,7 @@ import { istDateOf, rangeToInstants } from "../datetime";
 import { resolveShares, type ResolvedShare, type ShareInput, type SplitKind } from "../shares";
 import type { CreditSource } from "../settings-model";
 import type { PlannedEntry } from "../import/plan";
+import { creditedByOf } from "@/features/debt/server/service";
 import { platformOfEntry } from "@/features/shopping/server/service";
 import { PAGE_SIZE, effectiveRange, type TxFilters } from "../filters";
 import type { BalancesData, EntryDetails, RecentCredit, ShareDetail, TxRow, TxTotals } from "../types";
@@ -252,6 +253,9 @@ export async function deleteEntry(db: PrismaClient, userId: string, id: string):
     await tx.transaction.update({ where: { id }, data: { deletedAt: new Date() } });
     // The shopping record this entry made goes with it.
     await tx.shoppingPurchase.updateMany({ where: { userId, transactionId: id, deletedAt: null }, data: { deletedAt: new Date() } });
+    // So do the payment a Credit recorded (Credited By) and the Unbilled row a credit-portal bank made.
+    await tx.splitPayment.updateMany({ where: { userId, transactionId: id, deletedAt: null }, data: { deletedAt: new Date() } });
+    await tx.creditPortalEntry.updateMany({ where: { userId, transactionId: id, deletedAt: null }, data: { deletedAt: new Date(), reconciledStatementId: null } });
     // A self transfer touches two banks; both are recalculated.
     const accountIds = [existing.accountId, existing.toAccountId].filter((x): x is string => x !== null);
     if (accountIds.length > 0) await recomputeBalances(tx, userId, accountIds);
@@ -351,6 +355,7 @@ export async function getEntry(db: PrismaClient, userId: string, id: string): Pr
     shares,
     creditIds: row.creditLinksAsDebit.map((l) => l.creditId),
     shoppingPlatformId: await platformOfEntry(db, userId, row.id),
+    creditedById: await creditedByOf(db, userId, row.id),
     occurredAt: row.occurredAt.toISOString(),
   };
 }

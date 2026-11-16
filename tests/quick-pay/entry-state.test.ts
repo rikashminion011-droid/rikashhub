@@ -113,7 +113,7 @@ describe("keyword category", () => {
 });
 
 describe("fromEntry", () => {
-  const entry: EntryDetails = { id: "e", type: "DEBIT", amountPaise: 15050, reason: "Dosa", accountId: "b1", categoryId: "c1", splitKind: "SPLIT", shares: [{ partyId: "p1", name: "Mukesh", percent: 33.3333, sharePaise: 5000 }], creditIds: ["x"], shoppingPlatformId: null, occurredAt: "2026-06-01T05:00:00.000Z" };
+  const entry: EntryDetails = { id: "e", type: "DEBIT", amountPaise: 15050, reason: "Dosa", accountId: "b1", categoryId: "c1", splitKind: "SPLIT", shares: [{ partyId: "p1", name: "Mukesh", percent: 33.3333, sharePaise: 5000 }], creditIds: ["x"], shoppingPlatformId: null, creditedById: null, occurredAt: "2026-06-01T05:00:00.000Z" };
   it("fills the form from a saved entry and treats its category as yours", () => {
     expect(fromEntry(entry, DEFAULT_SETTINGS)).toMatchObject({ amount: "150.50", reason: "Dosa", accountId: "b1", categoryId: "c1", categoryManual: true, splitKind: "SPLIT", shares: [{ partyId: "p1", method: "PERCENT", value: "33.33", edited: true }], creditsAdded: true, creditIds: ["x"] });
   });

@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Plus } from "lucide-react";
-import { useMemo } from "react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
 import { CascadingSelect } from "@/components/shared/cascading-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { CreditsPanel } from "./credits-panel";
 import { CycleButton } from "./cycle-button";
 import { InlineAdd, type AddResult } from "./inline-add";
 import { SplitControl } from "./split-control";
+import { ReasonCategoryDialog } from "./reason-category-dialog";
 import { SelfTransferItem } from "./transfer-dialog";
 
 const SETTINGS = {
@@ -59,6 +60,7 @@ export function EntryFields({
   onAddCategory,
   onAddPerson,
   onSelfTransfer,
+  onAssignReason,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -75,6 +77,8 @@ export function EntryFields({
   onAddPerson: (name: string) => Promise<AddResult>;
   /** When given, the Bank Through list ends with a Self Transfer item that calls this (it opens the transfer pop-up). */
   onSelfTransfer?: () => void;
+  /** When given, a small checkbox beside Reason opens a pop-up that puts the reason under a category. */
+  onAssignReason?: (reason: string, type: EntryType, input: { categoryId: string | null; newCategory?: string }) => Promise<{ ok: true; categoryId: string } | { ok: false; error: string }>;
 }) {
   const labels = options.settings.fields.labels;
   // Banks switched off in Customized Settings are not offered (the one already on the entry still is).
@@ -86,6 +90,13 @@ export function EntryFields({
   const categoryGroups = useMemo(() => groupCategories(categoryList), [categoryList]);
   const showCredits = form.type === "DEBIT" && form.creditsAdded;
   const isDebit = form.type === "DEBIT";
+  const [reasonFocus, setReasonFocus] = useState(false);
+  const [reasonDialog, setReasonDialog] = useState(false);
+  // Reasons used often, narrowed by what is typed. A reason that is already typed in full is not offered again.
+  const suggestions = useMemo(() => {
+    const typed = form.reason.trim().toLowerCase();
+    return options.frequentReasons.filter((r) => r.toLowerCase() !== typed && (typed === "" || r.toLowerCase().includes(typed))).slice(0, 6);
+  }, [options.frequentReasons, form.reason]);
   const id = (name: string) => `${idPrefix}-${name}`;
 
   return (
@@ -155,6 +166,18 @@ export function EntryFields({
               );
             })}
           </div>
+          {onSelfTransfer ? (
+            <button
+              type="button"
+              onClick={onSelfTransfer}
+              aria-label="Self Transfer"
+              title="Self Transfer: move money between your own banks"
+              className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-input bg-background px-2.5 text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-3.5"
+            >
+              <ArrowLeftRight className="size-3.5" aria-hidden />
+              <span className="hidden min-[440px]:inline">Self Transfer</span>
+            </button>
+          ) : null}
         </div>
         {errors.amount ? (
           <p id={id("error-amount")} role="alert" className="text-xs text-destructive">
@@ -163,24 +186,78 @@ export function EntryFields({
         ) : null}
       </div>
 
+      {/* A Credit says who gave the money: Others, or one of your people. It counts as a payment by that person in Debt Management. */}
+      {!isDebit ? (
+        <div className="space-y-1">
+          <label htmlFor={id("credited-by")} className={labelClass}>
+            Credited By
+          </label>
+          <select
+            id={id("credited-by")}
+            value={form.creditedById ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, creditedById: e.target.value || null }))}
+            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+          >
+            <option value="">Others</option>
+            {options.persons.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
       {/* Reason and Category on one line (each kind has its own categories) */}
       <div className="grid grid-cols-2 gap-2">
         <div className="min-w-0 space-y-1">
-          <label htmlFor={id("reason")} className={labelClass}>
-            {labels.reason}
-          </label>
-          <Input
-            id={id("reason")}
-            autoComplete="off"
-            placeholder="What was it for?"
-            maxLength={MAX_REASON_LENGTH}
-            value={form.reason}
-            onChange={(e) => {
-              const value = e.target.value;
-              setForm((f) => withReason(f, value, keywordsFor(options, f.type)));
-            }}
-            className="h-10 text-base sm:text-sm"
-          />
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor={id("reason")} className={labelClass}>
+              {labels.reason}
+            </label>
+            {onAssignReason ? (
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-muted-foreground" title="Choose which category this reason belongs to">
+                <Checkbox checked={reasonDialog} disabled={form.reason.trim() === ""} onCheckedChange={(next) => setReasonDialog(next === true)} aria-label="Put this reason under a category" />
+                <span className="hidden min-[400px]:inline">Category</span>
+              </label>
+            ) : null}
+          </div>
+          <div className="relative">
+            <Input
+              id={id("reason")}
+              autoComplete="off"
+              placeholder="What was it for?"
+              maxLength={MAX_REASON_LENGTH}
+              value={form.reason}
+              onFocus={() => setReasonFocus(true)}
+              onBlur={() => setReasonFocus(false)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setForm((f) => withReason(f, value, keywordsFor(options, f.type)));
+              }}
+              className="h-10 text-base sm:text-sm"
+            />
+            {reasonFocus && suggestions.length > 0 ? (
+              <ul role="listbox" aria-label="Reasons you use often" className="absolute top-full right-0 left-0 z-40 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
+                {suggestions.map((r) => (
+                  <li key={r} role="option" aria-selected={false}>
+                    <button
+                      type="button"
+                      // Pressing a suggestion must not blur the box first, or the list would vanish before the tap lands.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setForm((f) => withReason(f, r, keywordsFor(options, f.type)));
+                        setReasonFocus(false);
+                      }}
+                      className="flex min-h-10 w-full items-center rounded-md px-2.5 py-1.5 text-left text-base hover:bg-accent hover:text-accent-foreground sm:min-h-8 sm:text-sm"
+                    >
+                      {r}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </div>
         <div className="min-w-0 space-y-1">
           <label htmlFor={id("category")} className={labelClass}>
@@ -335,6 +412,22 @@ export function EntryFields({
           }
           source={options.settings.credits.source}
           debitAmount={form.amount}
+        />
+      ) : null}
+
+      {onAssignReason ? (
+        <ReasonCategoryDialog
+          open={reasonDialog}
+          onOpenChange={setReasonDialog}
+          reason={form.reason.trim()}
+          categories={categoryList}
+          currentId={form.categoryId}
+          onAssign={async (input) => {
+            const done = await onAssignReason(form.reason.trim(), form.type, input);
+            if (!done.ok) return done.error;
+            setForm((f) => withCategory(f, done.categoryId));
+            return null;
+          }}
         />
       ) : null}
     </div>

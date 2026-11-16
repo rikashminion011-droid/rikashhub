@@ -213,6 +213,8 @@ model User {
   creditPortals          CreditPortal[]
   creditPortalEntries    CreditPortalEntry[]
   shoppingPlatforms      ShoppingPlatform[]
+  monthlyExpenses        MonthlyExpense[]
+  monthlyDueSetting      MonthlyDueSetting?
   shoppingPurchases      ShoppingPurchase[]
   creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
@@ -896,19 +898,22 @@ model QuickPaySettings {
 
 /// Money a person has paid back towards what they owe from splits (shown in Debt Management).
 model SplitPayment {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
-  partyId   String    @db.Uuid
-  amount    Decimal   @db.Decimal(14, 2)
-  paidAt    DateTime  @db.Timestamptz(3)
-  note      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  partyId       String    @db.Uuid
+  amount        Decimal   @db.Decimal(14, 2)
+  paidAt        DateTime  @db.Timestamptz(3)
+  note          String?
+  /// The Quick Entry Credit ("Credited By") this payment came from, so editing or deleting the entry keeps it in step.
+  transactionId String?   @db.Uuid
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
 
   user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   party ExpenseParty @relation(fields: [partyId], references: [id], onDelete: Restrict)
 
+  @@unique([userId, transactionId])
   @@index([userId, partyId, deletedAt])
   @@map("split_payments")
 }
@@ -999,6 +1004,8 @@ model CreditPortalEntry {
   /// The people this purchase is for (ids of expense_parties).
   recipientIds          String[]  @db.Uuid
   reconciledStatementId String?   @db.Uuid
+  /// The Quick Entry or GPay transaction that made this row (a bank that is a credit portal), so the two stay in step.
+  transactionId         String?   @db.Uuid
   dedupeKey             String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
@@ -1008,6 +1015,7 @@ model CreditPortalEntry {
   portal CreditPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
 
   @@unique([userId, dedupeKey])
+  @@unique([userId, transactionId])
   @@index([userId, portalId, deletedAt, occurredAt])
   @@map("credit_portal_entries")
 }
@@ -1106,4 +1114,38 @@ model ShoppingPurchaseItem {
 
   @@index([purchaseId, position])
   @@map("shopping_purchase_items")
+}
+
+// ───────────────────────── Monthly Due ─────────────────────────
+
+/// A fixed cost of a month that is typed by hand: Room Rent, and anything else added with the + button.
+model MonthlyExpense {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  /// "2026-11"
+  month     String
+  name      String
+  amount    Decimal   @default(0) @db.Decimal(14, 2)
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, month, deletedAt])
+  @@map("monthly_expenses")
+}
+
+/// Which person is "me" in Monthly Due: everything recorded for them is My Due.
+model MonthlyDueSetting {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @db.Uuid
+  personalPartyId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("monthly_due_settings")
 }

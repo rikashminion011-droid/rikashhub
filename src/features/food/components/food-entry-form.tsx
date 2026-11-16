@@ -11,10 +11,13 @@ import { notifyDataChanged } from "@/features/quick-pay/components/period-contex
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
-import { MAX_NOTES_LENGTH, MEALS, MEAL_LABEL, foodKey, mealForTime, priceNotes, validateFoodEntry, type Meal } from "../pricing";
+import { MAX_NOTES_LENGTH, MEALS, MEAL_LABEL, NIL_NOTES, foodKey, mealForTime, priceNotes, validateFoodEntry, type Meal } from "../pricing";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { FoodPricing } from "../types";
 
 const newRequestId = () => crypto.randomUUID();
+/** The same separators the server uses to split notes into items, kept so the chosen name replaces only that item. */
+const SEPARATORS = /([,+/;\n]+)/;
 const rupees = (paise: number) => (paise / 100).toFixed(2).replace(/\.00$/, "");
 
 /**
@@ -29,6 +32,8 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [meal, setMeal] = useState<Meal>(() => mealForTime(new Date()));
   const [notes, setNotes] = useState("");
+  // Nil: no meal was eaten. The notes become Nil and the amount zero.
+  const [nil, setNil] = useState(false);
   // The amount is calculated until you type your own.
   const [amount, setAmount] = useState("");
   const [amountTyped, setAmountTyped] = useState(false);
@@ -65,16 +70,19 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
     return priceNotes(notes, custom, chosen.defaultPaise);
   }, [pricing, meal, notes]);
 
-  const shownAmount = amountTyped ? amount : quote ? rupees(quote.totalPaise) : "";
+  const shownAmount = nil ? "0" : amountTyped ? amount : quote ? rupees(quote.totalPaise) : "";
+  // Several priced items fit a typed word: the person picks the right one.
+  const nameByKey = useMemo(() => new Map((pricing?.meals[meal].items ?? []).map((i) => [foodKey(i.name), i.name])), [pricing, meal]);
+  const unsure = quote?.items.filter((i) => i.choices && i.choices.length > 1) ?? [];
 
   async function save() {
     if (saving) return;
-    const checked = validateFoodEntry({ meal, notes });
+    const checked = validateFoodEntry({ meal, notes: nil ? NIL_NOTES : notes });
     if (!checked.ok) {
       setError(checked.errors.notes ?? checked.errors.meal ?? "Check the entry.");
       return;
     }
-    if (amountTyped && parseAmountInput(amount) === null) {
+    if (!nil && amountTyped && parseAmountInput(amount) === null) {
       setError("Enter the amount like 60 or 60.50.");
       return;
     }
@@ -82,7 +90,7 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
     setSaving(true);
     let result: Awaited<ReturnType<FoodActions["saveEntry"]>>;
     try {
-      result = await actions.saveEntry({ requestId, meal: checked.meal, notes: checked.notes, ...(amountTyped ? { amount } : {}) });
+      result = await actions.saveEntry({ requestId, meal: checked.meal, notes: checked.notes, ...(amountTyped && !nil ? { amount } : {}) });
     } catch {
       result = { ok: false, error: "Could not reach the server. Nothing was saved. Check your connection and press Save again." };
     }
@@ -98,6 +106,7 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
       action: { label: "View", onClick: () => router.push("/food") },
     });
     setNotes("");
+    setNil(false);
     setAmount("");
     setAmountTyped(false);
     setRequestId(newRequestId());
@@ -115,8 +124,21 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
         className="space-y-3"
       >
         <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full space-y-1.5 sm:w-36">
-            <label htmlFor="food-meal" className="text-sm font-semibold">Meal</label>
+          <div className="w-full space-y-1.5 sm:w-44">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="food-meal" className="text-sm font-semibold">Meal</label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold" title="No meal was eaten">
+                <Checkbox
+                  checked={nil}
+                  onCheckedChange={(next) => {
+                    setNil(next === true);
+                    setError(null);
+                  }}
+                  aria-label="Nil: no meal was eaten"
+                />
+                Nil
+              </label>
+            </div>
             <select
               id="food-meal"
               value={meal}
@@ -136,7 +158,8 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
             <label htmlFor="food-notes" className="text-sm font-semibold">Notes</label>
             <Input
               id="food-notes"
-              value={notes}
+              value={nil ? NIL_NOTES : notes}
+              disabled={nil}
               maxLength={MAX_NOTES_LENGTH}
               placeholder="e.g. Fish Gravy"
               autoComplete="off"
@@ -167,6 +190,7 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
                 autoComplete="off"
                 placeholder="0"
                 value={shownAmount}
+                disabled={nil}
                 onChange={(e) => {
                   setAmount(e.target.value);
                   setAmountTyped(true);
@@ -183,6 +207,25 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
           </Button>
         </div>
 
+        {unsure.map((item) => (
+          <div key={item.name} className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label={`Which ${item.name}?`}>
+            <span className="text-muted-foreground">“{item.name}” fits more than one item. Which one?</span>
+            {item.choices!.map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  const chosen = nameByKey.get(key) ?? key;
+                  setNotes((n) => n.split(SEPARATORS).map((part) => (foodKey(part) === foodKey(item.name) ? chosen : part)).join(""));
+                  setAmountTyped(false);
+                }}
+                className="min-h-9 rounded-full border bg-card px-3 py-1 text-sm font-medium hover:bg-muted"
+              >
+                {nameByKey.get(key) ?? key}
+              </button>
+            ))}
+          </div>
+        ))}
         <p id="food-hint" aria-live="polite" className={cn("min-h-5 text-sm", error || loadError ? "text-destructive" : "text-muted-foreground")}>
           {error ??
             loadError ??

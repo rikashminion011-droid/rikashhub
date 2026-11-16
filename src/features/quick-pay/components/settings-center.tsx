@@ -140,15 +140,19 @@ export function SettingsCenter({
         </select>
       </div>
 
-      {page !== "quick-entry" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{SETTINGS_PAGES.find((p) => p.id === page)?.label}</CardTitle>
-            <CardDescription>Customization for this page is not set up yet. Its options will appear here.</CardDescription>
-          </CardHeader>
-        </Card>
+      {page !== "quick-entry" && page !== "gpay" ? (
+        <PageSettingsCard
+          page={page}
+          onOpenDebt={() => {
+            setPage("quick-entry");
+            choose("debt");
+          }}
+        />
       ) : (
         <>
+          {page === "gpay" ? (
+            <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">GPay Transactions, its edit pop-up and its Add Bulk use these same options: categories, banks, Switch, Split, Debt and labels. A change here applies to Quick Entry too.</p>
+          ) : null}
           {/* Sections, as horizontal tabs */}
           <nav aria-label="Quick Entry settings sections" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
             <ul role="tablist" className="flex w-max gap-1.5 rounded-xl bg-muted p-1 sm:w-fit">
@@ -317,5 +321,49 @@ export function SettingsCenter({
         </>
       )}
     </div>
+  );
+}
+
+const PAGE_NOTES: Record<string, { text: string; links: { href: string; label: string }[] }> = {
+  food: { text: "Food items, their prices and the default price of Tiffin, Lunch and Dinner. A typed word finds an item by part of its name (Fish finds Fish Gravy).", links: [{ href: "/food/settings", label: "Open food items and prices" }] },
+  shopping: { text: "Shopping platforms (D Mart, AB Supermarket and any you add). Choose a platform on the Shopping Records page, then use its menu to rename or delete it, or pick + New Shopping Platform. Each one appears in Quick Entry under Shopping Portals.", links: [{ href: "/shopping", label: "Open Shopping Records" }] },
+  "credit-portal": { text: "Credit portals (HDFC, Slice, Amazon Pay Later, Flipkart Pay Later and any you add), with their card information. Use the portal list and Card Information on the Credit Portal page.", links: [{ href: "/credit-cards", label: "Open Credit Portal" }] },
+  "monthly-due": { text: "Which person in your list is you: everything recorded for that person is counted in My Due. Monthly expenses (Room Rent and others) are typed on the Monthly Due page for each month.", links: [{ href: "/monthly-due", label: "Open Monthly Due" }] },
+  dashboard: { text: "The Dashboard has no options of its own yet. It follows the month or dates you choose and the settings of the other pages.", links: [{ href: "/dashboard", label: "Open Dashboard" }] },
+};
+
+/** Pages whose settings live on the page itself: what they are, and a link straight there. Debt Management opens its own section here. */
+function PageSettingsCard({ page, onOpenDebt }: { page: SettingsPage; onOpenDebt: () => void }) {
+  const title = SETTINGS_PAGES.find((p) => p.id === page)?.label;
+  if (page === "debt") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>Which columns show, which people are listed, whether settled people are hidden and the default debt percentage. The Debt section is shared with Quick Entry.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <button type="button" onClick={onOpenDebt} className="text-sm font-medium underline underline-offset-4">
+            Open the Debt section
+          </button>
+        </CardContent>
+      </Card>
+    );
+  }
+  const note = PAGE_NOTES[page];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{note?.text ?? "Nothing to set up here yet."}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-4">
+        {note?.links.map((l) => (
+          <a key={l.href} href={l.href} className="text-sm font-medium underline underline-offset-4">
+            {l.label}
+          </a>
+        ))}
+      </CardContent>
+    </Card>
   );
 }

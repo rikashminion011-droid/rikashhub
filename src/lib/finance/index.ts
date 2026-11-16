@@ -9,3 +9,4 @@ export * from "./dues";
 export * from "./duplicates";
 export * from "./categorize";
 export * from "./split";
+export * from "./divide";

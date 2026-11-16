@@ -3,7 +3,7 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { saveFoodBulkAction } from "@/features/food/actions";
-import { FoodBulkEntry } from "@/features/food/components/food-bulk-entry";
+import { FoodMonthSheet } from "@/features/food/components/food-month-sheet";
 import { getFoodPricing } from "@/features/food/server/service";
 import type { FoodPricing } from "@/features/food/types";
 import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
@@ -12,8 +12,11 @@ import { getPrisma } from "@/lib/db/prisma";
 
 export const metadata: Metadata = { title: "Add Bulk Meals" };
 
-export default async function FoodBulkPage() {
+const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+
+export default async function FoodBulkPage({ searchParams }: PageProps<"/food/bulk">) {
   const user = await requireUser();
+  const params = await searchParams;
 
   let pricing: FoodPricing;
   try {
@@ -31,10 +34,12 @@ export default async function FoodBulkPage() {
   }
 
   const now = new Date();
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(one(params.month)) ? one(params.month) : istDateOf(now).slice(0, 7);
+  const back = one(params.back) === "food-rent" ? "food-rent" : "food";
   return (
     <>
-      <PageHeader title="Add Bulk Meals" description="Enter many meals at once. Each row is saved as its own entry under its own date and time, priced from your Customize list." />
-      <FoodBulkEntry pricing={pricing} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveFoodBulkAction} />
+      <PageHeader title="Add Bulk Meals" description="Pick a month and fill in its days. The total of each day is worked out for you. Nothing is saved until you press Save." />
+      <FoodMonthSheet pricing={pricing} today={istDateOf(now)} nowTime={istTimeOf(now)} initialMonth={month} back={back} saveBulk={saveFoodBulkAction} />
     </>
   );
 }

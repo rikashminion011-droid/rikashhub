@@ -152,6 +152,28 @@ export async function removeCategory(db: PrismaClient, userId: string, input: { 
 
 // ───────────────────────── Everything the entry forms need ─────────────────────────
 
+/** Reasons used on more than two entries (a different capital letter counts as the same reason), most used first. */
+export async function getFrequentReasons(db: PrismaClient, userId: string, limit = 100): Promise<string[]> {
+  const rows = await db.transaction.groupBy({
+    by: ["description"],
+    where: { userId, quickPay: true, deletedAt: null, description: { not: null } },
+    _count: { description: true },
+    having: { description: { _count: { gt: 2 } } },
+    orderBy: { _count: { description: "desc" } },
+    take: limit * 2,
+  });
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of rows) {
+    const text = (r.description ?? "").trim();
+    if (!text || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export async function getQuickPayOptions(db: PrismaClient, userId: string): Promise<QuickPayOptions> {
   const [banks, categories, creditCategories, people, shoppingPlatforms] = await Promise.all([
     getBankTree(db, userId),
@@ -161,6 +183,6 @@ export async function getQuickPayOptions(db: PrismaClient, userId: string): Prom
     listPlatforms(db, userId),
   ]);
   const persons: PersonOption[] = people.map((p) => ({ id: p.id, name: p.name }));
-  const [settings, keywords] = await Promise.all([getSettings(db, userId), getKeywordEntries(db, userId)]);
-  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), creditCategories: categoryOptionsFrom(creditCategories), persons, shoppingPlatforms, settings, keywords };
+  const [settings, keywords, frequentReasons] = await Promise.all([getSettings(db, userId), getKeywordEntries(db, userId), getFrequentReasons(db, userId)]);
+  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), creditCategories: categoryOptionsFrom(creditCategories), persons, shoppingPlatforms, frequentReasons, settings, keywords };
 }

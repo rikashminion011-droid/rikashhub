@@ -8,6 +8,7 @@ import {
   MAX_PRICE_PAISE,
   MEALS,
   foodKey,
+  isNilNotes,
   monthsBetween,
   priceNotes,
   type Meal,
@@ -146,7 +147,8 @@ export async function createFoodEntry(
   const custom = new Map(meal.items.map((i) => [foodKey(i.name), i.pricePaise]));
   const priced = priceNotes(input.notes, custom, meal.defaultPaise).totalPaise;
   // An amount you typed wins; without one, the price worked out from the saved prices is used.
-  const amountPaise = input.amountPaise !== undefined ? input.amountPaise : priced;
+  // A Nil entry (a meal not eaten) never has an amount, even if one was typed.
+  const amountPaise = isNilNotes(input.notes) ? 0 : input.amountPaise !== undefined ? input.amountPaise : priced;
   if (!Number.isSafeInteger(amountPaise) || amountPaise < 0 || amountPaise > MAX_PRICE_PAISE) throw new ExpenseError("Enter an amount between 0 and 1,00,000.");
 
   try {
@@ -228,4 +230,29 @@ export async function getFoodTotal(db: PrismaClient, userId: string, from: strin
   const [a, b] = from <= to ? [from, to] : [to, from];
   const sum = await db.foodEntry.aggregate({ where: { userId, deletedAt: null, occurredAt: rangeToInstants(a, b) }, _sum: { amount: true }, _count: { _all: true } });
   return { totalPaise: sum._sum.amount ? paiseOf(sum._sum.amount) : 0, count: sum._count._all };
+}
+
+/** Entries from one day to another (inclusive, India time), oldest first. The Monthly Food Tracking and Food Rent tables read this. */
+export async function listFoodEntriesRange(db: PrismaClient, userId: string, from: string, to: string): Promise<FoodEntriesData> {
+  const [a, b] = from <= to ? [from, to] : [to, from];
+  const rows = await db.foodEntry.findMany({ where: { userId, deletedAt: null, occurredAt: rangeToInstants(a, b) }, orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }] });
+  const mapped = rows.map(toRow);
+  return { rows: mapped, totalPaise: mapped.reduce((s, r) => s + (isNilNotes(r.notes) ? 0 : r.amountPaise), 0), count: mapped.length, months: monthsBetween(a.slice(0, 7), b.slice(0, 7)) };
+}
+
+/**
+ * Changes a saved meal: which meal, what was had and the amount. An amount typed by hand wins; without one the price is worked
+ * out again from the saved prices. A Nil entry always has an amount of zero. The date and time stay as they were.
+ */
+export async function updateFoodEntry(db: PrismaClient, userId: string, input: { id: string; meal: Meal; notes: string; amountPaise?: number }): Promise<FoodEntryRow> {
+  const existing = await db.foodEntry.findFirst({ where: { id: input.id, userId, deletedAt: null } });
+  if (!existing) throw new ExpenseError("That entry no longer exists.", "NOT_FOUND");
+  const pricing = await getFoodPricing(db, userId);
+  const meal = pricing.meals[input.meal];
+  const custom = new Map(meal.items.map((i) => [foodKey(i.name), i.pricePaise]));
+  const priced = priceNotes(input.notes, custom, meal.defaultPaise).totalPaise;
+  const amountPaise = isNilNotes(input.notes) ? 0 : input.amountPaise !== undefined ? input.amountPaise : priced;
+  if (!Number.isSafeInteger(amountPaise) || amountPaise < 0 || amountPaise > MAX_PRICE_PAISE) throw new ExpenseError("Enter an amount between 0 and 1,00,000.");
+  const saved = await db.foodEntry.update({ where: { id: input.id }, data: { meal: input.meal, notes: input.notes, amount: paiseToDecimalString(amountPaise) } });
+  return toRow(saved);
 }

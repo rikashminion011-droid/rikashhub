@@ -46,6 +46,8 @@ export interface QuickPayOptions {
   /** Categories for a Credit (money in). */
   creditCategories: CategoryOption[];
   persons: PersonOption[];
+  /** Reasons typed on more than two entries, most used first: offered as suggestions in the Reason box. */
+  frequentReasons: string[];
   /** Shopping platforms, for the Shopping Portals option. */
   shoppingPlatforms: { id: string; name: string }[];
   /** Words that pick a category from the Reason. */
@@ -84,6 +86,8 @@ export interface EntryDetails {
   creditIds: string[];
   /** The shopping platform it is filed under (Shopping Portals), or null. */
   shoppingPlatformId: string | null;
+  /** For a Credit: the person who credited it, or null for Others. */
+  creditedById: string | null;
   /** ISO instant */
   occurredAt: string;
 }

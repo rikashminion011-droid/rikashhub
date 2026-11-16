@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import type { DebtSettings } from "@/features/quick-pay/settings-model";
 import type { DebtActions } from "../actions";
 import { visibleDebtRows } from "../view";
-import type { DebtHistory, DebtRow, DebtSummary } from "../types";
+import type { DebtHistory, DebtItem, DebtRow, DebtSummary } from "../types";
 
 const when = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 
@@ -31,7 +31,7 @@ function Remaining({ paise }: { paise: number }) {
 }
 
 /** One row for every person: what they owe from splits, what they have paid, and what remains. */
-export function DebtTable({ summary: full, actions, settings }: { summary: DebtSummary; actions: DebtActions; settings: DebtSettings }) {
+export function DebtTable({ summary: full, actions, settings, range, query }: { summary: DebtSummary; actions: DebtActions; settings: DebtSettings; range: { from: string | null; to: string | null }; query: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   // Customized Settings decides who is listed and which columns show.
   const summary = visibleDebtRows(full, settings);
@@ -62,7 +62,10 @@ export function DebtTable({ summary: full, actions, settings }: { summary: DebtS
           <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th scope="col" className="px-4 py-2.5 text-left font-medium">User Name</th>
-              {col.splitAmount ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Total Split Amount</th> : null}
+              {col.splitAmount ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Split &amp; Debt</th> : null}
+              <th scope="col" className="px-4 py-2.5 text-right font-medium">Shopping</th>
+              <th scope="col" className="px-4 py-2.5 text-right font-medium">Credit Portal</th>
+              <th scope="col" className="px-4 py-2.5 text-right font-medium">Total Debt</th>
               {col.splitPercent ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Split Percentage</th> : null}
               {col.paid ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Amount Paid</th> : null}
               {col.remaining ? <th scope="col" className="px-4 py-2.5 text-right font-medium">Remaining Amount</th> : null}
@@ -72,8 +75,15 @@ export function DebtTable({ summary: full, actions, settings }: { summary: DebtS
           <tbody className="divide-y">
             {summary.rows.map((row) => (
               <tr key={row.partyId} className="hover:bg-muted/30">
-                <td className="px-4 py-3 font-medium">{row.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  <Link href={`/debt/${row.partyId}${query}`} className="underline-offset-4 hover:underline">
+                    {row.name}
+                  </Link>
+                </td>
                 {col.splitAmount ? <td className="px-4 py-3 text-right tabular-nums">{formatINR(row.totalSplitPaise)}</td> : null}
+                <td className="px-4 py-3 text-right tabular-nums">{formatINR(row.shoppingPaise)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{formatINR(row.portalPaise)}</td>
+                <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatINR(row.totalDebtPaise)}</td>
                 {col.splitPercent ? <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{row.splitPercent === null ? "—" : formatPercent(row.splitPercent)}</td> : null}
                 {col.paid ? <td className="px-4 py-3 text-right tabular-nums text-success">{formatINR(row.paidPaise)}</td> : null}
                 {col.remaining ? (
@@ -95,6 +105,9 @@ export function DebtTable({ summary: full, actions, settings }: { summary: DebtS
             <tr className="border-t bg-muted/30 font-semibold">
               <td className="px-4 py-3">Total</td>
               {col.splitAmount ? <td className="px-4 py-3 text-right tabular-nums">{formatINR(summary.totalSplitPaise)}</td> : null}
+              <td className="px-4 py-3 text-right tabular-nums">{formatINR(summary.totalShoppingPaise)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{formatINR(summary.totalPortalPaise)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{formatINR(summary.totalDebtPaise)}</td>
               {col.splitPercent ? <td /> : null}
               {col.paid ? <td className="px-4 py-3 text-right tabular-nums text-success">{formatINR(summary.totalPaidPaise)}</td> : null}
               {col.remaining ? (
@@ -113,9 +126,25 @@ export function DebtTable({ summary: full, actions, settings }: { summary: DebtS
         {summary.rows.map((row) => (
           <li key={row.partyId} className="space-y-3 rounded-xl border bg-card p-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-base font-semibold">{row.name}</p>
+              <Link href={`/debt/${row.partyId}${query}`} className="text-base font-semibold underline-offset-4 hover:underline">
+                {row.name}
+              </Link>
               {col.remaining ? <Remaining paise={row.remainingPaise} /> : null}
             </div>
+            <dl className="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <dt className="text-muted-foreground">Shopping</dt>
+                <dd className="font-medium tabular-nums">{formatINR(row.shoppingPaise)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Credit Portal</dt>
+                <dd className="font-medium tabular-nums">{formatINR(row.portalPaise)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Total debt</dt>
+                <dd className="font-semibold tabular-nums">{formatINR(row.totalDebtPaise)}</dd>
+              </div>
+            </dl>
             {col.splitAmount || col.splitPercent || col.paid ? (
               <dl className="grid grid-cols-3 gap-2 text-xs">
                 {col.splitAmount ? (
@@ -149,21 +178,21 @@ export function DebtTable({ summary: full, actions, settings }: { summary: DebtS
 
       <Dialog open={openId !== null} onOpenChange={(open) => !open && setOpenId(null)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[min(48rem,calc(100vw-2rem))]">
-          {openId ? <HistoryBody key={openId} partyId={openId} actions={actions} /> : null}
+          {openId ? <HistoryBody key={openId} partyId={openId} actions={actions} range={range} /> : null}
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function HistoryBody({ partyId, actions }: { partyId: string; actions: DebtActions }) {
+function HistoryBody({ partyId, actions, range }: { partyId: string; actions: DebtActions; range: { from: string | null; to: string | null } }) {
   const router = useRouter();
   const [history, setHistory] = useState<DebtHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void actions.getHistory({ partyId }).then((result) => {
+    void actions.getHistory({ partyId, ...range }).then((result) => {
       if (cancelled) return;
       if (result.ok) setHistory(result.history);
       else setError(result.error);
@@ -171,7 +200,7 @@ function HistoryBody({ partyId, actions }: { partyId: string; actions: DebtActio
     return () => {
       cancelled = true;
     };
-  }, [actions, partyId]);
+  }, [actions, partyId, range]);
 
   if (error) {
     return (
@@ -200,25 +229,26 @@ function HistoryBody({ partyId, actions }: { partyId: string; actions: DebtActio
   }
 
   const { row } = history;
-  const update = (next: DebtHistory) => {
-    setHistory(next);
-    router.refresh(); // the totals behind the dialog
+  // After a payment is added or removed, the same period is loaded again, so the dialog and the totals behind it agree.
+  const update = () => {
+    void actions.getHistory({ partyId, ...range }).then((result) => result.ok && setHistory(result.history));
+    router.refresh();
   };
 
   return (
     <div className="min-w-0 space-y-5">
       <DialogHeader>
         <DialogTitle>{row.name}</DialogTitle>
-        <DialogDescription>Every transaction split with {row.name}, and every payment they have made.</DialogDescription>
+        <DialogDescription>Everything {row.name} owes from splits, debts, shopping and credit portals, and every payment made.</DialogDescription>
       </DialogHeader>
 
       <div className="grid grid-cols-3 gap-2">
-        <Stat label="Total split" value={formatINR(row.totalSplitPaise)} />
+        <Stat label="Total debt" value={formatINR(row.totalDebtPaise)} />
         <Stat label="Paid" value={formatINR(row.paidPaise)} tone="good" />
         <Stat label={row.remainingPaise < 0 ? "Paid ahead" : "Remaining"} value={formatINR(Math.abs(row.remainingPaise))} tone={row.remainingPaise > 0 ? "bad" : "good"} />
       </div>
 
-      <PaymentForm partyId={row.partyId} actions={actions} onDone={update} />
+      <PaymentForm partyId={row.partyId} actions={actions} onDone={() => update()} />
 
       <section aria-labelledby="payments-heading" className="space-y-2">
         <h3 id="payments-heading" className="text-sm font-semibold">Payments ({history.payments.length})</h3>
@@ -231,7 +261,7 @@ function HistoryBody({ partyId, actions }: { partyId: string; actions: DebtActio
                 <span className="font-semibold tabular-nums text-success">{formatINR(p.amountPaise)}</span>
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">{p.note || "—"}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">{when.format(new Date(p.paidAt))}</span>
-                <DeletePayment id={p.id} partyId={row.partyId} actions={actions} onDone={update} />
+                <DeletePayment id={p.id} partyId={row.partyId} actions={actions} onDone={() => update()} />
               </li>
             ))}
           </ul>
@@ -239,35 +269,8 @@ function HistoryBody({ partyId, actions }: { partyId: string; actions: DebtActio
       </section>
 
       <section aria-labelledby="splits-heading" className="space-y-2">
-        <h3 id="splits-heading" className="text-sm font-semibold">Split transactions ({history.splits.length})</h3>
-        {history.splits.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing is split with {row.name} yet. Tick Split in Quick Entry and choose them.</p>
-        ) : (
-          <div className="max-h-72 overflow-auto rounded-xl border">
-            <table className="w-full min-w-[34rem] text-sm">
-              <thead className="sticky top-0 bg-muted text-xs text-muted-foreground">
-                <tr>
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Date and time</th>
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Details</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Transaction</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Share</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {history.splits.map((s) => (
-                  <tr key={s.transactionId}>
-                    <td className="px-3 py-2 whitespace-nowrap">{when.format(new Date(s.occurredAt))}</td>
-                    <td className="max-w-48 truncate px-3 py-2" title={s.description}>{s.description || <span className="text-muted-foreground">—</span>}{s.bank ? <span className="text-muted-foreground"> · {s.bank}</span> : null}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatINR(s.txAmountPaise)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatPercent(s.percent)}</td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{formatINR(s.sharePaise)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <h3 id="splits-heading" className="text-sm font-semibold">Everything owed ({history.items.filter((i) => i.source !== "PAYMENT").length})</h3>
+        <DebtItems items={history.items.filter((i) => i.source !== "PAYMENT")} />
       </section>
     </div>
   );
@@ -350,6 +353,49 @@ function DeletePayment({ id, partyId, actions, onDone }: { id: string; partyId: 
     >
       {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
     </Button>
+  );
+}
+
+const SOURCE_LABEL = { SPLIT: "Split", DEBT: "Debt", SHOPPING: "Shopping", CREDIT_PORTAL: "Credit Portal", PAYMENT: "Payment" } as const;
+
+/** Every line behind a total: date, type, reason, category, portal or platform and the amount. Each reason opens its original entry. */
+export function DebtItems({ items }: { items: DebtItem[] }) {
+  if (items.length === 0) return <p className="text-sm text-muted-foreground">Nothing is recorded in this period.</p>;
+  return (
+    <div className="max-h-80 overflow-auto rounded-xl border">
+      <table className="w-full min-w-[40rem] text-sm">
+        <thead className="sticky top-0 bg-muted text-xs text-muted-foreground">
+          <tr>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Date and time</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Type</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Reason</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Category</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Portal / platform</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Amount</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {items.map((i) => (
+            <tr key={i.id}>
+              <td className="px-3 py-2 whitespace-nowrap">{when.format(new Date(i.occurredAt))}</td>
+              <td className="px-3 py-2 whitespace-nowrap">{SOURCE_LABEL[i.source]}</td>
+              <td className="max-w-52 px-3 py-2 break-words">
+                {i.href ? (
+                  <Link href={i.href} className="underline-offset-4 hover:underline">
+                    {i.reason || "Open"}
+                  </Link>
+                ) : (
+                  i.reason || <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+              <td className="px-3 py-2">{i.category || <span className="text-muted-foreground">—</span>}</td>
+              <td className="px-3 py-2">{i.related || <span className="text-muted-foreground">—</span>}</td>
+              <td className={cn("px-3 py-2 text-right font-medium tabular-nums", i.amountPaise < 0 && "text-success")}>{formatINR(i.amountPaise)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

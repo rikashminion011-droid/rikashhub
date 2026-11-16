@@ -27,9 +27,11 @@ import {
   setOpeningBalance,
   updateEntry,
 } from "./server/entries";
+import { syncQuickEntryUnbilled } from "@/features/credit-portal/server/service";
+import { syncCreditedBy } from "@/features/debt/server/service";
 import { syncQuickEntryPurchase } from "@/features/shopping/server/service";
 import { clearBulkDraft, getBulkDraft, saveBulkDraft } from "./server/bulk-draft";
-import { getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
+import { assignReasonToCategory, getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
 import { SECTION_SCHEMAS, SETTINGS_SECTIONS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
 import type { EntryPatch } from "./server/entries";
 import type { TxRow, TxTotals } from "./types";
@@ -106,17 +108,32 @@ const entrySchema = z.object({
   creditIds: z.array(id).max(50).optional(),
   /** The Shopping Records platform of this Debit (Shopping Portals). */
   shoppingPlatformId: id.nullable().optional(),
+  /** For a Credit: the person who credited it (null or left out is Others). */
+  creditedById: id.nullable().optional(),
   /** When editing: a new date (YYYY-MM-DD) and time (HH:mm) in India time. */
   date: z.string().max(10).optional(),
   time: z.string().max(5).optional(),
 });
 
-/** Files a saved Debit under its Shopping Records platform (or takes it out), so the two never drift apart. */
-async function syncShopping(db: ReturnType<typeof getPrisma>, userId: string, transactionId: string, value: { shoppingPlatformId?: string | null; reason: string; amountPaise: number }) {
+/**
+ * Keeps everything an entry feeds in step with it: its Shopping Records purchase (Shopping Portals), the payment a Credit
+ * records against the person who credited it, and the Unbilled row when the bank is one of your credit portals.
+ */
+async function syncShopping(
+  db: ReturnType<typeof getPrisma>,
+  userId: string,
+  transactionId: string,
+  value: { type: "DEBIT" | "CREDIT"; accountId: string; shoppingPlatformId?: string | null; creditedById?: string | null; reason: string; amountPaise: number },
+) {
   const row = await db.transaction.findFirst({ where: { id: transactionId, userId }, select: { occurredAt: true } });
   if (!row?.occurredAt) return;
-  await syncQuickEntryPurchase(db, userId, transactionId, value.shoppingPlatformId ?? null, { occurredAt: row.occurredAt, reason: value.reason, amountPaise: value.amountPaise });
+  const entry = { occurredAt: row.occurredAt, reason: value.reason, amountPaise: value.amountPaise };
+  await syncQuickEntryPurchase(db, userId, transactionId, value.type === "DEBIT" ? (value.shoppingPlatformId ?? null) : null, entry);
+  await syncCreditedBy(db, userId, transactionId, value.type === "CREDIT" ? (value.creditedById ?? null) : null, entry);
+  await syncQuickEntryUnbilled(db, userId, transactionId, { accountId: value.accountId, kind: value.type, ...entry });
   revalidatePath("/shopping", "layout");
+  revalidatePath("/credit-cards", "layout");
+  revalidatePath("/debt", "layout");
 }
 
 export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id: string; updated: boolean; duplicate: boolean; amountPaise: number }>> {
@@ -136,6 +153,10 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
       const platform = await db.shoppingPlatform.findFirst({ where: { id: checked.value.shoppingPlatformId, userId: user.id, deletedAt: null }, select: { id: true } });
       if (!platform) return { ok: false, error: "That shopping platform no longer exists. Choose another." };
     }
+    if (checked.value.creditedById) {
+      const person = await db.expenseParty.findFirst({ where: { id: checked.value.creditedById, userId: user.id, deletedAt: null }, select: { id: true } });
+      if (!person) return { ok: false, error: "The person who credited this no longer exists. Choose again." };
+    }
     if (entryId) {
       let occurredAt: Date | undefined;
       if (date) {
@@ -151,7 +172,17 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
       refresh();
       return { ok: true, id: entryId, updated: true, duplicate: false, amountPaise: checked.value.amountPaise };
     }
-    const saved = await createEntry(db, user.id, requestId, checked.value);
+    // A new entry can be dated on a day other than today: it then appears under that day in GPay Transactions.
+    let when: Date | undefined;
+    if (date) {
+      try {
+        when = istInstant(date, time || "00:00");
+      } catch {
+        return { ok: false, error: "Enter a valid date and time." };
+      }
+      if (when.getTime() > Date.now() + 5 * 60_000) return { ok: false, error: "The date and time cannot be in the future." };
+    }
+    const saved = await createEntry(db, user.id, requestId, checked.value, when);
     await syncShopping(db, user.id, saved.id, checked.value);
     refresh();
     return { ok: true, id: saved.id, updated: false, duplicate: saved.duplicate, amountPaise: checked.value.amountPaise };
@@ -556,6 +587,26 @@ async function categoryTree(run: (db: ReturnType<typeof getPrisma>, userId: stri
   }
 }
 
+/**
+ * "Put this reason under a category": picks an existing category (or makes a new one) and makes the reason choose it from now on.
+ * Returns the category so the form can select it straight away.
+ */
+export async function assignReasonAction(raw: unknown): Promise<QuickPayResult<{ categoryId: string }>> {
+  try {
+    const p = z.object({ reason: z.string().trim().min(1, "Type a reason first.").max(200), kind: z.enum(["DEBIT", "CREDIT"]), categoryId: id.nullable(), newCategory: z.string().trim().max(60).optional() }).safeParse(raw);
+    if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "That could not be read." };
+    const { user, db } = await context();
+    let categoryId = p.data.categoryId;
+    if (p.data.newCategory) categoryId = await addMainCategory(db, user.id, { name: p.data.newCategory, kind: p.data.kind });
+    if (!categoryId) return { ok: false, error: "Choose a category or type a new one." };
+    await assignReasonToCategory(db, user.id, { reason: p.data.reason, categoryId });
+    refresh();
+    return { ok: true, categoryId };
+  } catch (error) {
+    return failure(error, "assign reason");
+  }
+}
+
 const bad = (message: string) => ({ ok: false as const, error: message });
 const kinds = METHOD_KINDS.map((k) => k.value) as [string, ...string[]];
 
@@ -614,6 +665,8 @@ export interface QuickPayActions {
 
 /** What the "add here" boxes in the entry form call, so a category or person can be added without leaving the page. */
 export interface QuickAddActions {
+  /** Lets the Reason box put a reason under a category (not every host of the form offers it). */
+  assignReason?: typeof assignReasonAction;
   addCategory: typeof addCategoryAction;
   addPerson: typeof import("@/features/users/actions").addPersonAction;
 }

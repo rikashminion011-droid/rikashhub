@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { DatePicker } from "@/components/shared/date-picker";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -9,7 +10,7 @@ import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { Button } from "@/components/ui/button";
 import { formatINR } from "@/lib/finance";
 import type { QuickAddActions, QuickPayActions } from "../actions";
-import { formatTransactionWhen } from "../datetime";
+import { formatTransactionWhen, istDateOf, istTimeOf } from "../datetime";
 import { defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, type FormState } from "../entry-state";
 import type { EntryDetails, QuickPayOptions, RecentCredit } from "../types";
 import { validateQuickPayInput, type QuickPayErrors } from "../validation";
@@ -37,6 +38,9 @@ export function QuickEntryForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
+  // The day a new entry is for. Today to begin with; the calendar picks any earlier day.
+  const [today] = useState(() => istDateOf(new Date()));
+  const [entryDate, setEntryDate] = useState(today);
 
   // The saved entry being edited (opened with ?entry=…); none means a new entry.
   const [current, setCurrent] = useState<EntryDetails | null>(initialEntry);
@@ -126,7 +130,9 @@ export function QuickEntryForm({
     setSaving(true);
     let result: Awaited<ReturnType<QuickPayActions["saveEntry"]>>;
     try {
-      result = await actions.saveEntry({ requestId, entryId: current?.id ?? null, ...input });
+      // Only a new entry on another day sends a date; today's entries are stamped by the server at this moment.
+      const dated = !current && entryDate !== today ? { date: entryDate, time: istTimeOf(new Date()) } : {};
+      result = await actions.saveEntry({ requestId, entryId: current?.id ?? null, ...input, ...dated });
     } catch {
       result = { ok: false, error: "Could not reach the server. Nothing was saved. Check your connection and try again." };
     }
@@ -160,6 +166,7 @@ export function QuickEntryForm({
       });
       setFormState(emptyState(options.settings, options));
       setRequestId(newRequestId());
+      setEntryDate(today);
       setCredits(null);
       router.refresh(); // today's summary and recent entries
     }
@@ -201,6 +208,19 @@ export function QuickEntryForm({
 
       <div>
         <form onSubmit={onSubmit} noValidate method="post" className="space-y-3">
+          {current ? null : (
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Date of this entry">
+              <button
+                type="button"
+                aria-pressed={entryDate === today}
+                onClick={() => setEntryDate(today)}
+                className={"h-10 rounded-xl border px-4 text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 " + (entryDate === today ? "border-neutral-900 bg-neutral-900 text-white" : "border-input bg-background hover:bg-muted")}
+              >
+                Today
+              </button>
+              <DatePicker ariaLabel="Choose the date of this entry" value={entryDate} max={today} onChange={(d) => setEntryDate(d || today)} className="h-10 w-52" />
+            </div>
+          )}
           <EntryFields
             form={form}
             setForm={setForm}
@@ -213,6 +233,7 @@ export function QuickEntryForm({
             onToggleCredits={toggleCredits}
             onAddCategory={adders.addCategory}
             onAddPerson={adders.addPerson}
+            onAssignReason={adders.assignReason}
             onSelfTransfer={actions.saveTransfer ? () => setTransferOpen(true) : undefined}
           />
 

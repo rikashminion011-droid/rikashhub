@@ -41,6 +41,15 @@ export function useQuickAdd(actions: QuickAddHostActions, setOptions: (options: 
       return id ? { ok: true, id } : { ok: false, error: "Added, but it could not be selected. Pick it from the list." };
     }
 
-    return { addCategory, addPerson };
+    /** Puts a reason under a category (an existing one, or a new one typed here). Returns an error message, or null when it worked. */
+    async function assignReason(reason: string, type: EntryType, input: { categoryId: string | null; newCategory?: string }): Promise<{ ok: true; categoryId: string } | { ok: false; error: string }> {
+      if (!actions.assignReason) return { ok: false, error: "This is not available here." };
+      const done = await actions.assignReason({ reason, kind: type, ...input });
+      if (!done.ok) return { ok: false, error: done.error };
+      await reload();
+      return { ok: true, categoryId: done.categoryId };
+    }
+
+    return { addCategory, addPerson, assignReason: actions.assignReason ? assignReason : undefined };
   }, [actions, setOptions]);
 }

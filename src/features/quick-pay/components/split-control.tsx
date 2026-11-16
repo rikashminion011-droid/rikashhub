@@ -61,6 +61,7 @@ export function SplitControl({
       people={people}
       selected={chosenIds}
       invalid={!!errors.split}
+      single={kind === "DEBT"}
       onChange={(ids) => {
         setForm((f) => withPeople(f, ids, options.settings));
         clearError("split");

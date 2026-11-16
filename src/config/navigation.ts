@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   PiggyBank,
   ShoppingBag,
+  Soup,
   ReceiptText,
   UserRound,
   UtensilsCrossed,
@@ -135,7 +136,14 @@ export const FOOD_ITEMS: readonly NavItem[] = [
     title: "Monthly Food Tracking",
     href: "/food",
     icon: UtensilsCrossed,
-    description: "Meals saved from Quick Entry, month by month, with prices.",
+    description: "Meals saved from Quick Entry, day by day, with prices.",
+    planned: [],
+  },
+  {
+    title: "Food Rent",
+    href: "/food-rent",
+    icon: Soup,
+    description: "The same food records, kept in step with Monthly Food Tracking.",
     planned: [],
   },
 ];

@@ -3,6 +3,7 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import {
   addCategoryAction,
+  assignReasonAction,
   deleteEntryAction,
   getEntryAction,
   getOptionsAction,
@@ -46,7 +47,7 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
     return <DatabaseUnavailable />;
   }
 
-  const adders = { addCategory: addCategoryAction, addPerson: addPersonAction };
+  const adders = { addCategory: addCategoryAction, addPerson: addPersonAction, assignReason: assignReasonAction };
 
   return (
     <EntryModeSwitch

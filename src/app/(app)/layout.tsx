@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { ReturnToQuickEntry } from "@/components/layout/return-to-quick-entry";
 import { resetNavLayoutAction, saveNavLayoutAction } from "@/features/navigation/actions";
 import { DEFAULT_LAYOUT, type NavLayout } from "@/features/navigation/model";
 import { getNavLayout } from "@/features/navigation/server/service";
@@ -19,6 +20,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <AppShell user={{ name: user.name, email: user.email }} navLayout={navLayout} navActions={{ save: saveNavLayoutAction, reset: resetNavLayoutAction }}>
+      <ReturnToQuickEntry />
       {children}
     </AppShell>
   );

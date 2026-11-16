@@ -2,7 +2,11 @@
 export const SETTINGS_PAGES = [
   { id: "quick-entry", label: "Quick Entry" },
   { id: "gpay", label: "GPay Transactions" },
-  { id: "food", label: "Monthly Food Tracking" },
+  { id: "food", label: "Food Tracking" },
+  { id: "shopping", label: "Shopping Records" },
+  { id: "credit-portal", label: "Credit Portal" },
+  { id: "debt", label: "Debt Management" },
+  { id: "monthly-due", label: "Monthly Due" },
   { id: "dashboard", label: "Dashboard" },
 ] as const;
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]["id"];

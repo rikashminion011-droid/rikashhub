@@ -20,7 +20,10 @@ export function PeoplePicker({
   ariaLabel,
   bare = false,
   compact = false,
+  single = false,
 }: {
+  /** Only one person can be chosen: choosing another replaces the first. */
+  single?: boolean;
   bare?: boolean;
   compact?: boolean;
   people: readonly PersonOption[];
@@ -56,7 +59,14 @@ export function PeoplePicker({
   }, [people, query]);
   const names = selected.map((id) => people.find((p) => p.id === id)?.name).filter((n): n is string => !!n);
 
-  const toggle = (id: string, on: boolean) => onChange(on ? [...new Set([...selected, id])] : selected.filter((x) => x !== id));
+  const toggle = (id: string, on: boolean) => {
+    if (single) {
+      onChange(on ? [id] : []);
+      if (on) setOpen(false);
+      return;
+    }
+    onChange(on ? [...new Set([...selected, id])] : selected.filter((x) => x !== id));
+  };
 
   return (
     <div ref={root} className="relative">
@@ -96,7 +106,7 @@ export function PeoplePicker({
               className="h-9 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground sm:text-sm"
             />
           </div>
-          <ul role="listbox" aria-multiselectable="true" aria-label={ariaLabel} className="max-h-56 overflow-y-auto p-1">
+          <ul role="listbox" aria-multiselectable={single ? undefined : "true"} aria-label={ariaLabel} className="max-h-56 overflow-y-auto p-1">
             {filtered.length === 0 ? (
               <li className="px-2.5 py-3 text-center text-xs text-muted-foreground">{people.length === 0 ? "No people yet. Add one below." : "No one found."}</li>
             ) : (

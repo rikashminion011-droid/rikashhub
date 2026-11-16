@@ -34,10 +34,10 @@ const id = z.uuid();
 
 export async function getDebtHistoryAction(raw: unknown): Promise<DebtResult<{ history: DebtHistory }>> {
   try {
-    const parsed = z.object({ partyId: id }).safeParse(raw);
+    const parsed = z.object({ partyId: id, from: z.string().max(10).nullable().optional(), to: z.string().max(10).nullable().optional() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That person could not be found." };
     const user = await requireUser();
-    return { ok: true, history: await getDebtHistory(getPrisma(), user.id, parsed.data.partyId) };
+    return { ok: true, history: await getDebtHistory(getPrisma(), user.id, parsed.data.partyId, { from: parsed.data.from ?? null, to: parsed.data.to ?? null }) };
   } catch (error) {
     return failure(error, "history");
   }

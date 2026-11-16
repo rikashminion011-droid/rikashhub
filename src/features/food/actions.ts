@@ -19,6 +19,7 @@ import {
   getFoodTotal,
   listFoodEntries,
   setMealPrice,
+  updateFoodEntry,
   updateFoodItem,
 } from "./server/service";
 import type { FoodEntriesData, FoodEntryRow, FoodPricing, FoodResult } from "./types";
@@ -42,7 +43,10 @@ function failure(error: unknown, label: string): { ok: false; error: string } {
   return { ok: false, error: GENERIC_ERROR };
 }
 
-const refresh = () => revalidatePath("/food", "layout");
+const refresh = () => {
+  revalidatePath("/food", "layout");
+  revalidatePath("/food-rent", "layout");
+};
 
 const id = z.uuid();
 const meal = z.enum(MEALS as unknown as [Meal, ...Meal[]]);
@@ -108,6 +112,28 @@ export async function saveFoodBulkAction(
     return { ok: true, ...saved };
   } catch (error) {
     return failure(error, "save bulk");
+  }
+}
+
+/** Changes the meal, notes or amount of a saved entry. Its date and time stay as they were. */
+export async function updateFoodEntryAction(raw: unknown): Promise<FoodResult<{ entry: FoodEntryRow }>> {
+  try {
+    const parsed = z.object({ id, meal: z.string(), notes: z.string().max(2000), amount: z.string().max(20).optional() }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That change could not be read." };
+    const checked = validateFoodEntry(parsed.data);
+    if (!checked.ok) return { ok: false, error: Object.values(checked.errors)[0] ?? "Check the entry.", fieldErrors: checked.errors as Record<string, string> };
+    let amountPaise: number | undefined;
+    if (parsed.data.amount !== undefined && parsed.data.amount.trim() !== "") {
+      const typed = priceToPaise(parsed.data.amount);
+      if (typed === null) return { ok: false, error: "Enter the amount like 60 or 60.50.", fieldErrors: { amount: "Invalid amount" } };
+      amountPaise = typed;
+    }
+    const { user, db } = await context();
+    const entry = await updateFoodEntry(db, user.id, { id: parsed.data.id, meal: checked.meal, notes: checked.notes, amountPaise });
+    refresh();
+    return { ok: true, entry };
+  } catch (error) {
+    return failure(error, "update entry");
   }
 }
 
@@ -205,6 +231,11 @@ export async function setMealPriceAction(raw: unknown): Promise<PricingResult> {
   } catch (error) {
     return failure(error, "set meal price");
   }
+}
+
+export interface FoodGridActions {
+  updateEntry: typeof updateFoodEntryAction;
+  deleteEntry: typeof deleteFoodEntryAction;
 }
 
 export interface FoodActions {

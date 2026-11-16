@@ -28,6 +28,8 @@ export interface FormState {
   creditIds: string[];
   /** The Shopping Records platform of this Debit (Shopping Portals), or null. */
   shoppingPlatformId: string | null;
+  /** For a Credit: who credited it. Null means Others. */
+  creditedById: string | null;
 }
 
 /** One chosen person. `edited` is true once you typed their share yourself, so choosing more people never changes it. */
@@ -69,6 +71,7 @@ export function emptyState(settings: QuickPaySettingsData, options?: Pick<QuickP
     creditsAdded: false,
     creditIds: [],
     shoppingPlatformId: null,
+    creditedById: null,
   };
 }
 
@@ -90,6 +93,7 @@ export function fromEntry(entry: EntryDetails, settings: QuickPaySettingsData): 
     creditsAdded: entry.creditIds.length > 0,
     creditIds: [...entry.creditIds],
     shoppingPlatformId: entry.shoppingPlatformId,
+    creditedById: entry.creditedById,
   };
 }
 
@@ -150,6 +154,8 @@ export const shareValueOf = (shares: readonly FormShare[], partyId: string, meth
 /** Switches between Split and Debt (or off), keeping the chosen people and working their shares out again. */
 export function withKind(form: FormState, kind: SplitKind | null, settings: QuickPaySettingsData, defaultPartyId: string | null): FormState {
   if (kind === null) return { ...form, splitKind: null, shares: [] };
+  // A Debt is for one person: moving from a Split of several keeps only the first.
+  if (kind === "DEBT" && form.shares.length > 1) form = { ...form, shares: form.shares.slice(0, 1) };
   const ids = form.shares.length > 0 ? form.shares.map((s) => s.partyId) : defaultPartyId ? [defaultPartyId] : [];
   // The shares are re-divided for the new kind, so a Debt starts at 100% where a Split starts at 50%.
   return withPeople({ ...form, splitKind: kind, shares: form.shares.map((s) => ({ ...s, edited: false })) }, ids, settings);
@@ -176,5 +182,6 @@ export function toQuickPayInput(form: FormState): QuickPayInput {
     },
     creditIds: debit ? form.creditIds : [],
     shoppingPlatformId: debit ? form.shoppingPlatformId : null,
+    creditedById: debit ? null : form.creditedById,
   };
 }

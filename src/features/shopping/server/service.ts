@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
 import { rangeToInstants } from "@/features/quick-pay/datetime";
-import { paiseToDecimalString, toPaise } from "@/lib/finance";
+import { divideEvenly, paiseToDecimalString, toPaise } from "@/lib/finance";
 
 /**
  * Shopping Records: platforms (D Mart, AB Supermarket...), the purchases made on them, and each purchase's item table.
@@ -284,31 +284,43 @@ export async function saveItems(db: PrismaClient, userId: string, id: string, it
   return { count: data.length, totalPaise: data.reduce((s, d) => s + d.totalPaise, 0) };
 }
 
+/** One person's part of a shopping purchase, with where it came from. */
+export interface ShoppingShare {
+  partyId: string;
+  amountPaise: number;
+  occurredAt: string;
+  /** The item (or, for a purchase without an item table, the reason). */
+  reason: string;
+  platform: string;
+  purchaseId: string;
+}
+
 /**
- * What each person owes from shopping, for Debt Management. An item with several recipients is split between them evenly (the
- * odd paise go to the first people); an item without recipients falls back to the purchase's recipients.
+ * Each person's part of every purchase in the period, for Debt Management. An item with several recipients is split evenly
+ * between them; an item without recipients falls back to the purchase's recipients; a purchase whose item table is not saved
+ * is split between its own recipients.
  */
-export async function shoppingByRecipient(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<Map<string, number>> {
+export async function shoppingShares(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<ShoppingShare[]> {
   const bounds = rangeToInstants(range.from, range.to);
   const when: Prisma.DateTimeFilter | undefined = bounds.gte || bounds.lt ? bounds : undefined;
   const purchases = await db.shoppingPurchase.findMany({
     where: { userId, deletedAt: null, platform: { deletedAt: null }, ...(when ? { occurredAt: when } : {}) },
-    select: { amount: true, recipientIds: true, detailsSaved: true, items: { select: { total: true, recipientIds: true } } },
+    select: { id: true, amount: true, reason: true, occurredAt: true, recipientIds: true, detailsSaved: true, platform: { select: { name: true } }, items: { select: { name: true, total: true, recipientIds: true }, orderBy: { position: 'asc' } } },
+    orderBy: { occurredAt: 'asc' },
   });
-  const owed = new Map<string, number>();
-  const share = (paise: number, people: string[]) => {
-    if (people.length === 0 || paise === 0) return;
-    const each = Math.floor(paise / people.length);
-    let rest = paise - each * people.length;
-    for (const p of people) {
-      owed.set(p, (owed.get(p) ?? 0) + each + (rest > 0 ? 1 : 0));
-      if (rest > 0) rest -= 1;
-    }
-  };
+  const out: ShoppingShare[] = [];
   for (const p of purchases) {
-    if (p.detailsSaved && p.items.length > 0) for (const i of p.items) share(paiseOf(i.total), i.recipientIds.length ? i.recipientIds : p.recipientIds);
-    else share(paiseOf(p.amount), p.recipientIds);
+    const base = { occurredAt: p.occurredAt.toISOString(), platform: p.platform.name, purchaseId: p.id };
+    const parts = p.detailsSaved && p.items.length > 0 ? p.items.map((i) => ({ paise: paiseOf(i.total), people: i.recipientIds.length ? i.recipientIds : p.recipientIds, reason: i.name })) : [{ paise: paiseOf(p.amount), people: p.recipientIds, reason: p.reason }];
+    for (const part of parts) for (const s of divideEvenly(part.paise, part.people)) out.push({ ...base, partyId: s.id, amountPaise: s.paise, reason: part.reason });
   }
+  return out;
+}
+
+/** What each person owes from shopping in the period. */
+export async function shoppingByRecipient(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<Map<string, number>> {
+  const owed = new Map<string, number>();
+  for (const s of await shoppingShares(db, userId, range)) owed.set(s.partyId, (owed.get(s.partyId) ?? 0) + s.amountPaise);
   return owed;
 }
 
