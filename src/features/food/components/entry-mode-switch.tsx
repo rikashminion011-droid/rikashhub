@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Receipt, Soup, Wallet } from "lucide-react";
+import { Receipt, Soup, Wallet } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
@@ -20,18 +20,17 @@ const subscribe = (notify: () => void) => {
 /** True on a wide screen. The server (and the first paint) assume a phone. */
 const useIsDesktop = () => useSyncExternalStore(subscribe, () => window.matchMedia(DESKTOP).matches, () => false);
 
-type Panel = "transactions" | "payment" | "food" | "transfer";
+type Panel = "transactions" | "payment" | "food";
 
-/** Left to right, as you swipe: Transactions, Payment Entry, Food Rent, Self Transfer. */
+/** Left to right, as you swipe: Transactions, Payment Entry, Food Entry. Self Transfer is the button beside Amount, not a page. */
 const ORDER: readonly { id: Panel; label: string; icon: ReactNode }[] = [
   { id: "transactions", label: "Transactions", icon: <Receipt className="size-4" aria-hidden /> },
   { id: "payment", label: "Payment Entry", icon: <Wallet className="size-4" aria-hidden /> },
-  { id: "food", label: "Food Rent", icon: <Soup className="size-4" aria-hidden /> },
-  { id: "transfer", label: "Self Transfer", icon: <ArrowLeftRight className="size-4" aria-hidden /> },
+  { id: "food", label: "Food Entry", icon: <Soup className="size-4" aria-hidden /> },
 ];
 
 /**
- * Quick Entry's screens: Transactions, Payment Entry, Food Rent and Self Transfer, in that order, with one tab bar above.
+ * Quick Entry's screens: Transactions, Payment Entry and Food Entry, in that order, with one tab bar above.
  *
  * Payment Entry is showing when the page opens. On a phone you can also swipe left or right to move between the pages (or tap
  * a tab). Pages are hidden, not removed, so a half-typed payment is still there when you come back. The swipe is handled here
@@ -40,14 +39,12 @@ const ORDER: readonly { id: Panel; label: string; icon: ReactNode }[] = [
 export function EntryModeSwitch({
   transactions,
   payment,
-  transfer,
   foodActions,
   today,
   getTotals,
 }: {
   transactions: ReactNode;
   payment: ReactNode;
-  transfer: ReactNode;
   foodActions: FoodActions;
   /** Today's date, YYYY-MM-DD in India time. */
   today: string;
@@ -78,7 +75,7 @@ export function EntryModeSwitch({
   const show = (next: Panel) => {
     setActive(next);
     setOpened((o) => (o.has(next) ? o : new Set([...o, next])));
-    // Read the list again, so what was just saved in Payment Entry or Self Transfer is in it.
+    // Read the list again, so what was just saved in Payment Entry is in it.
     if (next === "transactions") window.dispatchEvent(new Event(SHOW_TRANSACTIONS_EVENT));
   };
   const width = () => frame.current?.clientWidth ?? 360;
@@ -152,7 +149,6 @@ export function EntryModeSwitch({
     transactions: opened.has("transactions") ? transactions : null,
     payment,
     food: opened.has("food") ? <FoodEntryForm actions={foodActions} /> : null,
-    transfer: opened.has("transfer") ? transfer : null,
   };
 
   return (

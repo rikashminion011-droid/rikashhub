@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { Check, Loader2, Plus, Receipt, Settings2, Trash2 } from "lucide-react";
 import { DatePicker } from "@/components/shared/date-picker";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -255,14 +255,14 @@ export function QuickEntryForm({
             ) : null}
           </div>
 
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <Link href="/quick-pay/settings" className="inline-flex items-center gap-1 underline-offset-4 hover:text-foreground hover:underline">
-              <Settings2 className="size-3" /> Customized Settings
+          <nav aria-label="Related pages" className="grid grid-cols-2 divide-x rounded-xl border bg-card text-sm">
+            <Link href="/quick-pay/settings" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+              <Settings2 className="size-4 shrink-0" aria-hidden /> Customized Settings
             </Link>
-            <Link href="/quick-pay/transactions" className="underline-offset-4 hover:text-foreground hover:underline">
-              GPay Transactions
+            <Link href="/quick-pay/transactions" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+              <Receipt className="size-4 shrink-0" aria-hidden /> GPay Transactions
             </Link>
-          </p>
+          </nav>
         </form>
       </div>
 

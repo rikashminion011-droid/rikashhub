@@ -1,5 +1,6 @@
 "use client";
 
+import { Wallet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatINR } from "@/lib/finance";
 import type { getFoodTotalAction } from "@/features/food/actions";
@@ -49,32 +50,49 @@ export function PeriodHeader({
     return () => window.removeEventListener(DATA_CHANGED_EVENT, load);
   }, [load]);
 
+  const net = money ? money.creditPaise - money.debitPaise : null;
+  const stat = "min-w-0 px-2 first:pl-0 sm:px-0 [&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-l-0";
+
   return (
-    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
-      {food ? (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground">Total food expenses</p>
-          <p className="text-2xl font-bold tracking-tight tabular-nums" aria-live="polite">
-            {meals ? formatINR(meals.totalPaise) : "…"}
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-x-8 gap-y-2">
+    // A card holding the totals; on a wide screen the period control sits inside it, on a phone it sits centred just below.
+    <div className="space-y-3 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:space-y-0 sm:rounded-2xl sm:border sm:bg-muted/30 sm:p-4">
+      <div className="flex items-center gap-4 rounded-2xl border bg-muted/30 px-3 py-3 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+        <span className="hidden size-12 shrink-0 items-center justify-center rounded-full bg-muted sm:flex" aria-hidden>
+          <Wallet className="size-5" />
+        </span>
+        {food ? (
           <div>
-            <p className="text-xs font-semibold text-muted-foreground">Total Debit</p>
-            <p className="text-2xl font-bold tracking-tight text-red-600 tabular-nums" aria-live="polite">
-              {money ? formatINR(money.debitPaise) : "…"}
+            <p className="text-xs font-semibold text-muted-foreground">Total food expenses</p>
+            <p className="text-2xl font-bold tracking-tight tabular-nums" aria-live="polite">
+              {meals ? formatINR(meals.totalPaise) : "…"}
             </p>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground">Total Credit</p>
-            <p className="text-2xl font-bold tracking-tight text-green-600 tabular-nums" aria-live="polite">
-              {money ? formatINR(money.creditPaise) : "…"}
-            </p>
-          </div>
-        </div>
-      )}
-      <PeriodNavigator value={period} onChange={onPeriod} today={today} />
+        ) : (
+          <dl className="grid flex-1 grid-cols-3 text-center sm:flex sm:flex-none sm:gap-8 sm:text-left">
+            <div className={stat}>
+              <dt className="text-xs font-semibold text-muted-foreground">Total Debit</dt>
+              <dd className="text-lg font-bold tracking-tight text-red-600 tabular-nums sm:text-2xl" aria-live="polite">
+                {money ? formatINR(money.debitPaise) : "…"}
+              </dd>
+            </div>
+            <div className={stat}>
+              <dt className="text-xs font-semibold text-muted-foreground">Total Credit</dt>
+              <dd className="text-lg font-bold tracking-tight text-green-600 tabular-nums sm:text-2xl" aria-live="polite">
+                {money ? formatINR(money.creditPaise) : "…"}
+              </dd>
+            </div>
+            <div className={stat}>
+              <dt className="text-xs font-semibold text-muted-foreground">Net</dt>
+              <dd className="text-lg font-bold tracking-tight tabular-nums sm:text-2xl" aria-live="polite">
+                {net === null ? "…" : net < 0 ? `−${formatINR(-net)}` : formatINR(net)}
+              </dd>
+            </div>
+          </dl>
+        )}
+      </div>
+      <div className="flex justify-center sm:justify-end">
+        <PeriodNavigator value={period} onChange={onPeriod} today={today} />
+      </div>
     </div>
   );
 }

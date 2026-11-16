@@ -106,9 +106,9 @@ export function EntryFields({
         <label htmlFor={id("amount")} className={labelClass}>
           {labels.amount}
         </label>
-        <div className="flex items-stretch gap-2">
+        <div className="flex flex-wrap items-stretch gap-2">
           <div
-            className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 focus-within:ring-3 focus-within:ring-amber-300/40 aria-[invalid=true]:border-destructive"
+            className="order-1 flex min-w-0 flex-1 basis-40 overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 focus-within:ring-3 focus-within:ring-amber-300/40 aria-[invalid=true]:border-destructive"
             aria-invalid={!!errors.amount}
           >
             <span aria-hidden className="flex w-9 items-center justify-center bg-amber-100/60 text-base">
@@ -130,7 +130,7 @@ export function EntryFields({
               className="h-10 min-w-0 rounded-none border-0 bg-transparent px-2 text-lg font-semibold tabular-nums shadow-none focus-visible:ring-0"
             />
           </div>
-          <div role="radiogroup" aria-label="Transaction type" className="flex shrink-0 gap-1.5">
+          <div role="radiogroup" aria-label="Transaction type" className="order-3 grid w-full grid-cols-2 gap-2 sm:order-2 sm:flex sm:w-auto sm:shrink-0 sm:gap-1.5">
             {(["DEBIT", "CREDIT"] as const).map((t) => {
               const on = form.type === t;
               const debit = t === "DEBIT";
@@ -150,7 +150,7 @@ export function EntryFields({
                     }))
                   }
                   className={cn(
-                    "flex h-10 items-center justify-center gap-1 rounded-xl border px-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-3.5",
+                    "flex h-11 items-center justify-center gap-1 rounded-xl border px-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-10 sm:px-3.5",
                     on
                       ? debit
                         ? "border-red-300 bg-red-50 text-red-700"
@@ -172,7 +172,7 @@ export function EntryFields({
               onClick={onSelfTransfer}
               aria-label="Self Transfer"
               title="Self Transfer: move money between your own banks"
-              className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-input bg-background px-2.5 text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-3.5"
+              className="order-2 flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-input bg-background px-2.5 text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:order-3 sm:px-3.5"
             >
               <ArrowLeftRight className="size-3.5" aria-hidden />
               <span className="hidden min-[440px]:inline">Self Transfer</span>

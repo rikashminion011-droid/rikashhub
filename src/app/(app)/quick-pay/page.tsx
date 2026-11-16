@@ -17,7 +17,6 @@ import { getFoodPricingAction, getFoodTotalAction, saveFoodEntryAction } from "@
 import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
 import { TransactionsPanel } from "@/features/quick-pay/components/transactions-panel";
-import { TransferForm } from "@/features/quick-pay/components/transfer-form";
 import { istDateOf } from "@/features/quick-pay/datetime";
 import { getEntry } from "@/features/quick-pay/server/entries";
 import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
@@ -78,7 +77,6 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
           actions={{ saveEntry: saveEntryAction, deleteEntry: deleteEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction, getOptions: getOptionsAction, saveTransfer: saveTransferAction, ...adders }}
         />
       }
-      transfer={<TransferForm options={options} saveTransfer={saveTransferAction} />}
     />
   );
 }
