@@ -9,6 +9,7 @@ import { PeriodHeader } from "@/features/quick-pay/components/period-header";
 import { SHOW_TRANSACTIONS_EVENT } from "@/features/quick-pay/components/transactions-panel";
 import { periodFor, type Period } from "@/features/quick-pay/period";
 import type { getPeriodTotalsAction } from "@/features/quick-pay/actions";
+import type { SwitchSettings } from "@/features/quick-pay/settings-model";
 import { FoodEntryForm } from "./food-entry-form";
 
 const DESKTOP = "(min-width: 1024px)";
@@ -40,12 +41,15 @@ export function EntryModeSwitch({
   transactions,
   payment,
   foodActions,
+  foodNotesSwitch,
   today,
   getTotals,
 }: {
   transactions: ReactNode;
   payment: ReactNode;
   foodActions: FoodActions;
+  /** The switch beside Notes in Food Entry (Customize, Switch). */
+  foodNotesSwitch: SwitchSettings;
   /** Today's date, YYYY-MM-DD in India time. */
   today: string;
   getTotals: typeof getPeriodTotalsAction;
@@ -148,7 +152,7 @@ export function EntryModeSwitch({
   const pages: Record<Panel, ReactNode> = {
     transactions: opened.has("transactions") ? transactions : null,
     payment,
-    food: opened.has("food") ? <FoodEntryForm actions={foodActions} /> : null,
+    food: opened.has("food") ? <FoodEntryForm actions={foodActions} notesSwitch={foodNotesSwitch} /> : null,
   };
 
   return (

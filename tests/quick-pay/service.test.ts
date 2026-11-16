@@ -357,7 +357,7 @@ describe("bulk entry", () => {
     expect(result).toEqual({ count: 3, duplicate: false });
     expect(await currentOf(hdfc)).toBe(before - 50 + 200 - 7);
     const rows = (await listTransactions(db, ME.id, parseTxFilters({ q: "bulk-" }))).rows;
-    expect(rows.map((r) => r.reason)).toEqual(["bulk-three", "bulk-two", "bulk-one"]); // newest first
+    expect(rows.map((r) => r.reason)).toEqual(["bulk-one", "bulk-two", "bulk-three"]); // oldest first
     expect(rows.find((r) => r.reason === "bulk-two")).toMatchObject({ type: "CREDIT", shares: [expect.objectContaining({ name: "Mukesh" })] });
   });
 
@@ -402,15 +402,16 @@ describe("GPay Transactions: filters, search, totals, paging", () => {
 
   const list = (params: Record<string, string>) => listTransactions(db, user.id, parseTxFilters(params));
 
-  it("shows everything newest first when nothing is filtered, with totals", async () => {
+  it("shows everything oldest first when nothing is filtered, with totals, and newest first when asked", async () => {
     const result = await list({});
-    expect(result.rows.map((r) => r.reason)).toEqual(["July tea", "June salary", "June petrol", "May lunch"]);
+    expect(result.rows.map((r) => r.reason)).toEqual(["May lunch", "June petrol", "June salary", "July tea"]);
+    expect((await list({ order: "desc" })).rows.map((r) => r.reason)).toEqual(["July tea", "June salary", "June petrol", "May lunch"]);
     expect(result.totals).toEqual({ debitPaise: 35000, creditPaise: 30000, count: 4 });
   });
 
   it("filters by month, including entries just after midnight and just before it (IST)", async () => {
     const june = await list({ month: "2026-06" });
-    expect(june.rows.map((r) => r.reason)).toEqual(["June salary", "June petrol"]);
+    expect(june.rows.map((r) => r.reason)).toEqual(["June petrol", "June salary"]);
     expect(june.totals).toEqual({ debitPaise: 20000, creditPaise: 30000, count: 2 });
   });
 

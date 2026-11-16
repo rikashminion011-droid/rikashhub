@@ -70,9 +70,12 @@ export const splitSchema = z.object({
 /** The Bank Through list in Quick Entry: banks listed here are left out of its dropdowns (they still exist everywhere else). */
 export const banksSchema = z.object({ hiddenIds: z.array(uuid).max(500).default([]) });
 
-export const SWITCH_FEATURES = ["bank", "split", "credit"] as const;
+export const SWITCH_FEATURES = ["bank", "category", "split", "debt", "shopping", "credit", "foodNotes"] as const;
 export type SwitchFeature = (typeof SWITCH_FEATURES)[number];
-export const SWITCH_LABEL: Record<SwitchFeature, string> = { bank: "Bank Through", split: "Split (person)", credit: "Credit History" };
+export const SWITCH_LABEL: Record<SwitchFeature, string> = { bank: "Bank Through", category: "Category", split: "Split (person)", debt: "Debt (person)", shopping: "Shopping Portals", credit: "Credit History", foodNotes: "Food Entry notes" };
+
+/** Switches that move through the other options of a list you can arrange. Credit History and Food Entry notes simply move to the next one. */
+export const SWITCH_HAS_LIST: Record<SwitchFeature, boolean> = { bank: true, category: true, split: true, debt: true, shopping: true, credit: false, foodNotes: false };
 
 const switchFeatureSchema = z.object({
   /** Whether the switch icon is shown beside it. */
@@ -85,7 +88,17 @@ const switchFeatureSchema = z.object({
   startId: z.string().max(60).nullable(),
 });
 export type SwitchSettings = z.infer<typeof switchFeatureSchema>;
-export const switchSchema = z.object({ bank: switchFeatureSchema, split: switchFeatureSchema, credit: switchFeatureSchema });
+const DEFAULT_SWITCH = { enabled: true, mode: "SEQUENTIAL" as const, order: [] as string[], startId: null };
+// The newer switches have defaults, so settings saved before they existed still read correctly.
+export const switchSchema = z.object({
+  bank: switchFeatureSchema,
+  split: switchFeatureSchema,
+  credit: switchFeatureSchema,
+  category: switchFeatureSchema.default(DEFAULT_SWITCH),
+  debt: switchFeatureSchema.default(DEFAULT_SWITCH),
+  shopping: switchFeatureSchema.default(DEFAULT_SWITCH),
+  foodNotes: switchFeatureSchema.default(DEFAULT_SWITCH),
+});
 
 export const DEBT_COLUMNS = ["splitAmount", "splitPercent", "paid", "remaining", "details"] as const;
 export type DebtColumn = (typeof DEBT_COLUMNS)[number];
@@ -153,6 +166,10 @@ export const DEFAULT_SETTINGS: QuickPaySettingsData = {
     bank: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
     split: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
     credit: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+    category: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+    debt: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+    shopping: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
+    foodNotes: { enabled: true, mode: "SEQUENTIAL", order: [], startId: null },
   },
   debt: {
     columns: { splitAmount: true, splitPercent: true, paid: true, remaining: true, details: true },
@@ -178,3 +195,7 @@ export function parseSettings(stored: unknown): QuickPaySettingsData {
   };
   return { fields: read("fields"), split: read("split"), credits: read("credits"), banks: read("banks"), switch: read("switch"), debt: read("debt") };
 }
+
+/** Which page a set of settings is for. GPay Transactions (with its edit pop-up and Add Bulk) can differ from Quick Entry. */
+export const SETTINGS_SCOPES = ["quick-entry", "gpay"] as const;
+export type SettingsScope = (typeof SETTINGS_SCOPES)[number];

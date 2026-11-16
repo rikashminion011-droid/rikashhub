@@ -146,3 +146,21 @@ describe("Quick Entry on a credit-portal bank", () => {
     expect(b).toEqual({ id: a.id, duplicate: true });
   });
 });
+
+describe("Add Bulk", () => {
+  it("records a Credited By payment and lists rows on a credit-portal bank under that portal", async () => {
+    const { createBulk } = await import("@/features/quick-pay/server/entries");
+    const bank = (await db.account.findFirst({ where: { userId: ME.id, name: "HDFC", deletedAt: null } })) ?? (await db.account.create({ data: { userId: ME.id, name: "HDFC", type: "OTHER", kind: "CREDIT_LINE" } }));
+    const portal = await db.creditPortal.findFirstOrThrow({ where: { userId: ME.id, nameKey: "hdfc" } });
+    const at = istInstant("2026-11-10", "10:00");
+    const before = await db.creditPortalEntry.count({ where: { userId: ME.id, portalId: portal.id, transactionId: { not: null } } });
+    const result = await createBulk(db, ME.id, rid(), [
+      { key: "c1", type: "CREDIT", amountPaise: 30000, occurredAt: at, reason: "Paid back", accountId: bank.id, categoryId: null, shares: [], transfer: null, creditedById: mukesh },
+      { key: "d1", type: "DEBIT", amountPaise: 12000, occurredAt: at, reason: "Phone case", accountId: bank.id, categoryId: null, shares: [], transfer: null },
+    ]);
+    expect(result).toEqual({ count: 2, duplicate: false });
+    const paid = await db.splitPayment.findFirst({ where: { userId: ME.id, partyId: mukesh, note: "Paid back", deletedAt: null } });
+    expect(Number(paid!.amount.toString())).toBe(300);
+    expect(await db.creditPortalEntry.count({ where: { userId: ME.id, portalId: portal.id, transactionId: { not: null } } })).toBe(before + 2);
+  });
+});

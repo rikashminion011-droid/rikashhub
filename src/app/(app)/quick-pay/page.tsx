@@ -13,7 +13,8 @@ import {
   saveEntryAction,
   saveTransferAction,
 } from "@/features/quick-pay/actions";
-import { getFoodPricingAction, getFoodTotalAction, saveFoodEntryAction } from "@/features/food/actions";
+import { getFoodPricingAction, getFoodTotalAction,
+  getRecentFoodAction, saveFoodEntryAction } from "@/features/food/actions";
 import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
 import { TransactionsPanel } from "@/features/quick-pay/components/transactions-panel";
@@ -52,7 +53,8 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
     <EntryModeSwitch
       today={today}
       getTotals={getPeriodTotalsAction}
-      foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction, getTotal: getFoodTotalAction }}
+      foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction, getTotal: getFoodTotalAction, getRecent: getRecentFoodAction }}
+      foodNotesSwitch={options.settings.switch.foodNotes}
       transactions={
         <TransactionsPanel
           today={today}

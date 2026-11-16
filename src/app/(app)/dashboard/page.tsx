@@ -73,7 +73,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const tiles: { label: string; value: string; note?: string; href: string; tone?: string }[] = [
     { label: "Spent (debits)", value: formatINR(d.debitPaise), note: `${d.count} transactions`, href: `/quick-pay/transactions${q}` },
     { label: "Money in (credits)", value: formatINR(d.creditPaise), href: `/quick-pay/transactions${q}`, tone: "text-success" },
-    { label: "Food", value: formatINR(o.food.totalPaise), note: `${o.food.days.length} days with meals`, href: `/food-rent${q}` },
+    { label: "Food", value: formatINR(o.food.totalPaise), note: `${o.food.days.length} days with meals`, href: `/food${q}` },
     { label: "Shopping", value: formatINR(d.shoppingPaise), note: `${d.shoppingCount} purchases${d.pendingShopping ? ` · ${d.pendingShopping} pending` : ""}`, href: "/shopping" },
     { label: "Total debt", value: formatINR(o.debt.totalPaise), note: `${formatINR(o.debt.paidPaise)} paid · ${signed(o.debt.remainingPaise)} remaining`, href: `/debt${q}` },
     { label: "My Due", value: formatINR(o.myDuePaise), href: `/monthly-due${q}` },

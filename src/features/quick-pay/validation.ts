@@ -163,6 +163,8 @@ export interface BulkRowInput {
   shares: readonly ShareInput[];
   /** Set when the row is a self transfer: the bank the money leaves and the bank it goes to. Saved with all the other rows. */
   transfer?: { fromId: string; toId: string } | null;
+  /** For a Credit row: the person who gave the money. Left out or null means Others. */
+  creditedById?: string | null;
 }
 
 export interface BulkRowErrors {
@@ -186,6 +188,8 @@ export interface ValidBulkRow {
   shares: ResolvedShare[];
   /** Set for a self transfer (`accountId` is then the bank the money leaves). */
   transfer?: { toId: string } | null;
+  /** For a Credit row: who credited it, or null (Others). */
+  creditedById?: string | null;
 }
 
 /** A row nobody has typed anything into (the date and time are pre-filled, so they do not count). */
@@ -243,7 +247,7 @@ export function validateBulkRow(row: BulkRowInput, now: Date): { ok: true; value
     ok: true,
     value: row.transfer
       ? { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.transfer.fromId, categoryId: null, shares: [], transfer: { toId: row.transfer.toId } }
-      : { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.accountId!, categoryId: row.categoryId, shares, transfer: null },
+      : { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.accountId!, categoryId: row.categoryId, shares, transfer: null, creditedById: type === "CREDIT" ? (row.creditedById ?? null) : null },
   };
 }
 

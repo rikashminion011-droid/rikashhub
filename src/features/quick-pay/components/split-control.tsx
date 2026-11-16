@@ -47,7 +47,7 @@ export function SplitControl({
   // People left out of this kind of sharing in Customized Settings are not offered (one already chosen stays).
   const people = availablePersons(options, kind, chosenIds);
   const { showPercent, showAmount } = options.settings.split;
-  const switchConfig = options.settings.switch.split;
+  const switchConfig = kind === "DEBT" ? options.settings.switch.debt : options.settings.switch.split;
 
   const totals = amountPaise ? resolveShares(amountPaise, form.shares.map(({ partyId, method, value }) => ({ partyId, method, value }))) : null;
   const edit = (share: FormShare) => (method: "PERCENT" | "FIXED", value: string) => {

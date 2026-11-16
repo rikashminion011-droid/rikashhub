@@ -8,7 +8,7 @@ import { getPrisma } from "@/lib/db/prisma";
 import { parseOpeningBalance } from "@/features/quick-pay/validation";
 import { RateLimiter } from "@/lib/security/rate-limit";
 import { MAX_FOOD_BULK_ROWS, validateFoodBulk, type FoodBulkRowErrors, type FoodBulkRowInput } from "./bulk";
-import { MEALS, validateFoodEntry, type Meal } from "./pricing";
+import { MEALS, isMeal, validateFoodEntry, type Meal } from "./pricing";
 import {
   addFoodItem,
   createFoodBulk,
@@ -18,6 +18,7 @@ import {
   getFoodPricing,
   getFoodTotal,
   listFoodEntries,
+  listRecentFood,
   setMealPrice,
   updateFoodEntry,
   updateFoodItem,
@@ -45,7 +46,6 @@ function failure(error: unknown, label: string): { ok: false; error: string } {
 
 const refresh = () => {
   revalidatePath("/food", "layout");
-  revalidatePath("/food-rent", "layout");
 };
 
 const id = z.uuid();
@@ -134,6 +134,18 @@ export async function updateFoodEntryAction(raw: unknown): Promise<FoodResult<{ 
     return { ok: true, entry };
   } catch (error) {
     return failure(error, "update entry");
+  }
+}
+
+/** The latest entries of one meal, for the Recent list in Food Entry. */
+export async function getRecentFoodAction(raw: unknown): Promise<FoodResult<{ entries: FoodEntryRow[] }>> {
+  try {
+    const parsed = z.object({ meal: z.string() }).safeParse(raw);
+    if (!parsed.success || !isMeal(parsed.data.meal)) return { ok: false, error: "Choose Tiffin, Lunch or Dinner." };
+    const user = await requireUser();
+    return { ok: true, entries: await listRecentFood(getPrisma(), user.id, parsed.data.meal, 6) };
+  } catch (error) {
+    return failure(error, "recent entries");
   }
 }
 
@@ -242,4 +254,5 @@ export interface FoodActions {
   getPricing: typeof getFoodPricingAction;
   saveEntry: typeof saveFoodEntryAction;
   getTotal: typeof getFoodTotalAction;
+  getRecent: typeof getRecentFoodAction;
 }

@@ -11,6 +11,7 @@ import {
   DEBT_COLUMNS,
   DEBT_COLUMN_LABEL,
   SWITCH_FEATURES,
+  SWITCH_HAS_LIST,
   SWITCH_LABEL,
   type BanksSettings,
   type DebtSettings,
@@ -71,7 +72,7 @@ export function DefaultChoice({
 /** The banks you can pick (a main file without accounts, or each account under one), in list order. */
 export const bankLeaves = (banks: readonly BankOption[]) => banks;
 
-export function BankVisibilitySection({ settings, banks, actions, onSaved }: { settings: BanksSettings; banks: readonly BankOption[]; actions: SettingsFormActions; onSaved: OnSaved }) {
+export function BankVisibilitySection({ target = "Quick Entry", settings, banks, actions, onSaved }: { target?: string; settings: BanksSettings; banks: readonly BankOption[]; actions: SettingsFormActions; onSaved: OnSaved }) {
   const { draft, setDraft, saving, error, dirty, save, reset } = useSection("banks", settings, actions, onSaved);
   const hidden = new Set(draft.hiddenIds);
   const groups = useMemo(() => {
@@ -82,8 +83,8 @@ export function BankVisibilitySection({ settings, banks, actions, onSaved }: { s
 
   return (
     <SectionCard
-      title="Banks shown in Quick Entry"
-      description="Untick a bank to leave it out of the Bank Through dropdowns in Quick Entry and Self Transfer. It stays in your list, in balances and on past entries."
+      title={`Banks shown in ${target}`}
+      description={`Untick a bank to leave it out of the Bank Through dropdowns in ${target}${target === "Quick Entry" ? " and Self Transfer" : ""}. It stays in your list, in balances and on past entries.`}
       footer={<SaveBar dirty={dirty} saving={saving} error={error} onSave={save} onReset={reset} />}
     >
       {banks.length === 0 ? (
@@ -129,7 +130,7 @@ export function SwitchSection({
   onSaved,
 }: {
   settings: SwitchAllSettings;
-  options: Pick<QuickPayOptions, "persons">;
+  options: Pick<QuickPayOptions, "persons" | "categories" | "shoppingPlatforms">;
   banks: readonly BankOption[];
   actions: SettingsFormActions;
   onSaved: OnSaved;
@@ -139,8 +140,12 @@ export function SwitchSection({
   // The choices each switch can move through. Credit History changes every time, so it has no list to arrange.
   const choices: Record<SwitchFeature, { id: string; label: string }[]> = {
     bank: banks.map((b) => ({ id: b.id, label: b.label })),
+    category: options.categories.filter((c) => !c.isSub).map((c) => ({ id: c.id, label: c.name })),
     split: options.persons.map((p) => ({ id: p.id, label: p.name })),
+    debt: options.persons.map((p) => ({ id: p.id, label: p.name })),
+    shopping: options.shoppingPlatforms.map((p) => ({ id: p.id, label: p.name })),
     credit: [],
+    foodNotes: [],
   };
 
   const update = (feature: SwitchFeature, patch: Partial<SwitchAllSettings[SwitchFeature]>) => setDraft({ ...draft, [feature]: { ...draft[feature], ...patch } });
@@ -159,7 +164,7 @@ export function SwitchSection({
           const inOrder = cfg.order.filter((id) => list.some((c) => c.id === id));
           const notInOrder = list.filter((c) => !inOrder.includes(c.id));
           const startChoices = cfg.mode === "CUSTOM" ? inOrder.map((id) => ({ id, label: label(id) })) : list;
-          const custom = cfg.mode === "CUSTOM" && feature !== "credit";
+          const custom = cfg.mode === "CUSTOM" && SWITCH_HAS_LIST[feature];
 
           return (
             <fieldset key={feature} className="space-y-3 rounded-xl border p-4">
@@ -171,8 +176,8 @@ export function SwitchSection({
 
               {cfg.enabled ? (
                 <>
-                  {feature === "credit" ? (
-                    <p className="text-xs text-muted-foreground">Credit History lists your latest credits, which change every time, so the switch simply moves to the next credit in the list.</p>
+                  {!SWITCH_HAS_LIST[feature] ? (
+                    <p className="text-xs text-muted-foreground">{feature === "foodNotes" ? "In Food Entry the switch moves to the next food item you priced for the chosen meal and puts it in Notes." : "Credit History lists your latest credits, which change every time, so the switch simply moves to the next credit in the list."}</p>
                   ) : (
                     <div role="radiogroup" aria-label={`${SWITCH_LABEL[feature]} switch mode`} className="grid gap-2 sm:grid-cols-2">
                       {(["SEQUENTIAL", "CUSTOM"] as const).map((mode) => (
@@ -218,7 +223,7 @@ export function SwitchSection({
                     </div>
                   ) : null}
 
-                  {feature !== "credit" ? (
+                  {SWITCH_HAS_LIST[feature] ? (
                     <div className="space-y-1">
                       <label htmlFor={`switch-start-${feature}`} className="text-xs font-semibold text-muted-foreground">
                         Starts with

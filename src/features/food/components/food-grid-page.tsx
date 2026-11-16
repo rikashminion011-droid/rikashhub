@@ -63,7 +63,7 @@ export async function FoodGridPage({ title, description, params }: { title: stri
   const exportMonthFrom = from.slice(0, 7);
   const exportMonthTo = to.slice(0, 7);
   const bulkMonth = isMonth(one(params.month)) ? one(params.month) : from.slice(0, 7);
-  const back = title === "Food Rent" ? "food-rent" : "food";
+  const back = "food";
 
   return (
     <>

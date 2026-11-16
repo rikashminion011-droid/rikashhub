@@ -373,3 +373,115 @@ export function TimePicker({
     </Popover.Root>
   );
 }
+
+// ───────────────────────── Date range ─────────────────────────
+
+const short = (value: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${m[3]} ${MONTH_NAMES[Number(m[2]) - 1]!.slice(0, 3)} ${m[1]}` : "";
+};
+
+/**
+ * One calendar icon for a From and To period. Press it, pick the first day, then the last day (earlier days are swapped into
+ * order); the period is applied when the second day is chosen. The month arrows can be used between the two choices. Values are
+ * YYYY-MM-DD, or empty for no limit.
+ */
+export function DateRangePicker({
+  from,
+  to,
+  onChange,
+  max,
+  ariaLabel,
+  className,
+  placeholder = "Choose dates",
+}: {
+  from: string;
+  to: string;
+  onChange: (range: { from: string; to: string }) => void;
+  max?: string;
+  ariaLabel: string;
+  className?: string;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  // The first day chosen while the second one is still to come.
+  const [first, setFirst] = useState<string | null>(null);
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : (max ?? new Date().toISOString().slice(0, 10));
+  const [view, setView] = useState({ y: Number(start.slice(0, 4)), m: Number(start.slice(5, 7)) - 1 });
+  const step = (by: number) => setView((v) => ({ y: v.y + Math.floor((v.m + by) / 12), m: (((v.m + by) % 12) + 12) % 12 }));
+  const weeks = calendarWeeks(view.y, view.m);
+  const out = (d: string) => max !== undefined && d > max;
+  const lo = first ?? from;
+  const hi = first ? "" : to;
+  const label = from && to ? (from === to ? short(from) : `${short(from)} – ${short(to)}`) : placeholder;
+
+  function pick(day: string) {
+    if (!first) return setFirst(day);
+    const [a, b] = first <= day ? [first, day] : [day, first];
+    setFirst(null);
+    setOpen(false);
+    onChange({ from: a, to: b });
+  }
+
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        setFirst(null);
+        if (next) setView({ y: Number(start.slice(0, 4)), m: Number(start.slice(5, 7)) - 1 });
+      }}
+    >
+      <Popover.Trigger type="button" aria-label={`${ariaLabel}${from && to ? `: ${label}` : ""}`} className={cn(triggerClass, "h-10 sm:h-9", className)}>
+        <span className={cn("truncate", !(from && to) && "text-muted-foreground")}>{label}</span>
+        <CalendarDays className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      </Popover.Trigger>
+      <PopupShell>
+        <div className="mb-2 flex items-center justify-between gap-1">
+          <button type="button" aria-label="Previous month" onClick={() => step(-1)} className="flex size-9 items-center justify-center rounded-lg hover:bg-muted">
+            <ChevronLeft className="size-4" aria-hidden />
+          </button>
+          <p className="text-sm font-semibold" aria-live="polite">
+            {MONTH_NAMES[view.m]} {view.y}
+          </p>
+          <button type="button" aria-label="Next month" onClick={() => step(1)} className="flex size-9 items-center justify-center rounded-lg hover:bg-muted">
+            <ChevronRight className="size-4" aria-hidden />
+          </button>
+        </div>
+        <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
+          {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
+            <span key={d} className="py-1">
+              {d}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-y-0.5">
+          {weeks.flat().map((day, i) => {
+            if (day === null) return <span key={i} />;
+            const end = day === lo || (hi !== "" && day === hi);
+            const inside = !first && lo !== "" && hi !== "" && day > lo && day < hi;
+            return (
+              <button
+                key={day}
+                type="button"
+                disabled={out(day)}
+                aria-label={formatLongDate(day)}
+                aria-pressed={end}
+                onClick={() => pick(day)}
+                className={cn(
+                  "mx-auto flex size-9 items-center justify-center rounded-full text-sm tabular-nums transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30",
+                  end ? "bg-neutral-950 font-semibold text-white" : inside ? "bg-muted" : "hover:bg-muted",
+                )}
+              >
+                {Number(day.slice(8))}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 border-t pt-2 text-xs text-muted-foreground" aria-live="polite">
+          {first ? `From ${short(first)}. Now pick the last day.` : "Pick the first day, then the last day."}
+        </p>
+      </PopupShell>
+    </Popover.Root>
+  );
+}

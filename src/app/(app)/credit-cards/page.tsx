@@ -18,6 +18,7 @@ import {
 import { PortalHeader } from "@/features/credit-portal/components/portal-header";
 import { StatementTab } from "@/features/credit-portal/components/statement-tab";
 import { UnbilledTab } from "@/features/credit-portal/components/unbilled-tab";
+import { hdfcCycle, isHdfcPortal } from "@/features/credit-portal/model";
 import { listPortals, listStatement, listUnbilled } from "@/features/credit-portal/server/service";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { istDateOf, monthBounds } from "@/features/quick-pay/datetime";
@@ -50,6 +51,8 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
   const rawTo = one(params.to);
   const rawMonth = one(params.month);
   let range: { from: string | null; to: string | null };
+  // Nothing chosen: a month, except for HDFC, which opens on its own 16th to 15th cycle (decided once the portal is known).
+  const explicit = isDate(rawFrom) || isDate(rawTo) || isMonth(rawMonth);
   if (isDate(rawFrom) || isDate(rawTo)) range = { from: isDate(rawFrom) ? rawFrom : null, to: isDate(rawTo) ? rawTo : null };
   else {
     const b = monthBounds(isMonth(rawMonth) ? rawMonth : today.slice(0, 7));
@@ -64,6 +67,7 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
     await ensureUserSetup(db, user);
     const [portals, options] = await Promise.all([listPortals(db, user.id), getQuickPayOptions(db, user.id)]);
     const active = portals.find((p) => p.id === one(params.portal)) ?? portals[0] ?? null;
+    if (!explicit && active && isHdfcPortal(active.name)) range = hdfcCycle(today);
     const [unbilled, statement] = active
       ? await Promise.all([tab === "unbilled" ? listUnbilled(db, user.id, active.id, range) : Promise.resolve([]), tab === "statement" ? listStatement(db, user.id, active.id, range) : Promise.resolve(null)])
       : [[], null];
@@ -79,6 +83,7 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
   }
 
   const { portals, options, active, unbilled, statement } = data;
+  const defaultRange = active && isHdfcPortal(active.name) ? hdfcCycle(today) : undefined;
   const q = new URLSearchParams();
   if (active) q.set("portal", active.id);
   if (isDate(rawFrom)) q.set("from", rawFrom);
@@ -123,6 +128,7 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
                 actions={{ saveUnbilledBulk: saveUnbilledBulkAction, updateUnbilled: updateUnbilledAction, deleteUnbilled: deleteUnbilledAction }}
                 addPerson={addRecipientAction}
                 today={today}
+                defaultRange={defaultRange}
                 exportHref={exportHref("unbilled")}
               />
             ) : null}
@@ -139,6 +145,7 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
                 actions={{ importStatement: importStatementAction, updateStatementEntry: updateStatementEntryAction, deleteStatementEntry: deleteStatementEntryAction, setCardInfo: setCardInfoAction }}
                 addPerson={addRecipientAction}
                 today={today}
+                defaultRange={defaultRange}
                 exportHref={exportHref("statement")}
               />
             ) : null}

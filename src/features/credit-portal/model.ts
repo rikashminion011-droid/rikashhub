@@ -194,3 +194,18 @@ export function utilization(totalPaise: number, usedPaise: number): { usedPercen
 export function recipientSummary(names: readonly string[]): { first: string; more: number } {
   return { first: names[0] ?? "", more: Math.max(0, names.length - 1) };
 }
+
+/** True for the HDFC portal. Its statement runs from the 16th to the 15th, so it opens on that cycle instead of a calendar month. */
+export const isHdfcPortal = (name: string) => name.normalize("NFKC").trim().toLowerCase() === "hdfc";
+
+/**
+ * HDFC's period when nothing else is chosen: the 16th of last month to the 15th of this month. `today` is YYYY-MM-DD.
+ */
+export function hdfcCycle(today: string): { from: string; to: string } {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return { from: `${prevY}-${two(prevM)}-16`, to: `${y}-${two(m)}-15` };
+}

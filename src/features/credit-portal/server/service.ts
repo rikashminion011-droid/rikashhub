@@ -482,3 +482,28 @@ export async function syncQuickEntryUnbilled(
   }
   await reconcilePortal(db, userId, portalId);
 }
+
+/**
+ * The Unbilled rows for a whole Add Bulk sheet, made in one go. A row whose bank has the name of a credit portal (for example
+ * HDFC) is listed under that portal, without recipients, and then matched against any statement lines already there.
+ */
+export async function linkBulkToPortals(
+  tx: Pick<PrismaClient, "account" | "creditPortal" | "creditPortalEntry" | "creditStatementEntry">,
+  userId: string,
+  items: readonly { transactionId: string; accountId: string; kind: "DEBIT" | "CREDIT"; occurredAt: Date; reason: string; amountPaise: number }[],
+): Promise<void> {
+  if (items.length === 0) return;
+  const portals = await tx.creditPortal.findMany({ where: { userId, deletedAt: null }, select: { id: true, nameKey: true } });
+  if (portals.length === 0) return;
+  const accounts = await tx.account.findMany({ where: { userId, id: { in: [...new Set(items.map((i) => i.accountId))] } }, select: { id: true, name: true, parent: { select: { name: true } } } });
+  const portalOf = new Map<string, string>();
+  for (const a of accounts) {
+    const names = [a.name, a.parent?.name].filter((n): n is string => !!n).map(keyOf);
+    const hit = portals.find((p) => names.includes(p.nameKey));
+    if (hit) portalOf.set(a.id, hit.id);
+  }
+  const data = items.filter((i) => portalOf.has(i.accountId)).map((i) => ({ userId, transactionId: i.transactionId, portalId: portalOf.get(i.accountId)!, occurredAt: i.occurredAt, reason: i.reason.trim() || null, kind: i.kind, amount: paiseToDecimalString(i.amountPaise) }));
+  if (data.length === 0) return;
+  await tx.creditPortalEntry.createMany({ data });
+  for (const portalId of new Set(data.map((d) => d.portalId))) await reconcilePortal(tx, userId, portalId);
+}

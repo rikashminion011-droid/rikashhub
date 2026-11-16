@@ -8,6 +8,7 @@ import { istDateOf, rangeToInstants } from "../datetime";
 import { resolveShares, type ResolvedShare, type ShareInput, type SplitKind } from "../shares";
 import type { CreditSource } from "../settings-model";
 import type { PlannedEntry } from "../import/plan";
+import { linkBulkToPortals } from "@/features/credit-portal/server/service";
 import { creditedByOf } from "@/features/debt/server/service";
 import { platformOfEntry } from "@/features/shopping/server/service";
 import { PAGE_SIZE, effectiveRange, type TxFilters } from "../filters";
@@ -320,6 +321,16 @@ export async function createBulk(
           }
           await tx.transactionSplit.createMany({ data });
         }
+        // A Credit row "Credited By" a person is a payment by that person (Debt Management).
+        const credited = rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => x.row.type === "CREDIT" && !x.row.transfer && x.row.creditedById);
+        if (credited.length > 0) {
+          const people = [...new Set(credited.map((x) => x.row.creditedById!))];
+          const found = await tx.expenseParty.count({ where: { id: { in: people }, userId, deletedAt: null, nameKey: { not: "personal" } } });
+          if (found !== people.length) throw new ExpenseError("A person who credited a row no longer exists. Choose again.", "NOT_FOUND");
+          await tx.splitPayment.createMany({ data: credited.map(({ row, id }) => ({ userId, partyId: row.creditedById!, transactionId: id, amount: paiseToDecimalString(row.amountPaise), paidAt: row.occurredAt, note: row.reason || "Credit" })) });
+        }
+        // Rows on a bank that is a credit portal are listed in that portal's Unbilled Transactions.
+        await linkBulkToPortals(tx, userId, rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => !x.row.transfer).map((x) => ({ transactionId: x.id, accountId: x.row.accountId, kind: x.row.type, occurredAt: x.row.occurredAt, reason: x.row.reason, amountPaise: x.row.amountPaise })));
         await recomputeBalances(tx, userId, rows.flatMap((r) => [r.accountId, ...(r.transfer ? [r.transfer.toId] : [])]));
         await tx.auditLog.create({ data: { userId, action: "quickpay.bulk", entity: "transaction", after: { rows: rows.length } } });
         return { count: rows.length, duplicate: false };
@@ -513,7 +524,8 @@ export async function listTransactions(
   const rows = await db.transaction.findMany({
     where,
     include: includeForRows,
-    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    // Oldest first unless newest first was asked for.
+    orderBy: filters.order === "desc" ? [{ occurredAt: "desc" }, { createdAt: "desc" }] : [{ occurredAt: "asc" }, { createdAt: "asc" }],
     skip: (page - 1) * size,
     take: size,
   });

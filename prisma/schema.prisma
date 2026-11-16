@@ -889,6 +889,8 @@ model FoodEntry {
 model QuickPaySettings {
   userId    String   @id @db.Uuid
   data      Json
+  /// Sections customized for GPay Transactions (and its Add Bulk) only. A section that is not here follows Quick Entry.
+  gpayData  Json?
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

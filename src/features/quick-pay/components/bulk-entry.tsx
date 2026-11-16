@@ -521,7 +521,7 @@ export function BulkEntry({
               <th scope="col" className="px-2 py-2 text-left font-medium">Reason</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Bank Through</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Category</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Split</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Split / Credited By</th>
               <th scope="col" className="px-1 py-2">
                 <span className="sr-only">Row actions</span>
               </th>
@@ -646,8 +646,21 @@ export function BulkEntry({
 
                   </>)}
                   </Cell>
-                  <Cell col={7} label="Split" wide>
-                    {row.transfer ? (<p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>) : (<>
+                  <Cell col={7} label={credit ? "Credited By" : "Split"} wide>
+                    {row.transfer ? (<p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>) : credit ? (
+                      // A credit has no split: it says who gave the money (Others when nobody is chosen).
+                      <PeoplePicker
+                        compact
+                        bare={wide}
+                        single
+                        emptyLabel="Others"
+                        ariaLabel={`Row ${index + 1} credited by`}
+                        people={people}
+                        selected={row.creditedById ? [row.creditedById] : []}
+                        onChange={(ids) => update(row.key, { creditedById: ids[0] ?? null })}
+                        onAddPerson={async (name) => adders.addPerson(name)}
+                      />
+                    ) : (<>
                     {/* As in Quick Entry: pick people; each gets a percentage and an amount */}
                     <PeoplePicker
                       compact

@@ -32,7 +32,7 @@ import { syncCreditedBy } from "@/features/debt/server/service";
 import { syncQuickEntryPurchase } from "@/features/shopping/server/service";
 import { clearBulkDraft, getBulkDraft, saveBulkDraft } from "./server/bulk-draft";
 import { assignReasonToCategory, getSettings, resetSettingsSection, saveSettingsSection, setCategoryKeywords } from "./server/prefs";
-import { SECTION_SCHEMAS, SETTINGS_SECTIONS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
+import { SECTION_SCHEMAS, SETTINGS_SCOPES, SETTINGS_SECTIONS, type QuickPaySettingsData, type SettingsSection } from "./settings-model";
 import type { EntryPatch } from "./server/entries";
 import type { TxRow, TxTotals } from "./types";
 import {
@@ -292,6 +292,16 @@ export async function getOptionsAction(): Promise<QuickPayResult<{ options: Quic
   }
 }
 
+/** The options as GPay Transactions (its edit pop-up and Add Bulk) uses them: its own settings, following Quick Entry where none were set. */
+export async function getGpayOptionsAction(): Promise<QuickPayResult<{ options: QuickPayOptions }>> {
+  try {
+    const { user, db } = await context();
+    return { ok: true, options: await getQuickPayOptions(db, user.id, "gpay") };
+  } catch (error) {
+    return failure(error, "load options");
+  }
+}
+
 // ───────────────────────── Self transfer and the period list ─────────────────────────
 
 const transferSchema = z.object({ requestId: id, fromId: id.nullable(), toId: id.nullable(), amount: z.string().max(20), reason: z.string().max(1000), date: z.string().max(10).optional(), time: z.string().max(5).optional() });
@@ -359,6 +369,7 @@ const bulkSchema = z.object({
         categoryId: id.nullable(),
         shares: z.array(shareSchema).max(30),
         transfer: z.object({ fromId: id, toId: id }).nullable().optional(),
+        creditedById: id.nullable().optional(),
       }),
     )
     .max(MAX_BULK_ROWS + 200),
@@ -524,13 +535,13 @@ export async function importGpayAction(raw: unknown): Promise<QuickPayResult<{ r
 /** Saves one section of the settings ("fields", "split" or "credits"). The server checks it again and returns what is saved. */
 export async function saveSettingsAction(raw: unknown): Promise<QuickPayResult<{ settings: QuickPaySettingsData }>> {
   try {
-    const parsed = z.object({ section: z.enum(SETTINGS_SECTIONS), value: z.unknown() }).safeParse(raw);
+    const parsed = z.object({ section: z.enum(SETTINGS_SECTIONS), value: z.unknown(), scope: z.enum(SETTINGS_SCOPES).optional() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "Those settings could not be read." };
     const section = parsed.data.section as SettingsSection;
     const checked = SECTION_SCHEMAS[section].safeParse(parsed.data.value);
     if (!checked.success) return { ok: false, error: checked.error.issues[0]?.message ?? "Check the settings and try again." };
     const { user, db } = await context();
-    const settings = await saveSettingsSection(db, user.id, section, checked.data);
+    const settings = await saveSettingsSection(db, user.id, section, checked.data, parsed.data.scope ?? "quick-entry");
     refresh();
     return { ok: true, settings };
   } catch (error) {
@@ -540,10 +551,10 @@ export async function saveSettingsAction(raw: unknown): Promise<QuickPayResult<{
 
 export async function resetSettingsAction(raw: unknown): Promise<QuickPayResult<{ settings: QuickPaySettingsData }>> {
   try {
-    const parsed = z.object({ section: z.enum(SETTINGS_SECTIONS) }).safeParse(raw);
+    const parsed = z.object({ section: z.enum(SETTINGS_SECTIONS), scope: z.enum(SETTINGS_SCOPES).optional() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That section could not be found." };
     const { user, db } = await context();
-    const settings = await resetSettingsSection(db, user.id, parsed.data.section);
+    const settings = await resetSettingsSection(db, user.id, parsed.data.section, parsed.data.scope ?? "quick-entry");
     refresh();
     return { ok: true, settings };
   } catch (error) {

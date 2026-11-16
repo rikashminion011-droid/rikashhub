@@ -10,7 +10,7 @@ import {
   deleteEntryAction,
   getBalancesAction,
   getEntryAction,
-  getOptionsAction,
+  getGpayOptionsAction,
   getRecentCreditsAction,
   importGpayAction,
   patchEntryAction,
@@ -50,7 +50,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    [result, options, draftCount] = await Promise.all([listTransactions(db, user.id, filters), getQuickPayOptions(db, user.id), getBulkDraftCount(db, user.id).catch(() => 0)]);
+    [result, options, draftCount] = await Promise.all([listTransactions(db, user.id, filters), getQuickPayOptions(db, user.id, "gpay"), getBulkDraftCount(db, user.id).catch(() => 0)]);
   } catch (error) {
     console.error("[quick-pay] could not load transactions", error);
     return (
@@ -75,14 +75,14 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
     <>
       <PageHeader
         title="GPay Transactions"
-        description="Every Quick Pay entry, newest first."
+        description={filters.order === "desc" ? "Every Quick Pay entry, newest first." : "Every Quick Pay entry, oldest first."}
         actions={
           <>
             <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))}>
               <FilePlus2 /> Add Bulk
             </Link>
             <DraftLink savedCount={draftCount} />
-            <ImportDialog actions={{ getOptions: getOptionsAction, importGpay: importGpayAction }} />
+            <ImportDialog actions={{ getOptions: getGpayOptionsAction, importGpay: importGpayAction }} />
             <ExportMenu query={query} />
           </>
         }
@@ -125,7 +125,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
             saveEntry: saveEntryAction,
             getEntry: getEntryAction,
             getRecentCredits: getRecentCreditsAction,
-            getOptions: getOptionsAction,
+            getOptions: getGpayOptionsAction,
             addCategory: addCategoryAction,
             addPerson: addPersonAction,
           }}

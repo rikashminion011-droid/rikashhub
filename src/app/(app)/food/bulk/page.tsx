@@ -35,7 +35,7 @@ export default async function FoodBulkPage({ searchParams }: PageProps<"/food/bu
 
   const now = new Date();
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(one(params.month)) ? one(params.month) : istDateOf(now).slice(0, 7);
-  const back = one(params.back) === "food-rent" ? "food-rent" : "food";
+  const back = "food" as const;
   return (
     <>
       <PageHeader title="Add Bulk Meals" description="Pick a month and fill in its days. The total of each day is worked out for you. Nothing is saved until you press Save." />

@@ -3,7 +3,7 @@
 import { Loader2, Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { DatePicker, MonthPicker } from "@/components/shared/date-picker";
+import { DateRangePicker, MonthPicker } from "@/components/shared/date-picker";
 import { MultiSelect } from "@/components/shared/multi-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,12 +89,20 @@ export function TransactionsFilterBar({ today, defaultMonth, options }: { today:
           <MonthPicker value={month} max={today.slice(0, 7)} ariaLabel="Month" className="w-44" onChange={(m) => go({ month: m === defaultMonth ? "" : m, from: "", to: "", all: "" })} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">From date</Label>
-          <DatePicker value={from} max={to || today} ariaLabel="From date" className="w-52" onChange={(d) => go({ from: d, month: "", all: "", ...(d && !rawTo ? { to: to || today } : {}) })} />
+          <Label className="text-xs text-muted-foreground">Dates</Label>
+          <DateRangePicker from={from} to={to} max={today} ariaLabel="From and To dates" className="w-60" onChange={(r) => go({ from: r.from, to: r.to, month: "", all: "" })} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">To date</Label>
-          <DatePicker value={to} min={from || undefined} max={today} ariaLabel="To date" className="w-52" onChange={(d) => go({ to: d, month: "", all: "", ...(d && !rawFrom ? { from: from || d } : {}) })} />
+          <Label htmlFor="f-order" className="text-xs text-muted-foreground">Order</Label>
+          <select
+            id="f-order"
+            value={params.get("order") === "desc" ? "desc" : "asc"}
+            onChange={(e) => go({ order: e.target.value === "desc" ? "desc" : "" })}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+          >
+            <option value="asc">Oldest to Newest</option>
+            <option value="desc">Newest to Oldest</option>
+          </select>
         </div>
         <div className="min-w-48 flex-1 space-y-1">
           <Label htmlFor="f-search" className="text-xs text-muted-foreground">Search</Label>

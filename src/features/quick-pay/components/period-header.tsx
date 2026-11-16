@@ -50,7 +50,6 @@ export function PeriodHeader({
     return () => window.removeEventListener(DATA_CHANGED_EVENT, load);
   }, [load]);
 
-  const net = money ? money.creditPaise - money.debitPaise : null;
   const stat = "min-w-0 px-2 first:pl-0 sm:px-0 [&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-l-0";
 
   return (
@@ -68,7 +67,7 @@ export function PeriodHeader({
             </p>
           </div>
         ) : (
-          <dl className="grid flex-1 grid-cols-3 text-center sm:flex sm:flex-none sm:gap-8 sm:text-left">
+          <dl className="grid flex-1 grid-cols-2 text-center sm:flex sm:flex-none sm:gap-8 sm:text-left">
             <div className={stat}>
               <dt className="text-xs font-semibold text-muted-foreground">Total Debit</dt>
               <dd className="text-lg font-bold tracking-tight text-red-600 tabular-nums sm:text-2xl" aria-live="polite">
@@ -79,12 +78,6 @@ export function PeriodHeader({
               <dt className="text-xs font-semibold text-muted-foreground">Total Credit</dt>
               <dd className="text-lg font-bold tracking-tight text-green-600 tabular-nums sm:text-2xl" aria-live="polite">
                 {money ? formatINR(money.creditPaise) : "…"}
-              </dd>
-            </div>
-            <div className={stat}>
-              <dt className="text-xs font-semibold text-muted-foreground">Net</dt>
-              <dd className="text-lg font-bold tracking-tight tabular-nums sm:text-2xl" aria-live="polite">
-                {net === null ? "…" : net < 0 ? `−${formatINR(-net)}` : formatINR(net)}
               </dd>
             </div>
           </dl>

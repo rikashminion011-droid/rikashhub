@@ -64,6 +64,7 @@ export function SettingsCenter({
   creditCategories: initialCreditCategories,
   people,
   options,
+  gpaySettings,
   food,
   actions,
 }: {
@@ -74,6 +75,8 @@ export function SettingsCenter({
   creditCategories: CategoryTreeNode[];
   people: PersonRow[];
   options: QuickPayOptions;
+  /** The settings GPay Transactions uses (its own, following Quick Entry where none were set). */
+  gpaySettings: QuickPaySettingsData;
   food: FoodPricing;
   actions: SettingsActions;
 }) {
@@ -84,7 +87,14 @@ export function SettingsCenter({
   const [creditTree, setCreditTree] = useState(initialCreditCategories);
   // Which list of categories is open: a Debit has one set, a Credit another.
   const [catKind, setCatKind] = useState<"DEBIT" | "CREDIT">("DEBIT");
-  const [settings, setSettings] = useState<QuickPaySettingsData>(options.settings);
+  // Quick Entry and GPay Transactions each have their own settings; the page chosen above decides which are shown and saved.
+  const [quickSettings, setQuickSettings] = useState<QuickPaySettingsData>(options.settings);
+  const [gpayOwn, setGpayOwn] = useState<QuickPaySettingsData>(gpaySettings);
+  const scope = page === "gpay" ? "gpay" : "quick-entry";
+  const settings = scope === "gpay" ? gpayOwn : quickSettings;
+  const setSettings = scope === "gpay" ? setGpayOwn : setQuickSettings;
+  // Saving and resetting go to the settings of the chosen page.
+  const scoped: SettingsActions = { ...actions, save: (raw) => actions.save({ ...(raw as object), scope }), reset: (raw) => actions.reset({ ...(raw as object), scope }) };
   const [newKind, setNewKind] = useState<MethodKind>("BANK");
 
   function choose(next: SettingsTab) {
@@ -151,7 +161,7 @@ export function SettingsCenter({
       ) : (
         <>
           {page === "gpay" ? (
-            <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">GPay Transactions, its edit pop-up and its Add Bulk use these same options: categories, banks, Switch, Split, Debt and labels. A change here applies to Quick Entry too.</p>
+            <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">These settings are for GPay Transactions, its edit pop-up and its Add Bulk only; Quick Entry is not changed. A section you have not changed here follows Quick Entry. Categories and the bank list themselves are shared by every page.</p>
           ) : null}
           {/* Sections, as horizontal tabs */}
           <nav aria-label="Quick Entry settings sections" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -178,7 +188,7 @@ export function SettingsCenter({
             </ul>
           </nav>
 
-          <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="min-w-0 max-w-3xl space-y-4">
+          <div key={scope} id="settings-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="min-w-0 max-w-3xl space-y-4">
             {tab === "categories" ? (
               <>
                 {/* A Debit (money out) and a Credit (money in) have different categories */}
@@ -211,7 +221,7 @@ export function SettingsCenter({
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    {catKind === "DEBIT" ? <DefaultChoice kind="category" settings={settings.fields} options={liveOptions} actions={actions} onSaved={setSettings} /> : null}
+                    {catKind === "DEBIT" ? <DefaultChoice kind="category" settings={settings.fields} options={liveOptions} actions={scoped} onSaved={setSettings} /> : null}
                     <TreeEditor
                       key={`categories-${catKind}`}
                       initialVisible={3}
@@ -258,7 +268,7 @@ export function SettingsCenter({
                     <CardDescription>Main bank names and the sub-banks under them, for example GPay → HDFC, SBI, ICICI. Add, rename or delete them; every dropdown updates as soon as you do.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    <DefaultChoice kind="bank" settings={settings.fields} options={liveOptions} actions={actions} onSaved={setSettings} />
+                    <DefaultChoice kind="bank" settings={settings.fields} options={liveOptions} actions={scoped} onSaved={setSettings} />
                     <TreeEditor
                       key="banks"
                       initialNodes={bankNodes(bankTree)}
@@ -289,20 +299,20 @@ export function SettingsCenter({
                     />
                   </CardContent>
                 </Card>
-                <BankVisibilitySection key={bankOptions.map((b) => b.id).join(",")} settings={settings.banks} banks={bankOptions} actions={actions} onSaved={setSettings} />
+                <BankVisibilitySection target={scope === "gpay" ? "GPay Transactions" : "Quick Entry"} key={bankOptions.map((b) => b.id).join(",")} settings={settings.banks} banks={bankOptions} actions={scoped} onSaved={setSettings} />
               </>
             ) : null}
 
-            {tab === "switch" ? <SwitchSection key={bankOptions.length} settings={settings.switch} options={liveOptions} banks={bankOptions} actions={actions} onSaved={setSettings} /> : null}
+            {tab === "switch" ? <SwitchSection key={bankOptions.length} settings={settings.switch} options={liveOptions} banks={bankOptions} actions={scoped} onSaved={setSettings} /> : null}
 
             {tab === "split" ? (
               <>
                 <PeopleManager initialPeople={people} actions={actions.people} />
-                <SplitSection settings={settings.split} options={liveOptions} actions={actions} onSaved={setSettings} />
+                <SplitSection settings={settings.split} options={liveOptions} actions={scoped} onSaved={setSettings} />
               </>
             ) : null}
 
-            {tab === "debt" ? <DebtSection settings={settings.debt} options={liveOptions} percentOptions={settings.split.percentOptions} actions={actions} onSaved={setSettings} /> : null}
+            {tab === "debt" ? <DebtSection settings={settings.debt} options={liveOptions} percentOptions={settings.split.percentOptions} actions={scoped} onSaved={setSettings} /> : null}
 
             {tab === "food" ? (
               <>
@@ -313,8 +323,8 @@ export function SettingsCenter({
 
             {tab === "general" ? (
               <>
-                <FieldsSection settings={settings.fields} options={liveOptions} actions={actions} onSaved={setSettings} />
-                <CreditsSection settings={settings.credits} actions={actions} onSaved={setSettings} />
+                <FieldsSection settings={settings.fields} options={liveOptions} actions={scoped} onSaved={setSettings} />
+                <CreditsSection settings={settings.credits} actions={scoped} onSaved={setSettings} />
               </>
             ) : null}
           </div>

@@ -51,7 +51,7 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
           <h2 className="text-sm font-semibold">My Due{o.personalName ? ` · ${o.personalName}` : ""}</h2>
           {!o.personalPartyId ? <p className="text-sm text-muted-foreground">Choose your name above to include your credit portal, shopping and split amounts. Food and monthly expenses are counted already.</p> : null}
 
-          <Part title="Food Rent" totalPaise={o.food.totalPaise} link={{ href: `/food-rent${periodQuery}`, label: "Open Food Rent" }}>
+          <Part title="Food" totalPaise={o.food.totalPaise} link={{ href: `/food${periodQuery}`, label: "Open Food Tracking" }}>
             {o.food.days.length === 0 ? (
               <p className="text-sm text-muted-foreground">No meals in this period.</p>
             ) : (

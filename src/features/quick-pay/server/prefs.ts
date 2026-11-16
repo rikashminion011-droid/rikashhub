@@ -4,17 +4,32 @@ import { MAX_KEYWORDS_PER_CATEGORY, MAX_KEYWORD_LENGTH, keywordKey, type Keyword
 import {
   DEFAULT_SETTINGS,
   SECTION_SCHEMAS,
+  SETTINGS_SECTIONS,
   parseSettings,
   tidyPercents,
   type QuickPaySettingsData,
+  type SettingsScope,
   type SettingsSection,
 } from "../settings-model";
 
 /** Saved Customized Settings (labels and defaults, Split, Credits Added) and the keywords that pick categories. */
 
-export async function getSettings(db: PrismaClient, userId: string): Promise<QuickPaySettingsData> {
+/**
+ * The saved settings. For GPay Transactions, each section that was customized there is used; every other section follows
+ * Quick Entry, so nothing changes until something is set for GPay Transactions.
+ */
+export async function getSettings(db: PrismaClient, userId: string, scope: SettingsScope = "quick-entry"): Promise<QuickPaySettingsData> {
   const row = await db.quickPaySettings.findUnique({ where: { userId } });
-  return row ? parseSettings(row.data) : DEFAULT_SETTINGS;
+  const base = row ? parseSettings(row.data) : DEFAULT_SETTINGS;
+  if (scope === "quick-entry") return base;
+  const own = (row?.gpayData && typeof row.gpayData === "object" && !Array.isArray(row.gpayData) ? row.gpayData : {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...base };
+  for (const section of SETTINGS_SECTIONS) {
+    if (own[section] === undefined) continue;
+    const parsed = SECTION_SCHEMAS[section].safeParse(own[section]);
+    if (parsed.success) out[section] = parsed.data;
+  }
+  return out as unknown as QuickPaySettingsData;
 }
 
 /** Checks that the bank, category and person a setting points at are yours and still exist. */
@@ -42,7 +57,7 @@ async function checkReferences(db: PrismaClient, userId: string, section: Settin
  * Saves one section of the settings (the others are left as they are). The section is validated here, whatever the
  * browser sent, and then everything that reads settings (Quick Entry, the edit pop-up, Add Bulk) uses it.
  */
-export async function saveSettingsSection<K extends SettingsSection>(db: PrismaClient, userId: string, section: K, input: unknown): Promise<QuickPaySettingsData> {
+export async function saveSettingsSection<K extends SettingsSection>(db: PrismaClient, userId: string, section: K, input: unknown, scope: SettingsScope = "quick-entry"): Promise<QuickPaySettingsData> {
   const parsed = SECTION_SCHEMAS[section].safeParse(input);
   if (!parsed.success) throw new ExpenseError(parsed.error.issues[0]?.message ?? "Check the settings and try again.");
   let value = parsed.data as QuickPaySettingsData[SettingsSection];
@@ -60,6 +75,19 @@ export async function saveSettingsSection<K extends SettingsSection>(db: PrismaC
   }
   await checkReferences(db, userId, section, value);
 
+  if (scope === "gpay") {
+    // Only this section is stored for GPay Transactions; Quick Entry is not touched.
+    const row = await db.quickPaySettings.findUnique({ where: { userId } });
+    const own = (row?.gpayData && typeof row.gpayData === "object" && !Array.isArray(row.gpayData) ? row.gpayData : {}) as Record<string, unknown>;
+    const gpayData = { ...own, [section]: value } as unknown as Prisma.InputJsonValue;
+    await db.quickPaySettings.upsert({
+      where: { userId },
+      create: { userId, data: DEFAULT_SETTINGS as unknown as Prisma.InputJsonValue, gpayData },
+      update: { gpayData },
+    });
+    return getSettings(db, userId, "gpay");
+  }
+
   const current = await getSettings(db, userId);
   const next: QuickPaySettingsData = { ...current, [section]: value };
   await db.quickPaySettings.upsert({
@@ -71,7 +99,7 @@ export async function saveSettingsSection<K extends SettingsSection>(db: PrismaC
 }
 
 /** Puts a section back to its defaults. */
-export const resetSettingsSection = (db: PrismaClient, userId: string, section: SettingsSection) => saveSettingsSection(db, userId, section, DEFAULT_SETTINGS[section]);
+export const resetSettingsSection = (db: PrismaClient, userId: string, section: SettingsSection, scope: SettingsScope = "quick-entry") => saveSettingsSection(db, userId, section, DEFAULT_SETTINGS[section], scope);
 
 // ───────────────────────── Keywords ─────────────────────────
 

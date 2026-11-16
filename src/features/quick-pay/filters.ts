@@ -19,6 +19,8 @@ export interface TxFilters {
   types?: TxKind[];
   /** True when "All time" was chosen, so the current month is not applied by default. */
   all?: boolean;
+  /** Oldest first (the default) or newest first. */
+  order?: "asc" | "desc";
 }
 
 export const TX_KINDS = ["DEBIT", "CREDIT", "TRANSFER"] as const;
@@ -67,6 +69,7 @@ export function parseTxFilters(params: SearchParams, options: { defaultMonth?: s
     people: idList(params.people),
     types: [...new Set(first(params.types).split(",").filter((t): t is TxKind => (TX_KINDS as readonly string[]).includes(t)))],
     all,
+    order: first(params.order) === "desc" ? "desc" : "asc",
   };
 }
 
@@ -96,6 +99,7 @@ export function filtersToQuery(filters: TxFilters, options: { page?: boolean } =
   if (filters.people?.length) query.set("people", filters.people.join(","));
   if (filters.types?.length) query.set("types", filters.types.join(","));
   if (filters.all) query.set("all", "1");
+  if (filters.order === "desc") query.set("order", "desc");
   if (options.page && filters.page > 1) query.set("page", String(filters.page));
   return query.toString();
 }

@@ -60,6 +60,7 @@ export function StatementTab({
   actions,
   addPerson,
   today,
+  defaultRange,
   exportHref,
 }: {
   portalId: string;
@@ -72,6 +73,8 @@ export function StatementTab({
   actions: Pick<PortalActions, "importStatement" | "updateStatementEntry" | "deleteStatementEntry" | "setCardInfo">;
   addPerson: (name: string) => Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }>;
   today: string;
+  /** The period shown when none is chosen (HDFC: the 16th to the 15th). Without one, the current month. */
+  defaultRange?: { from: string; to: string };
   exportHref: string;
 }) {
   const router = useRouter();
@@ -98,7 +101,7 @@ export function StatementTab({
 
   return (
     <div className="space-y-4">
-      <PeriodFilter today={today}>
+      <PeriodFilter today={today} defaultRange={defaultRange}>
         <ImportDialog portalId={portalId} portalName={portalName} actions={actions} onDone={() => router.refresh()} />
         <a href={exportHref} className={cn(buttonVariants({ variant: "outline" }))}>
           <Download /> Export

@@ -34,6 +34,7 @@ export function UnbilledTab({
   actions,
   addPerson,
   today,
+  defaultRange,
   exportHref,
 }: {
   portalId: string;
@@ -42,6 +43,8 @@ export function UnbilledTab({
   actions: Pick<PortalActions, "saveUnbilledBulk" | "updateUnbilled" | "deleteUnbilled">;
   addPerson: (name: string) => Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }>;
   today: string;
+  /** The period shown when none is chosen (HDFC: the 16th to the 15th). Without one, the current month. */
+  defaultRange?: { from: string; to: string };
   exportHref: string;
 }) {
   const router = useRouter();
@@ -81,7 +84,7 @@ export function UnbilledTab({
 
   return (
     <div className="space-y-4">
-      <PeriodFilter today={today}>
+      <PeriodFilter today={today} defaultRange={defaultRange}>
         <Button type="button" variant="outline" onClick={() => setSheet(true)}>
           <FilePlus2 /> Add Bulk
         </Button>

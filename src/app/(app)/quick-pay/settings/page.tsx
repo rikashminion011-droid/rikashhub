@@ -42,11 +42,12 @@ export default async function SettingsPage({ searchParams }: PageProps<"/quick-p
   let creditCategories: CategoryTreeNode[];
   let people: PersonRow[];
   let options: QuickPayOptions;
+  let gpayOptions: QuickPayOptions;
   let food: FoodPricing;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    [banks, categories, creditCategories, people, options, food] = await Promise.all([getBankTree(db, user.id), getCategoryTree(db, user.id, "DEBIT"), getCategoryTree(db, user.id, "CREDIT"), listPeople(db, user.id), getQuickPayOptions(db, user.id), getFoodPricing(db, user.id)]);
+    [banks, categories, creditCategories, people, options, gpayOptions, food] = await Promise.all([getBankTree(db, user.id), getCategoryTree(db, user.id, "DEBIT"), getCategoryTree(db, user.id, "CREDIT"), listPeople(db, user.id), getQuickPayOptions(db, user.id), getQuickPayOptions(db, user.id, "gpay"), getFoodPricing(db, user.id)]);
   } catch (error) {
     console.error("[quick-pay] could not load settings", error);
     return (
@@ -75,6 +76,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/quick-p
         creditCategories={creditCategories}
         people={people}
         options={options}
+        gpaySettings={gpayOptions.settings}
         food={food}
         actions={{
           addBank: addBankAction,

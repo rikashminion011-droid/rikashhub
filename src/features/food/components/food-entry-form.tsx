@@ -11,9 +11,13 @@ import { notifyDataChanged } from "@/features/quick-pay/components/period-contex
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
+import { formatDateTime } from "../format";
 import { MAX_NOTES_LENGTH, MEALS, MEAL_LABEL, NIL_NOTES, foodKey, mealForTime, priceNotes, validateFoodEntry, type Meal } from "../pricing";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { FoodPricing } from "../types";
+import type { FoodEntryRow, FoodPricing } from "../types";
+import { CycleButton } from "@/features/quick-pay/components/cycle-button";
+import { nextSwitch } from "@/features/quick-pay/switching";
+import type { SwitchSettings } from "@/features/quick-pay/settings-model";
 
 const newRequestId = () => crypto.randomUUID();
 /** The same separators the server uses to split notes into items, kept so the chosen name replaces only that item. */
@@ -26,10 +30,12 @@ const rupees = (paise: number) => (paise / 100).toFixed(2).replace(/\.00$/, "");
  * 12 pm to 5:30 pm Lunch, after that Dinner). The amount is worked out from your Customize list (else the meal's default
  * price) and can be changed by hand; the server works it out again when no amount is typed.
  */
-export function FoodEntryForm({ actions }: { actions: FoodActions }) {
+export function FoodEntryForm({ actions, notesSwitch }: { actions: FoodActions; notesSwitch: SwitchSettings }) {
   const router = useRouter();
   const [pricing, setPricing] = useState<FoodPricing | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The latest entries of the chosen meal, so a usual item can be picked again.
+  const [recent, setRecent] = useState<FoodEntryRow[]>([]);
   const [meal, setMeal] = useState<Meal>(() => mealForTime(new Date()));
   const [notes, setNotes] = useState("");
   // Nil: no meal was eaten. The notes become Nil and the amount zero.
@@ -62,6 +68,17 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [actions]);
+
+  // The latest entries of the chosen meal. They follow the meal, which starts from the time of day.
+  useEffect(() => {
+    let cancelled = false;
+    void actions.getRecent({ meal }).then((r) => {
+      if (!cancelled && r.ok) setRecent(r.entries);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, meal]);
 
   const quote = useMemo(() => {
     if (!pricing || notes.trim() === "") return null;
@@ -111,6 +128,7 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
     setAmountTyped(false);
     setRequestId(newRequestId());
     notifyDataChanged();
+    void actions.getRecent({ meal }).then((r) => r.ok && setRecent(r.entries));
   }
 
   return (
@@ -125,7 +143,7 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
       >
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-full space-y-1.5 sm:w-44">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
               <label htmlFor="food-meal" className="text-sm font-semibold">Meal</label>
               <label className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold" title="No meal was eaten">
                 <Checkbox
@@ -156,6 +174,7 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
 
           <div className="min-w-0 flex-1 space-y-1.5 basis-48">
             <label htmlFor="food-notes" className="text-sm font-semibold">Notes</label>
+            <div className="flex items-center gap-2">
             <Input
               id="food-notes"
               value={nil ? NIL_NOTES : notes}
@@ -170,8 +189,26 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
                 setNotes(e.target.value);
                 setError(null);
               }}
-              className="h-10 text-base sm:text-sm"
+              className="h-10 min-w-0 flex-1 text-base sm:text-sm"
             />
+            {notesSwitch.enabled ? (
+              <CycleButton
+                label="Switch to the next food item"
+                disabled={nil || (pricing?.meals[meal].items.length ?? 0) < 1}
+                onClick={() => {
+                  const items = pricing?.meals[meal].items ?? [];
+                  const current = items.find((i) => foodKey(i.name) === foodKey(notes))?.id ?? null;
+                  const next = nextSwitch(notesSwitch, items.map((i) => i.id), current);
+                  const chosen = items.find((i) => i.id === next);
+                  if (chosen) {
+                    setNotes(chosen.name);
+                    setAmountTyped(false);
+                    setError(null);
+                  }
+                }}
+              />
+            ) : null}
+            </div>
             {/* The items you priced for this meal are offered as you type; picking one fills in its price */}
             <datalist id="food-items">
               {(pricing?.meals[meal].items ?? []).map((item) => (
@@ -235,6 +272,32 @@ export function FoodEntryForm({ actions }: { actions: FoodActions }) {
                 ? `${MEAL_LABEL[meal]} default price ${formatINR(pricing.meals[meal].defaultPaise)}. Type an item to see its price.`
                 : "Loading prices…")}
         </p>
+        {recent.length > 0 ? (
+          <div className="space-y-1.5" aria-label={`Recent ${MEAL_LABEL[meal]} entries`}>
+            <p className="text-xs font-semibold text-muted-foreground">Recent {MEAL_LABEL[meal]} entries</p>
+            <ul className="flex flex-wrap gap-2">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isNil = foodKey(r.notes) === "nil";
+                      setNil(isNil);
+                      setNotes(isNil ? "" : r.notes);
+                      setAmountTyped(false);
+                      setError(null);
+                    }}
+                    className="min-h-10 rounded-xl border bg-card px-3 py-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    <span className={cn("font-medium", foodKey(r.notes) === "nil" && "font-extrabold")}>{r.notes}</span>
+                    {foodKey(r.notes) === "nil" ? null : <span className="text-muted-foreground"> · {formatINR(r.amountPaise)}</span>}
+                    <span className="block text-[11px] text-muted-foreground">{formatDateTime(new Date(r.occurredAt))}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <Link href="/food/settings" className="inline-block text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
           Customize food items and prices
         </Link>

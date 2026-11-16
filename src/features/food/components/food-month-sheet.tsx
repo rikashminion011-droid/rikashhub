@@ -38,7 +38,7 @@ const monthRows = (month: string): SheetRow[] => {
  * worked out for you. Enter (or Space in an empty box) moves to the next box and then the next row, without adding rows.
  * The three meal columns can be reordered. Nothing is saved until Save.
  */
-export function FoodMonthSheet({ pricing, today, nowTime, initialMonth, back, saveBulk }: { pricing: FoodPricing; today: string; nowTime: string; initialMonth: string; back: "food" | "food-rent"; saveBulk: typeof saveFoodBulkAction }) {
+export function FoodMonthSheet({ pricing, today, nowTime, initialMonth, back, saveBulk }: { pricing: FoodPricing; today: string; nowTime: string; initialMonth: string; back: "food"; saveBulk: typeof saveFoodBulkAction }) {
   const router = useRouter();
   const [month, setMonth] = useState(initialMonth);
   // Each month keeps what was typed in it, so switching months never loses work.
