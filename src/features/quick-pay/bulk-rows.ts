@@ -95,11 +95,41 @@ export function addNextDay(rows: readonly BulkRowInput[], blank: (date: string, 
   return { rows: [...rows, fresh], added: [fresh.key] };
 }
 
-/** How many rows "Add rows" adds, from what was typed: 5 when empty or invalid, at most what still fits. */
+/** How many rows an Add row button adds, from what was typed: 1 when empty or invalid, at most what still fits. */
 export function rowsToAdd(text: string, room: number): number {
   const n = Number.parseInt(text.trim(), 10);
-  const wanted = Number.isFinite(n) && n > 0 ? n : 5;
+  const wanted = Number.isFinite(n) && n > 0 ? n : 1;
   return Math.max(0, Math.min(wanted, room));
+}
+
+export type AddRowsMode = "today" | "last" | "next";
+
+/**
+ * Adds `count` empty rows at the end. Today: dated today, at the time now. Last entry date: the date and time of the last
+ * row. Next day: the day after the last row's date, at its time (a day after today is refused, because a transaction cannot
+ * be dated in the future).
+ */
+export function addRowsAtEnd(
+  rows: readonly BulkRowInput[],
+  mode: AddRowsMode,
+  count: number,
+  blank: (date: string, time: string) => BulkRowInput,
+  today: string,
+  nowTime: string,
+  limit: number,
+): RowChange | { error: string } {
+  if (count < 1) return { rows: [...rows], added: [] };
+  if (rows.length + count > limit) return { error: `A sheet can hold at most ${limit} rows.` };
+  const last = rows.at(-1);
+  let date = today;
+  let time = nowTime;
+  if (mode !== "today" && last) {
+    time = last.time;
+    date = mode === "next" ? shiftDate(last.date, 1) : last.date;
+  }
+  if (date > today) return { error: "The next day is in the future. A transaction cannot be dated after today." };
+  const fresh = Array.from({ length: count }, () => blank(date, time));
+  return { rows: [...rows, ...fresh], added: fresh.map((r) => r.key) };
 }
 
 /** A sheet row as it is on screen: the row itself plus whether its category was picked by a keyword or by you. */

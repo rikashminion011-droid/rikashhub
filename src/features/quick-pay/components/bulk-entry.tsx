@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { BulkDraftActions, saveBulkAction, saveTransferAction } from "../actions";
 import { availablePersons, keywordsFor } from "../availability";
 import { cleanDraftRows, clearLocalDraft, readLocalDraft, writeLocalDraft } from "../bulk-draft";
-import { addNextDay, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type BulkRow, type Direction, type RowChange } from "../bulk-rows";
+import { addRowsAtEnd, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type AddRowsMode, type BulkRow, type Direction, type RowChange } from "../bulk-rows";
 import { groupBanks, groupCategories } from "../cascade";
 import { istTimeOf } from "../datetime";
 import { peopleShares, shareValueOf, type FormShare } from "../entry-state";
@@ -110,9 +110,8 @@ export function BulkEntry({
   const [errors, setErrors] = useState<Record<string, BulkRowErrors>>({});
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [formError, setFormError] = useState<string | null>(null);
-  // How many rows "Add rows" adds (starts at 5), and which date "Add row" gives the new row.
-  const [howMany, setHowMany] = useState("5");
-  const [addMode, setAddMode] = useState<"today" | "next">("today");
+  // How many rows each Add row button adds (1 to begin with).
+  const [howMany, setHowMany] = useState("1");
   const [saving, setSaving] = useState(false);
   // The row whose Bank Through list was used to open Self Transfer; its Debit is the (fixed) amount of the transfer.
   // The transfer stays on that row, and is saved together with every other row when Save All is pressed.
@@ -200,14 +199,11 @@ export function BulkEntry({
   };
 
   // ── Adding rows ──
-  function addRows() {
+  /** Adds the number of rows typed in the box: dated today, on the last row's date, or the day after it. */
+  function addBy(mode: AddRowsMode) {
     const count = rowsToAdd(howMany, MAX_BULK_ROWS - rows.length);
     if (count === 0) return void toast.error(`A sheet can hold at most ${MAX_BULK_ROWS} rows.`);
-    setRows((all) => {
-      const last = all.at(-1);
-      // New rows start from the previous row's date and time, which is what you want when typing a day's entries.
-      return [...all, ...Array.from({ length: count }, () => blankRow(last?.date ?? today, last?.time ?? nowTime))];
-    });
+    apply(addRowsAtEnd(rows, mode, count, (d, t) => blankRow(d, t), today, mode === "today" ? istTimeOf(new Date()) : nowTime, MAX_BULK_ROWS), 2);
   }
 
   /** Self Transfer from a row: the amount is what was typed in that row's Debit, and the transfer cannot change it. */
@@ -235,15 +231,6 @@ export function BulkEntry({
     if ("error" in result) return void toast.error(result.error);
     setRows(result.rows as BulkRow[]);
     focusAfter.current = result.added[0] ? { key: result.added[0], col: focusCol } : null;
-  }
-
-  /** One new row: dated today, or the day after the last row, as chosen beside the button. */
-  function addOne() {
-    if (addMode === "next") return apply(addNextDay(rows, (d, t) => blankRow(d, t), today, MAX_BULK_ROWS), 2);
-    if (rows.length >= MAX_BULK_ROWS) return void toast.error(`A sheet can hold at most ${MAX_BULK_ROWS} rows.`);
-    const fresh = blankRow(today, istTimeOf(new Date()));
-    setRows((all) => [...all, fresh]);
-    focusAfter.current = { key: fresh.key, col: 2 };
   }
 
   function insert(key: string, where: "above" | "below") {
@@ -412,42 +399,8 @@ export function BulkEntry({
 
   return (
     <div className="space-y-3">
-      {/* Everything you press is at the top: add rows, save, and the totals */}
+      {/* Save, cancel and the totals at the top; the buttons that add rows are under the table */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5">
-          <Button type="button" variant="outline" onClick={addOne} disabled={rows.length >= MAX_BULK_ROWS}>
-            <Plus /> Add row
-          </Button>
-          <select
-            aria-label="Date of the new row"
-            value={addMode}
-            onChange={(e) => setAddMode(e.target.value as "today" | "next")}
-            className="h-9 rounded-lg border border-input bg-background px-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
-          >
-            <option value="today">Today</option>
-            <option value="next">Next day</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Button type="button" variant="outline" onClick={addRows} disabled={rows.length >= MAX_BULK_ROWS}>
-            <Plus /> Add rows
-          </Button>
-          <Input
-            inputMode="numeric"
-            aria-label="How many rows to add"
-            title="How many rows to add"
-            value={howMany}
-            onChange={(e) => setHowMany(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
-            onBlur={() => setHowMany((v) => (v.trim() === "" || Number(v) < 1 ? "5" : v))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addRows();
-              }
-            }}
-            className="h-9 w-16 text-center text-base tabular-nums sm:text-sm"
-          />
-        </div>
         <Button type="button" onClick={saveAll} disabled={saving || totals.filled === 0}>
           {saving ? <Loader2 className="animate-spin" /> : null}
           {saving ? "Saving…" : `Save All${totals.filled ? ` (${totals.filled})` : ""}`}
@@ -708,6 +661,26 @@ export function BulkEntry({
             })}
           </tbody>
         </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Add rows">
+        <Button type="button" variant="outline" onClick={() => addBy("today")} disabled={rows.length >= MAX_BULK_ROWS}>
+          <Plus /> Add row (Today)
+        </Button>
+        <Button type="button" variant="outline" onClick={() => addBy("last")} disabled={rows.length >= MAX_BULK_ROWS}>
+          <Plus /> Add row (Last entry date)
+        </Button>
+        <Button type="button" variant="outline" onClick={() => addBy("next")} disabled={rows.length >= MAX_BULK_ROWS}>
+          <Plus /> Add row (Next day)
+        </Button>
+        <Input
+          inputMode="numeric"
+          aria-label="How many rows to add"
+          title="How many rows each button adds"
+          value={howMany}
+          onChange={(e) => setHowMany(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+          onBlur={() => setHowMany((v) => (v.trim() === "" || Number(v) < 1 ? "1" : v))}
+          className="h-9 w-16 text-center text-base tabular-nums sm:text-sm"
+        />
       </div>
       {quickActions.saveTransfer ? (
         <SelfTransferDialog

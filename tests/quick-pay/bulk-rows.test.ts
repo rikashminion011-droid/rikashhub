@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNextDay, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type BulkRow } from "@/features/quick-pay/bulk-rows";
+import { addNextDay, addRowsAtEnd, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type BulkRow } from "@/features/quick-pay/bulk-rows";
 import type { BulkRowInput } from "@/features/quick-pay/validation";
 
 const row = (key: string, over: Partial<BulkRowInput> = {}): BulkRowInput => ({ key, date: "2026-06-01", time: "10:00", debit: "", credit: "", reason: "", accountId: null, categoryId: null, shares: [], ...over });
@@ -122,11 +122,11 @@ describe("Add Next Day and Add rows", () => {
     expect(addNextDay([row("2026-10-01")], blank, "2026-11-13", 1)).toMatchObject({ error: expect.stringContaining("at most") });
   });
   it("adds 5 rows unless another number is typed, and never more than fits", () => {
-    expect(rowsToAdd("", 100)).toBe(5);
-    expect(rowsToAdd("abc", 100)).toBe(5);
+    expect(rowsToAdd("", 100)).toBe(1);
+    expect(rowsToAdd("abc", 100)).toBe(1);
     expect(rowsToAdd("10", 100)).toBe(10);
     expect(rowsToAdd(" 3 ", 100)).toBe(3);
-    expect(rowsToAdd("0", 100)).toBe(5);
+    expect(rowsToAdd("0", 100)).toBe(1);
     expect(rowsToAdd("500", 8)).toBe(8);
     expect(rowsToAdd("5", 0)).toBe(0);
   });
@@ -156,5 +156,31 @@ describe("category rules on a sheet row (as in Quick Entry)", () => {
     expect(rowWithAmounts(r({ categoryId: "food" }), { debit: "60" }).categoryId).toBe("food");
     expect(isCreditRow({ debit: "", credit: "5" })).toBe(true);
     expect(isCreditRow({ debit: "1", credit: "" })).toBe(false);
+  });
+});
+
+describe("addRowsAtEnd", () => {
+  const blank2 = (date: string, time: string) => ({ key: `k${Math.random()}`, date, time, debit: "", credit: "", reason: "", accountId: null, categoryId: null, shares: [] as never[] });
+  const base = [{ ...blank2("2026-10-02", "09:30"), key: "a" }];
+  it("adds as many rows as asked on the last entry date and time", () => {
+    const out = addRowsAtEnd(base, "last", 5, blank2, "2026-11-13", "20:00", 1000);
+    if ("error" in out) throw new Error(out.error);
+    expect(out.rows).toHaveLength(6);
+    expect(out.rows.slice(1).every((r) => r.date === "2026-10-02" && r.time === "09:30")).toBe(true);
+    expect(out.added).toHaveLength(5);
+  });
+  it("adds rows dated today, at the time now", () => {
+    const out = addRowsAtEnd(base, "today", 2, blank2, "2026-11-13", "20:00", 1000);
+    if ("error" in out) throw new Error(out.error);
+    expect(out.rows.slice(1).map((r) => [r.date, r.time])).toEqual([["2026-11-13", "20:00"], ["2026-11-13", "20:00"]]);
+  });
+  it("adds rows on the day after the last row, but not after today", () => {
+    const out = addRowsAtEnd(base, "next", 3, blank2, "2026-11-13", "20:00", 1000);
+    if ("error" in out) throw new Error(out.error);
+    expect(out.rows.slice(1).map((r) => r.date)).toEqual(["2026-10-03", "2026-10-03", "2026-10-03"]);
+    expect(addRowsAtEnd([{ ...base[0]!, date: "2026-11-13" }], "next", 1, blank2, "2026-11-13", "20:00", 1000)).toMatchObject({ error: expect.stringContaining("future") });
+  });
+  it("refuses more rows than the sheet can hold", () => {
+    expect(addRowsAtEnd(base, "last", 5, blank2, "2026-11-13", "20:00", 3)).toMatchObject({ error: expect.stringContaining("at most") });
   });
 });

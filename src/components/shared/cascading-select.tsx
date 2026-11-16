@@ -81,6 +81,50 @@ export function CascadingSelect({
     setOpen(false);
   }
 
+  /**
+   * Arrow keys inside the open list: Up and Down move through the options (Down from the search box goes to the first one), Right
+   * opens the sub names of the option you are on and moves into them, Left comes back out. Enter chooses.
+   */
+  function onListKeys(e: React.KeyboardEvent<HTMLDivElement>) {
+    const keys = ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft"];
+    if (!keys.includes(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    const active = document.activeElement as HTMLElement | null;
+    const popup = e.currentTarget;
+    const top = popup.querySelector<HTMLElement>(`ul[id="${CSS.escape(listId)}"]`);
+    if (!top) return;
+    const buttonsOf = (ul: Element | null) => (ul ? [...ul.querySelectorAll<HTMLElement>(":scope > li > button[role=menuitem]")] : []);
+    const inSub = active?.closest("ul") !== top && active?.closest("ul") !== null && top.contains(active);
+    const here = inSub ? active!.closest("ul")! : top;
+    const list = buttonsOf(here);
+    const at = active ? list.indexOf(active) : -1;
+    const isInput = active instanceof HTMLInputElement;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (isInput) {
+        if (e.key === "ArrowDown") buttonsOf(top)[0]?.focus();
+        return;
+      }
+      if (at < 0) return;
+      if (e.key === "ArrowDown") list[Math.min(at + 1, list.length - 1)]?.focus();
+      else if (at === 0 && !inSub) popup.querySelector<HTMLInputElement>("input")?.focus();
+      else list[Math.max(at - 1, 0)]?.focus();
+      return;
+    }
+    if (e.key === "ArrowRight" && !isInput && active?.getAttribute("aria-haspopup") === "menu") {
+      e.preventDefault();
+      const name = active.textContent?.trim() ?? "";
+      setOpenGroup(name);
+      // The sub names appear after this key press is handled; then the first one is focused.
+      window.setTimeout(() => active.parentElement?.querySelector<HTMLElement>(":scope > ul button[role=menuitem]")?.focus(), 0);
+      return;
+    }
+    if (e.key === "ArrowLeft" && inSub) {
+      e.preventDefault();
+      here.parentElement?.querySelector<HTMLElement>(":scope > button[role=menuitem]")?.focus();
+    }
+  }
+
   const row = "flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent";
 
   return (
@@ -122,7 +166,7 @@ export function CascadingSelect({
       </button>
 
       {open ? (
-        <div data-popup="" className={cn("absolute z-50 mt-1 w-full min-w-60 max-w-[calc(100vw-1rem)] rounded-xl border bg-popover text-popover-foreground shadow-lg", alignRight ? "right-0" : "left-0")}>
+        <div data-popup="" onKeyDown={onListKeys} className={cn("absolute z-50 mt-1 w-full min-w-60 max-w-[calc(100vw-1rem)] rounded-xl border bg-popover text-popover-foreground shadow-lg", alignRight ? "right-0" : "left-0")}>
           <div className="flex items-center gap-2 border-b px-2.5">
             <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
             <input

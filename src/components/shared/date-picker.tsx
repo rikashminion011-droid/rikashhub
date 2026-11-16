@@ -260,6 +260,7 @@ export function TimePicker({
   const [typed, setTyped] = useState<{ field: "hour" | "minute"; text: string } | null>(null);
   const minuteBox = useRef<HTMLInputElement>(null);
   const hourBox = useRef<HTMLInputElement>(null);
+  const meridiemBox = useRef<HTMLButtonElement>(null);
 
   function onOpen(next: boolean) {
     setOpen(next);
@@ -336,7 +337,13 @@ export function TimePicker({
             }}
             onBlur={() => setTyped(null)}
             onChange={(e) => type("hour", e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), minuteBox.current?.focus())}
+            onKeyDown={(e) => {
+              // Enter or Space: on to the minutes.
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                minuteBox.current?.focus();
+              }
+            }}
             className={cn(seg(stage === "hour"), "w-[4.5rem] text-center", badTime("hour") && "bg-red-100 text-red-600")}
           />
           <span className="text-5xl font-light text-muted-foreground">:</span>
@@ -355,6 +362,11 @@ export function TimePicker({
             onBlur={() => setTyped(null)}
             onChange={(e) => type("minute", e.target.value)}
             onKeyDown={(e) => {
+              // Space: on to AM / PM.
+              if (e.key === " ") {
+                e.preventDefault();
+                meridiemBox.current?.focus();
+              }
               if (e.key === "Enter") {
                 e.preventDefault();
                 if (badTime("minute")) return;
@@ -364,7 +376,23 @@ export function TimePicker({
             }}
             className={cn(seg(stage === "minute"), "w-[4.5rem] text-center", badTime("minute") && "bg-red-100 text-red-600")}
           />
-          <span className="ml-2 text-lg font-medium text-muted-foreground">{draft.pm ? "PM" : "AM"}</span>
+          <button
+            ref={meridiemBox}
+            type="button"
+            aria-label={`${draft.pm ? "PM" : "AM"}: press Space to switch`}
+            onClick={() => setDraft((d) => ({ ...d, pm: !d.pm }))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (badTime("hour") || badTime("minute")) return;
+                onChange(fromClock12(draft));
+                setOpen(false);
+              }
+            }}
+            className="ml-2 rounded-lg px-2 py-1 text-lg font-medium text-muted-foreground outline-none hover:bg-muted focus-visible:bg-blue-100 focus-visible:text-blue-600 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {draft.pm ? "PM" : "AM"}
+          </button>
         </div>
         <p className="mb-2 text-center text-xs text-muted-foreground">{badTime("hour") ? "Hours go up to 23" : badTime("minute") ? "Minutes go up to 59" : stage === "hour" ? "Pick or type the hour" : "Pick or type the minute"}</p>
 

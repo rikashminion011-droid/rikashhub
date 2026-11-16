@@ -94,7 +94,22 @@ export function PeoplePicker({
       </button>
 
       {open ? (
-        <div data-popup="" className="absolute left-0 z-50 mt-1 w-full min-w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg">
+        <div
+          data-popup=""
+          onKeyDown={(e) => {
+            // Up and Down move through the people (Down from the search box goes to the first); Space ticks.
+            if ((e.key !== "ArrowDown" && e.key !== "ArrowUp") || e.altKey || e.ctrlKey || e.metaKey) return;
+            const boxes = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=option] [role=checkbox]")];
+            const at = boxes.indexOf(document.activeElement as HTMLElement);
+            e.preventDefault();
+            if (at < 0) {
+              if (e.key === "ArrowDown") boxes[0]?.focus();
+              return;
+            }
+            if (e.key === "ArrowUp" && at === 0) return void e.currentTarget.querySelector<HTMLInputElement>("input")?.focus();
+            boxes[Math.max(0, Math.min(boxes.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
+          }}
+          className="absolute left-0 z-50 mt-1 w-full min-w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg">
           <div className="flex items-center gap-2 border-b px-2.5">
             <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
             <input
