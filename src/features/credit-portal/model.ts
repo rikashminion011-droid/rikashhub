@@ -38,7 +38,10 @@ export function paiseOfText(text: string): number | null {
 
 // A transaction line: "17/09/2026| 20:18 AVENUE SUPERMARTS LIMITCHENNAI C 2,363.00 l". The rupee sign prints as "C"; a "+" in front
 // of it is how the statement marks a credit (shown in green), everything else is a debit (black).
-const LINE = /^(\d{2})\/(\d{2})\/(\d{4})\s*\|\s*(\d{2}):(\d{2})\s+(.+?)\s+(\+\s*)?C\s*([\d,]+(?:\.\d{1,2})?)\s*l?\s*$/;
+// After the amount comes the "l" bullet and sometimes a note the bank prints on that row, glued on with no space, for example
+// "14/11/2026| 17:47 PAYTM RECHARGESNOIDA C 914.91 lOffers on your card". That note is words only (no digits), so the amount is
+// still the last number on the line, and the note is ignored.
+const LINE = /^(\d{2})\/(\d{2})\/(\d{4})\s*\|\s*(\d{2}):(\d{2})\s+(.+?)\s+(\+\s*)?C\s*([\d,]+(?:\.\d{1,2})?)\s*l?(?:\s*[A-Za-z][A-Za-z ]*)?\s*$/;
 
 const normal = (text: string) => text.replace(/\s+/g, " ").trim();
 

@@ -72,6 +72,51 @@ describe("reading an HDFC statement", () => {
   });
 });
 
+describe("a row with a note the bank prints after the amount", () => {
+  const read = (...rows: string[]) => parseHdfcStatement([rows.join("\n")]);
+
+  it("reads PAYTM RECHARGES 914.91 even though 'Offers on your card' is glued after the amount", () => {
+    const out = read("14/11/2026| 17:47 PAYTM RECHARGESNOIDA C 914.91 lOffers on your card");
+    expect(out.skipped).toEqual([]);
+    expect(out.lines).toHaveLength(1);
+    const line = out.lines[0]!;
+    expect(line.details).toBe("PAYTM RECHARGESNOIDA");
+    expect(line.debitPaise).toBe(91491);
+    expect(line.creditPaise).toBe(0);
+    expect(istDateOf(line.occurredAt)).toBe("2026-11-14");
+    expect(istTimeOf(line.occurredAt)).toBe("17:47");
+  });
+
+  it("works for a credit and for other notes the bank prints, with or without the bullet", () => {
+    const out = read(
+      "27/09/2026| 19:15 CREDIT CARD PAYMENTNet Banking + C 20,000.00 lOffers on your card",
+      "12/10/2026| 10:00 ELECTRONICS STORECHENNAI C 12,999.00 lConvert to EMI",
+      "13/10/2026| 11:00 BOOKSHOPMUMBAI C 250.50 Offers on your card",
+    );
+    expect(out.skipped).toEqual([]);
+    expect(out.lines.map((l) => [l.debitPaise, l.creditPaise])).toEqual([[0, 2000000], [1299900, 0], [25050, 0]]);
+  });
+
+  it("still takes the LAST amount on the line, so digits in the details are not mistaken for it", () => {
+    const out = read("04/11/2026| 10:00 NAGAR C 12 STREETDELHI C 500.00 lOffers on your card");
+    expect(out.lines).toHaveLength(1);
+    expect(out.lines[0]).toMatchObject({ details: "NAGAR C 12 STREETDELHI", debitPaise: 50000 });
+  });
+
+  it("a note that contains numbers is not guessed at: the line is reported as unreadable, never saved with a wrong amount", () => {
+    const out = read("14/11/2026| 17:47 PAYTM RECHARGESNOIDA C 914.91 l Cashback 5");
+    expect(out.lines).toEqual([]);
+    expect(out.skipped).toHaveLength(1);
+  });
+
+  it("an identical pair of lines is still told apart, and the same statement gives the same keys twice", () => {
+    const rows = ["14/11/2026| 17:47 PAYTM RECHARGESNOIDA C 914.91 lOffers on your card", "14/11/2026| 17:47 PAYTM RECHARGESNOIDA C 914.91 lOffers on your card"];
+    const a = read(...rows).lines.map((l) => l.key);
+    expect(new Set(a).size).toBe(2);
+    expect(read(...rows).lines.map((l) => l.key)).toEqual(a);
+  });
+});
+
 describe("matching unbilled transactions to statement lines", () => {
   const u = (id: string, date: string, time: string, amount: number, recipients: string[] = ["dhanush"], kind: "DEBIT" | "CREDIT" = "DEBIT") => ({ id, occurredAt: istInstant(date, time), kind, amountPaise: amount, recipientIds: recipients });
 

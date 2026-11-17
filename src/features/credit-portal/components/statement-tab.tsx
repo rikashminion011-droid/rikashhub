@@ -332,9 +332,16 @@ function ImportBody({ portalId, actions, onClose, onDone }: { portalId: string; 
             </p>
           ) : null}
           {preview.skipped.length > 0 ? (
-            <p className="flex items-start gap-2 text-xs text-amber-700">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {preview.skipped.length} line{preview.skipped.length === 1 ? "" : "s"} could not be read and will be left out.
-            </p>
+            <div role="alert" className="space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="flex items-start gap-2 font-medium">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {preview.skipped.length} line{preview.skipped.length === 1 ? "" : "s"} could not be read and will be left out. Add {preview.skipped.length === 1 ? "it" : "them"} by hand:
+              </p>
+              <ul className="list-disc space-y-0.5 pl-9 break-words">
+                {preview.skipped.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <div className="max-h-[50vh] overflow-auto rounded-xl border">
             <table className="w-full text-sm">
