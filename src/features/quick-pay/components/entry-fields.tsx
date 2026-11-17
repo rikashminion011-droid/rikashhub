@@ -170,10 +170,10 @@ export function EntryFields({
           {labels.amount}
         </label>
         <div
-          className="flex min-w-0 overflow-hidden rounded-xl border border-primary/40 bg-primary/5 focus-within:ring-3 focus-within:ring-primary/25 aria-[invalid=true]:border-destructive"
+          className="flex min-w-0 overflow-hidden rounded-xl border border-primary/40 bg-white focus-within:ring-3 focus-within:ring-primary/25 aria-[invalid=true]:border-destructive"
           aria-invalid={!!errors.amount}
         >
-          <span aria-hidden className="flex w-9 items-center justify-center bg-primary/10 text-base text-primary">
+          <span aria-hidden className="flex w-9 items-center justify-center bg-muted text-base text-primary">
             ₹
           </span>
           <Input

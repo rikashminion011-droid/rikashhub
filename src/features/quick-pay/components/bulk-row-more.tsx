@@ -91,7 +91,7 @@ export function BulkRowMore({
         aria-invalid={invalid || undefined}
         className={cn(
           "relative flex h-8 w-full items-center justify-between gap-1 rounded-lg border border-transparent px-2 text-sm font-medium text-primary transition-colors outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive",
-          used && "bg-primary/5",
+          used && "bg-accent",
         )}
       >
         More

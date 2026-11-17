@@ -66,7 +66,7 @@ export function CreditsPanel({
                   aria-checked={on}
                   disabled={!isCredit}
                   onClick={() => onChoose(c.id, !on)}
-                  className={cn("flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none focus-visible:bg-accent", isCredit ? "hover:bg-accent/50" : "opacity-60", on && "bg-primary/5")}
+                  className={cn("flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none focus-visible:bg-accent", isCredit ? "hover:bg-accent/50" : "opacity-60", on && "bg-accent")}
                 >
                   <span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", on ? "border-primary" : "border-input")}>
                     {on ? <span className="size-2 rounded-full bg-primary" /> : null}

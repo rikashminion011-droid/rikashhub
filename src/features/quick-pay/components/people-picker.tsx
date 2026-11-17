@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronsUpDown, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import type { PersonOption } from "../types";
@@ -22,7 +22,13 @@ export function PeoplePicker({
   compact = false,
   single = false,
   emptyLabel,
+  onClose,
 }: {
+  /**
+   * Called when the list closes (Done, a press outside, Escape, or choosing in single mode). Use it to save once, after
+   * everyone has been ticked, instead of on every tick. When given, the list also shows a Done button.
+   */
+  onClose?: () => void;
   /** What shows when nobody is chosen (for example Others). */
   emptyLabel?: string;
   /** Only one person can be chosen: choosing another replaces the first. */
@@ -39,14 +45,23 @@ export function PeoplePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const root = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+  /** Closes the list and lets the caller know, so it can save what was chosen. */
+  const closePicker = useCallback(() => {
+    setOpen(false);
+    onCloseRef.current?.();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: MouseEvent) => {
-      if (root.current && !root.current.contains(event.target as Node)) setOpen(false);
+      if (root.current && !root.current.contains(event.target as Node)) closePicker();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") closePicker();
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -54,7 +69,7 @@ export function PeoplePicker({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, closePicker]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,7 +80,7 @@ export function PeoplePicker({
   const toggle = (id: string, on: boolean) => {
     if (single) {
       onChange(on ? [id] : []);
-      if (on) setOpen(false);
+      if (on) closePicker();
       return;
     }
     onChange(on ? [...new Set([...selected, id])] : selected.filter((x) => x !== id));
@@ -82,7 +97,8 @@ export function PeoplePicker({
         data-invalid={invalid || undefined}
         onClick={() => {
           setQuery("");
-          setOpen((o) => !o);
+          if (open) closePicker();
+          else setOpen(true);
         }}
         className={cn("flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-2.5 text-left text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-invalid:border-destructive sm:text-sm", compact ? "h-8" : "h-10", bare && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background")}
       >
@@ -149,6 +165,13 @@ export function PeoplePicker({
               }}
             />
           </div>
+          {onClose ? (
+            <div className="border-t p-1.5">
+              <button type="button" onClick={closePicker} className="h-9 w-full rounded-md bg-primary text-sm font-semibold text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50">
+                Done
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

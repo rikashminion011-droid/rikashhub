@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { groupCategories } from "@/features/quick-pay/cascade";
-import { PeoplePicker } from "@/features/quick-pay/components/people-picker";
 import type { AddResult } from "@/features/quick-pay/components/inline-add";
 import { formatClock, formatLongDate } from "@/features/quick-pay/date-format";
 import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
@@ -23,6 +22,7 @@ import type { PortalActions } from "../actions";
 import type { StatementSummary } from "../model";
 import type { StatementRow } from "../server/service";
 import { PeriodFilter } from "./period-filter";
+import { RecipientEditor } from "./recipient-editor";
 
 const when = (iso: string) => {
   const d = new Date(iso);
@@ -174,9 +174,7 @@ export function StatementTab({
                     <td className="px-3 py-2.5 text-right font-medium text-red-600 tabular-nums">{r.debitPaise ? formatINR(r.debitPaise) : ""}</td>
                     <td className="px-3 py-2.5 text-right font-medium text-green-600 tabular-nums">{credit ? formatINR(r.creditPaise) : ""}</td>
                     <td className="px-3 py-1.5">
-                      <div className="min-w-44">
-                        <PeoplePicker compact bare ariaLabel={`Recipients of ${r.details}`} people={people} selected={r.recipientIds} onChange={(ids) => void save(r, { recipientIds: ids })} onAddPerson={onAddPerson} />
-                      </div>
+                      <RecipientEditor ariaLabel={`Recipients of ${r.details}`} people={people} value={r.recipientIds} onSave={(ids) => save(r, { recipientIds: ids })} onAddPerson={onAddPerson} />
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="min-w-40">
