@@ -59,7 +59,7 @@ export default async function RecipientPage({ params, searchParams }: PageProps<
     <>
       <PageHeader
         title={person.name}
-        description={`${portal.name}: statement lines and unbilled transactions for this person.`}
+        description={`${portal.name}: statement lines and unbilled transactions for this person. A line shared with others shows this person's part (the amount divided evenly).`}
         actions={
           <Link href={`/credit-cards?portal=${portal.id}&tab=statement`} className={cn(buttonVariants({ variant: "outline" }))}>
             <ChevronLeft /> Back
@@ -94,10 +94,13 @@ export default async function RecipientPage({ params, searchParams }: PageProps<
                     <p className="font-medium break-words">{r.reason || r.details}</p>
                     <p className="text-xs text-muted-foreground">{when(r.occurredAt)}</p>
                   </div>
-                  <p className={cn("shrink-0 font-semibold tabular-nums", r.creditPaise > 0 ? "text-green-600" : "text-red-600")}>
-                    {r.creditPaise > 0 ? "+" : "−"}
-                    {formatINR(r.creditPaise > 0 ? r.creditPaise : r.debitPaise)}
-                  </p>
+                  <div className="shrink-0 text-right">
+                    <p className={cn("font-semibold tabular-nums", r.creditPaise > 0 ? "text-green-600" : "text-red-600")}>
+                      {r.creditPaise > 0 ? "+" : "−"}
+                      {formatINR(r.creditPaise > 0 ? r.creditPaise : r.debitPaise)}
+                    </p>
+                    {r.sharedWith ? <p className="text-[11px] text-muted-foreground tabular-nums">{formatINR(r.fullPaise ?? 0)} ÷ {r.sharedWith}</p> : null}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -116,10 +119,13 @@ export default async function RecipientPage({ params, searchParams }: PageProps<
                     <p className="font-medium break-words">{r.reason || r.details || "Transaction"}</p>
                     <p className="text-xs text-muted-foreground">{when(r.occurredAt)}</p>
                   </div>
-                  <p className={cn("shrink-0 font-semibold tabular-nums", r.kind === "CREDIT" ? "text-green-600" : "text-red-600")}>
-                    {r.kind === "CREDIT" ? "+" : "−"}
-                    {formatINR(r.amountPaise)}
-                  </p>
+                  <div className="shrink-0 text-right">
+                    <p className={cn("font-semibold tabular-nums", r.kind === "CREDIT" ? "text-green-600" : "text-red-600")}>
+                      {r.kind === "CREDIT" ? "+" : "−"}
+                      {formatINR(r.amountPaise)}
+                    </p>
+                    {r.sharedWith ? <p className="text-[11px] text-muted-foreground tabular-nums">{formatINR(r.fullPaise ?? 0)} ÷ {r.sharedWith}</p> : null}
+                  </div>
                 </li>
               ))}
             </ul>

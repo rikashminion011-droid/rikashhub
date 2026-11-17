@@ -1,4 +1,5 @@
 import { istDateOf, istInstant, istTimeOf } from "@/features/quick-pay/datetime";
+import { divideEvenly } from "@/lib/finance";
 
 /**
  * Credit Portal rules that need no database: reading an HDFC credit card statement, matching statement lines to unbilled
@@ -191,6 +192,16 @@ export function utilization(totalPaise: number, usedPaise: number): { usedPercen
   const balancePaise = Math.max(0, totalPaise - usedPaise);
   const usedPercent = totalPaise <= 0 ? 0 : Math.min(100, Math.max(0, Math.round((usedPaise / totalPaise) * 1000) / 10));
   return { usedPercent, balancePaise };
+}
+
+/**
+ * One person's part of a line that is for several people: the amount divided evenly between everyone it is for. Netflix ₹200
+ * for Rikash and Dhanush is ₹100 each; ₹200 for three is ₹66.67, ₹66.67 and ₹66.66. The odd paise go one each to the first
+ * people in the list, exactly as Debt Management shares them, so this report and Debt Management always agree and the parts
+ * always add up to the whole amount. A line for one person is that person's in full; someone not on the line gets 0.
+ */
+export function recipientShare(amountPaise: number, recipientIds: readonly string[], partyId: string): number {
+  return divideEvenly(amountPaise, recipientIds).find((part) => part.id === partyId)?.paise ?? 0;
 }
 
 /** "Mukesh" for one person, "Mukesh +3 More" for four. */

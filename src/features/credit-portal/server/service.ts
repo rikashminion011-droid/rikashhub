@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
 import { rangeToInstants } from "@/features/quick-pay/datetime";
 import { divideEvenly, paiseToDecimalString, toPaise } from "@/lib/finance";
-import { reconcile } from "../model";
+import { reconcile, recipientShare } from "../model";
 
 /**
  * Credit Portal data: portals (cards and pay-later accounts with their limits), unbilled transactions, and imported statement
@@ -34,6 +34,9 @@ export interface UnbilledRow {
   recipientIds: string[];
   /** True once a statement line shows this transaction (it is settled, and no longer counts as unbilled). */
   settled: boolean;
+  /** Only in one person's report, when the line is for several people: how many, and the whole amount that was shared. */
+  sharedWith?: number;
+  fullPaise?: number;
 }
 
 export interface StatementRow {
@@ -48,6 +51,9 @@ export interface StatementRow {
   categoryId: string | null;
   /** True when this line settled an unbilled transaction. */
   settledUnbilled: boolean;
+  /** Only in one person's report, when the line is for several people: how many, and the whole amount that was shared. */
+  sharedWith?: number;
+  fullPaise?: number;
 }
 
 const cleanName = (raw: string) => {
@@ -152,7 +158,7 @@ export async function listUnbilled(db: PrismaClient, userId: string, portalId: s
   const bounds = rangeToInstants(range.from, range.to);
   const rows = await db.creditPortalEntry.findMany({
     where: { userId, portalId, deletedAt: null, ...(bounds.gte || bounds.lt ? { occurredAt: bounds } : {}) },
-    orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
   return rows.map(toUnbilled);
 }
@@ -186,8 +192,10 @@ export async function saveUnbilledBulk(db: PrismaClient, userId: string, portalI
       const keyFor = (r: UnbilledInput) => `cp-bulk:${requestId}:${r.key}`;
       const already = await tx.creditPortalEntry.count({ where: { userId, dedupeKey: { in: rows.map(keyFor) } } });
       if (already > 0) return { count: already, duplicate: true };
+      // Stamped in sheet order, so rows on the same date and time stay in the order they were typed.
+      const stamp = Date.now();
       await tx.creditPortalEntry.createMany({
-        data: rows.map((r) => ({
+        data: rows.map((r, i) => ({
           userId,
           portalId,
           occurredAt: r.occurredAt,
@@ -197,6 +205,7 @@ export async function saveUnbilledBulk(db: PrismaClient, userId: string, portalI
           amount: paiseToDecimalString(r.amountPaise),
           recipientIds: [...new Set(r.recipientIds)],
           dedupeKey: keyFor(r),
+          createdAt: new Date(stamp + i),
         })),
       });
       await reconcilePortal(tx, userId, portalId);
@@ -258,7 +267,7 @@ export async function listStatement(db: PrismaClient, userId: string, portalId: 
   const [rows, settled] = await Promise.all([
     db.creditStatementEntry.findMany({
       where: { userId, portalId, deletedAt: null, ...(bounds.gte || bounds.lt ? { occurredAt: bounds } : {}) },
-      orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     }),
     settledIds(db, userId, portalId),
   ]);
@@ -304,8 +313,11 @@ export async function importStatement(db: PrismaClient, userId: string, portalId
       const existing = new Set((await tx.creditStatementEntry.findMany({ where: { userId, dedupeKey: { in: lines.map(keyFor) } }, select: { dedupeKey: true } })).map((r) => r.dedupeKey));
       const fresh = lines.filter((l) => !existing.has(keyFor(l)));
       if (fresh.length > 0) {
+        // Each line is stamped one millisecond after the one before, so lines printed at the same minute keep the order the
+        // statement prints them in (the list sorts by date, then by this time).
+        const stamp = Date.now();
         await tx.creditStatementEntry.createMany({
-          data: fresh.map((l) => ({
+          data: fresh.map((l, i) => ({
             userId,
             portalId,
             occurredAt: l.occurredAt,
@@ -316,6 +328,7 @@ export async function importStatement(db: PrismaClient, userId: string, portalId
             recipientIds: [...new Set(l.recipientIds)],
             categoryId: l.categoryId,
             dedupeKey: keyFor(l),
+            createdAt: new Date(stamp + i),
           })),
         });
       }
@@ -378,7 +391,11 @@ export async function reconcilePortal(tx: Pick<PrismaClient, "creditPortalEntry"
 
 // ───────────────────────── One recipient ─────────────────────────
 
-/** Everything on a portal for one person: their statement lines and their unbilled transactions that are not settled yet. */
+/**
+ * Everything on a portal for one person: their statement lines and their unbilled transactions that are not settled yet.
+ * A line that is for several people shows this person's share only (the amount divided evenly between them), with
+ * `sharedWith` and `fullPaise` saying how it was shared, so adding up a person's rows never counts the same money twice.
+ */
 export async function listForRecipient(
   db: PrismaClient,
   userId: string,
@@ -393,7 +410,25 @@ export async function listForRecipient(
     db.creditPortalEntry.findMany({ where: { userId, portalId, deletedAt: null, reconciledStatementId: null, recipientIds: { has: partyId }, ...(when ? { occurredAt: when } : {}) }, orderBy: [{ occurredAt: "asc" }] }),
     settledIds(db, userId, portalId),
   ]);
-  return { statement: statementRows.map((r) => toStatement(r, settled)), unbilled: unbilledRows.map(toUnbilled) };
+  const statement = statementRows.map((r): StatementRow => {
+    const row = toStatement(r, settled);
+    const people = row.recipientIds.length;
+    if (people <= 1) return row;
+    return {
+      ...row,
+      debitPaise: recipientShare(row.debitPaise, row.recipientIds, partyId),
+      creditPaise: recipientShare(row.creditPaise, row.recipientIds, partyId),
+      sharedWith: people,
+      fullPaise: row.creditPaise > 0 ? row.creditPaise : row.debitPaise,
+    };
+  });
+  const unbilled = unbilledRows.map((r): UnbilledRow => {
+    const row = toUnbilled(r);
+    const people = row.recipientIds.length;
+    if (people <= 1) return row;
+    return { ...row, amountPaise: recipientShare(row.amountPaise, row.recipientIds, partyId), sharedWith: people, fullPaise: row.amountPaise };
+  });
+  return { statement, unbilled };
 }
 
 // ───────────────────────── For Debt Management ─────────────────────────

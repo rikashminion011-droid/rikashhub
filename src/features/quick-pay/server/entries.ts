@@ -294,10 +294,13 @@ export async function createBulk(
         await resolvePersons(tx, userId, rows.flatMap((r) => r.shares.map((s) => s.partyId)));
 
         const ids = rows.map(() => randomUUID());
+        // Stamped in sheet order, so rows on the same date and time stay in the order they were typed.
+        const stamp = Date.now();
         await tx.transaction.createMany({
           data: rows.map((row, i) => ({
             id: ids[i]!,
             userId,
+            createdAt: new Date(stamp + i),
             // A self transfer row moves money from one bank to another and counts as one transaction.
             ...(row.transfer ? { type: "TRANSFER" as const, accountId: row.accountId, toAccountId: row.transfer.toId } : typeFields(row.type, row.accountId)),
             amount: paiseToDecimalString(row.amountPaise),
@@ -383,7 +386,7 @@ export async function getEntry(db: PrismaClient, userId: string, id: string): Pr
 export async function listEntryIds(db: PrismaClient, userId: string, limit = 500): Promise<string[]> {
   const rows = await db.transaction.findMany({
     where: { userId, quickPay: true, deletedAt: null },
-    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: limit,
     select: { id: true },
   });
@@ -399,7 +402,7 @@ export async function listCreditChoices(db: PrismaClient, userId: string, source
   const creditsOnly = source === "recent_credits" || source === "credit_values";
   const rows = await db.transaction.findMany({
     where: { userId, quickPay: true, deletedAt: null, ...(creditsOnly ? { type: "INCOME" as const } : {}) },
-    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: source === "last_transaction" ? 1 : source === "credit_values" ? 400 : size,
   });
   let mapped: RecentCredit[] = rows.map((r) => ({ id: r.id, type: typeOf(r), amountPaise: paiseOf(r.amount), reason: r.description ?? r.details ?? "", occurredAt: (r.occurredAt ?? r.createdAt).toISOString() }));
@@ -533,7 +536,7 @@ export async function listTransactions(
     where,
     include: includeForRows,
     // Oldest first unless newest first was asked for.
-    orderBy: filters.order === "desc" ? [{ occurredAt: "desc" }, { createdAt: "desc" }] : [{ occurredAt: "asc" }, { createdAt: "asc" }],
+    orderBy: filters.order === "desc" ? [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }] : [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     skip: (page - 1) * size,
     take: size,
   });
@@ -547,7 +550,7 @@ export async function listForExport(db: PrismaClient, userId: string, filters: T
   const rows = await db.transaction.findMany({
     where,
     include: includeForRows,
-    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: limit,
   });
   return { rows: rows.map(toRow), totals, truncated: totals.count > rows.length };

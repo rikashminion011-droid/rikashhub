@@ -10,6 +10,7 @@ import {
   listPortals,
   listStatement,
   listUnbilled,
+  portalShares,
   removePortal,
   renamePortal,
   saveUnbilledBulk,
@@ -103,6 +104,122 @@ describe("unbilled transactions", () => {
     await expect(saveUnbilledBulk(db, ME.id, hdfc, rid(), [unbilled("x", "2026-11-01", "10:00", 0)])).rejects.toThrow();
     await expect(saveUnbilledBulk(db, ME.id, hdfc, rid(), [unbilled("x", "2026-11-01", "10:00", 100, { recipientIds: ["99999999-9999-4999-8999-999999999999"] })])).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(saveUnbilledBulk(db, ME.id, hdfc, rid(), [unbilled("x", "2099-01-01", "10:00", 100)])).rejects.toThrow("future");
+  });
+});
+
+describe("statement lines stay in date order and do not move around", () => {
+  const order = async (portal: string) => (await listStatement(db, ME.id, portal, { from: null, to: null })).rows.map((r) => r.details);
+
+  it("lines printed at the same minute keep the order the statement prints them in", async () => {
+    const portal = await addPortal(db, ME.id, "Order Test");
+    // Four GST rows share the same date and time (as in a real HDFC statement), plus rows on other days.
+    const lines = [
+      line("a", "2026-10-15", "00:00", 1125, { details: "SGST-A" }),
+      line("b", "2026-10-15", "00:00", 405, { details: "CGST-B" }),
+      line("c", "2026-10-15", "00:00", 405, { details: "SGST-C" }),
+      line("d", "2026-10-15", "00:00", 1125, { details: "CGST-D" }),
+      line("e", "2026-10-18", "10:48", 14900, { details: "GOOGLEPLAY" }),
+      line("f", "2026-10-14", "09:00", 500, { details: "EARLIER" }),
+    ];
+    await importStatement(db, ME.id, portal, lines);
+    expect(await order(portal)).toEqual(["EARLIER", "SGST-A", "CGST-B", "SGST-C", "CGST-D", "GOOGLEPLAY"]);
+  });
+
+  it("editing a line (reason, people, category) does not move it, however often the list is read", async () => {
+    const portal = await addPortal(db, ME.id, "Stable Test");
+    await importStatement(db, ME.id, portal, ["a", "b", "c", "d", "e"].map((k) => line(k, "2026-10-15", "00:00", 100, { details: `ROW-${k}` })));
+    const before = await order(portal);
+    expect(before).toEqual(["ROW-a", "ROW-b", "ROW-c", "ROW-d", "ROW-e"]);
+
+    const rows = (await listStatement(db, ME.id, portal, { from: null, to: null })).rows;
+    for (const index of [2, 0, 3, 2, 1]) {
+      const row = rows[index]!;
+      await updateStatementEntry(db, ME.id, row.id, { reason: `edited ${index}`, recipientIds: index % 2 === 0 ? [dhanush, mukesh] : [dhanush], categoryId: null });
+      expect(await order(portal)).toEqual(before);
+    }
+    for (let i = 0; i < 5; i++) expect(await order(portal)).toEqual(before);
+  });
+
+  it("rows that already tie on date and creation time (imported before this fix) are still always listed in one fixed order", async () => {
+    const portal = await addPortal(db, ME.id, "Legacy Test");
+    const sameMoment = new Date("2026-10-15T00:00:00.000Z");
+    // Rows with the same date AND the same creation time are listed by id, and that order never changes when a row is edited.
+    const keys = ["f", "e", "d", "c", "b", "a"];
+    await db.creditStatementEntry.createMany({
+      data: keys.map((k) => ({ id: `00000000-0000-4000-8000-0000000000${k.charCodeAt(0) - 48}`, userId: ME.id, portalId: portal, occurredAt: sameMoment, createdAt: sameMoment, details: `LEGACY-${k}`, debit: "10.00", credit: "0.00", recipientIds: [], dedupeKey: `${portal}|legacy-${k}` })),
+    });
+    const first = await order(portal);
+    expect(first).toEqual(["LEGACY-a", "LEGACY-b", "LEGACY-c", "LEGACY-d", "LEGACY-e", "LEGACY-f"]);
+    const rows = (await listStatement(db, ME.id, portal, { from: null, to: null })).rows;
+    await updateStatementEntry(db, ME.id, rows[3]!.id, { reason: "touched", recipientIds: [mukesh], categoryId: null });
+    await updateStatementEntry(db, ME.id, rows[0]!.id, { reason: "touched too", recipientIds: [], categoryId: null });
+    expect(await order(portal)).toEqual(first);
+  });
+
+  it("unbilled rows typed on the same date and time keep their sheet order", async () => {
+    const portal = await addPortal(db, ME.id, "Unbilled Order");
+    await saveUnbilledBulk(db, ME.id, portal, rid(), ["x1", "x2", "x3", "x4"].map((k) => unbilled(k, "2026-10-20", "10:00", 100, { reason: k })));
+    const reasons = async () => (await listUnbilled(db, ME.id, portal, { from: null, to: null })).map((r) => r.reason);
+    expect(await reasons()).toEqual(["x1", "x2", "x3", "x4"]);
+    const first = (await listUnbilled(db, ME.id, portal, { from: null, to: null }))[1]!;
+    await updateUnbilled(db, ME.id, first.id, { occurredAt: first.occurredAt ? new Date(first.occurredAt) : istInstant("2026-10-20", "10:00"), reason: "x2 edited", kind: "DEBIT", amountPaise: 100, recipientIds: [dhanush] });
+    expect(await reasons()).toEqual(["x1", "x2 edited", "x3", "x4"]);
+  });
+});
+
+describe("a recipient's report shows their share of a line that is for several people", () => {
+  const range = { from: null, to: null };
+  const report = (portal: string, who: string) => listForRecipient(db, ME.id, portal, who, range);
+
+  it("Netflix ₹200 for two people is ₹100 each, not ₹200 each", async () => {
+    const portal = await addPortal(db, ME.id, "Share Two");
+    await importStatement(db, ME.id, portal, [line("n", "2026-10-11", "23:04", 20000, { details: "NETFLIX", recipientIds: [dhanush, mukesh] })]);
+    for (const who of [dhanush, mukesh]) {
+      const r = (await report(portal, who)).statement;
+      expect(r).toHaveLength(1);
+      expect(r[0]).toMatchObject({ debitPaise: 10000, creditPaise: 0, sharedWith: 2, fullPaise: 20000 });
+    }
+  });
+
+  it("₹200 for three people is 200/3 each, the odd paise going to the first two, and the three add up to ₹200", async () => {
+    const third = (await db.expenseParty.create({ data: { userId: ME.id, name: "Third Share", nameKey: "third share" } })).id;
+    const portal = await addPortal(db, ME.id, "Share Three");
+    await importStatement(db, ME.id, portal, [line("t", "2026-10-12", "10:00", 20000, { recipientIds: [dhanush, mukesh, third] })]);
+    const shares = await Promise.all([dhanush, mukesh, third].map(async (who) => (await report(portal, who)).statement[0]!));
+    expect(shares.map((s) => s.debitPaise)).toEqual([6667, 6667, 6666]);
+    expect(shares.reduce((sum, s) => sum + s.debitPaise, 0)).toBe(20000);
+    expect(shares.every((s) => s.sharedWith === 3 && s.fullPaise === 20000)).toBe(true);
+  });
+
+  it("a credit (refund) and an unbilled transaction are shared the same way", async () => {
+    const portal = await addPortal(db, ME.id, "Share Kinds");
+    await importStatement(db, ME.id, portal, [line("r", "2026-10-13", "09:00", 0, { creditPaise: 3000, recipientIds: [dhanush, mukesh] })]);
+    await saveUnbilledBulk(db, ME.id, portal, rid(), [unbilled("u", "2026-10-14", "09:00", 9001, { reason: "Pending", recipientIds: [dhanush, mukesh] })]);
+    const a = await report(portal, dhanush);
+    const b = await report(portal, mukesh);
+    expect(a.statement[0]).toMatchObject({ creditPaise: 1500, debitPaise: 0, sharedWith: 2, fullPaise: 3000 });
+    expect(b.statement[0]).toMatchObject({ creditPaise: 1500, sharedWith: 2 });
+    expect(a.unbilled[0]).toMatchObject({ amountPaise: 4501, sharedWith: 2, fullPaise: 9001 });
+    expect(b.unbilled[0]).toMatchObject({ amountPaise: 4500, sharedWith: 2, fullPaise: 9001 });
+  });
+
+  it("a line for one person is theirs in full, with no sharing note, and a person not on it does not see it", async () => {
+    const portal = await addPortal(db, ME.id, "Share One");
+    await importStatement(db, ME.id, portal, [line("o", "2026-10-15", "09:00", 12345, { recipientIds: [dhanush] })]);
+    const mine = (await report(portal, dhanush)).statement[0]!;
+    expect(mine.debitPaise).toBe(12345);
+    expect(mine.sharedWith).toBeUndefined();
+    expect((await report(portal, mukesh)).statement).toHaveLength(0);
+  });
+
+  it("matches what Debt Management counts for the same person and line", async () => {
+    const portal = await addPortal(db, ME.id, "Share Debt");
+    await importStatement(db, ME.id, portal, [line("d", "2026-10-16", "09:00", 20001, { details: "ODD AMOUNT", recipientIds: [mukesh, dhanush] })]);
+    const debt = (await portalShares(db, ME.id, range)).filter((s) => s.portalId === portal);
+    for (const who of [dhanush, mukesh]) {
+      const inDebt = debt.find((s) => s.partyId === who)!.amountPaise;
+      expect((await report(portal, who)).statement[0]!.debitPaise).toBe(inDebt);
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { istDateOf, istInstant, istTimeOf } from "@/features/quick-pay/datetime";
-import { MAX_POSTING_DAYS, matchScore, paiseOfText, parseHdfcStatement, reconcile, recipientSummary, utilization } from "@/features/credit-portal/model";
+import { MAX_POSTING_DAYS, matchScore, paiseOfText, parseHdfcStatement, recipientShare, reconcile, recipientSummary, utilization } from "@/features/credit-portal/model";
 
 // Lines as the HDFC statement prints them (the rupee sign comes out as "C"; credits have a "+" before it).
 const PAGE1 = `
@@ -114,6 +114,41 @@ describe("a row with a note the bank prints after the amount", () => {
     const a = read(...rows).lines.map((l) => l.key);
     expect(new Set(a).size).toBe(2);
     expect(read(...rows).lines.map((l) => l.key)).toEqual(a);
+  });
+});
+
+describe("one person's share of a line that is for several people", () => {
+  const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  it("Netflix ₹200 for two people is ₹100 each", () => {
+    expect(recipientShare(20000, [A, B], A)).toBe(10000);
+    expect(recipientShare(20000, [A, B], B)).toBe(10000);
+  });
+
+  it("₹200 for three people is 200/3: the odd paise go to the first people, and the parts add up to ₹200", () => {
+    const parts = [A, B, C].map((id) => recipientShare(20000, [A, B, C], id));
+    expect(parts).toEqual([6667, 6667, 6666]);
+    expect(parts.reduce((s, p) => s + p, 0)).toBe(20000);
+  });
+
+  it("a line for one person is theirs in full, and a person who is not on the line gets nothing", () => {
+    expect(recipientShare(20000, [A], A)).toBe(20000);
+    expect(recipientShare(20000, [A, B], C)).toBe(0);
+    expect(recipientShare(20000, [], A)).toBe(0);
+  });
+
+  it("the parts always add up to the whole, for any amount and any number of people", () => {
+    const people = [A, B, C, "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"];
+    for (const amount of [1, 2, 7, 99, 100, 101, 12345, 91491, 6865698]) {
+      for (let n = 1; n <= people.length; n++) {
+        const ids = people.slice(0, n);
+        const parts = ids.map((id) => recipientShare(amount, ids, id));
+        expect(parts.reduce((s, p) => s + p, 0)).toBe(amount);
+        expect(Math.max(...parts) - Math.min(...parts)).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });
 
