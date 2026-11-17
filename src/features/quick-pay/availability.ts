@@ -20,9 +20,20 @@ export function availablePersons(options: Pick<QuickPayOptions, "persons" | "set
   return options.persons.filter((p) => !hidden.has(p.id) || keep.includes(p.id));
 }
 
-/** A Debit and a Credit have separate category lists. */
-export function categoriesFor(options: Pick<QuickPayOptions, "categories" | "creditCategories">, type: EntryType): CategoryOption[] {
-  return type === "CREDIT" ? options.creditCategories : options.categories;
+/**
+ * One list of categories for both a Debit and a Credit: every category, whichever kind it was first created as (the
+ * Debit ones first, in their main and sub order, then the Credit ones). Nothing already saved is lost, and a category
+ * can be used on either kind of entry.
+ */
+export function sharedCategories(debit: readonly CategoryOption[], credit: readonly CategoryOption[]): CategoryOption[] {
+  const seen = new Set<string>();
+  return [...debit, ...credit].filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
+}
+
+/** The categories offered on an entry. A Debit and a Credit share the same list (see `sharedCategories`). */
+export function categoriesFor(options: Pick<QuickPayOptions, "categories" | "creditCategories">, type?: EntryType): CategoryOption[] {
+  void type;
+  return sharedCategories(options.categories, options.creditCategories);
 }
 
 /** The reason keywords that belong to the categories of a Debit, or of a Credit (a word never picks a category of the other kind). */

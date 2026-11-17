@@ -24,10 +24,10 @@ function NavLink({ id, title, pathname, onNavigate }: { id: string; title: strin
         aria-current={active ? "page" : undefined}
         className={cn(
           "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-          active ? "bg-[#fdf1df] text-neutral-950" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+          active ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
         )}
       >
-        <Icon className={cn("size-4 shrink-0", active && "text-amber-500")} aria-hidden />
+        <Icon className={cn("size-4 shrink-0", active && "text-primary")} aria-hidden />
         <span className="min-w-0 truncate">{title}</span>
       </Link>
     </li>

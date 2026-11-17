@@ -208,20 +208,9 @@ export function QuickEntryForm({
 
       <div>
         <form onSubmit={onSubmit} noValidate method="post" className="space-y-3">
-          {current ? null : (
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Date of this entry">
-              <button
-                type="button"
-                aria-pressed={entryDate === today}
-                onClick={() => setEntryDate(today)}
-                className={"h-10 rounded-xl border px-4 text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 " + (entryDate === today ? "border-neutral-900 bg-neutral-900 text-white" : "border-input bg-background hover:bg-muted")}
-              >
-                Today
-              </button>
-              <DatePicker ariaLabel="Choose the date of this entry" value={entryDate} max={today} onChange={(d) => setEntryDate(d || today)} className="h-10 w-52" />
-            </div>
-          )}
           <EntryFields
+            // The date shares the top line with Debit (−), Credit (+) and Self Transfer. Its calendar has a Today shortcut.
+            headerLeft={current ? undefined : <DatePicker hideIcon ariaLabel="Choose the date of this entry" value={entryDate} max={today} onChange={(d) => setEntryDate(d || today)} className="h-10 w-full" />}
             form={form}
             setForm={setForm}
             errors={errors}
@@ -244,7 +233,7 @@ export function QuickEntryForm({
           ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving}>
+            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl text-base" disabled={saving}>
               {saving ? <Loader2 className="animate-spin" /> : <Check />}
               {saving ? "Saving…" : current ? "Update Entry" : "Save Entry"}
             </Button>

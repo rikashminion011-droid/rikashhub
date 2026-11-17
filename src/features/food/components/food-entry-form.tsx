@@ -238,7 +238,7 @@ export function FoodEntryForm({ actions, notesSwitch }: { actions: FoodActions; 
             </div>
           </div>
 
-          <Button type="submit" size="lg" disabled={saving} className="h-10 w-full bg-neutral-950 px-6 text-white hover:bg-neutral-800 sm:w-auto">
+          <Button type="submit" size="lg" disabled={saving} className="h-10 w-full bg-primary px-6 text-white hover:bg-primary/90 sm:w-auto">
             {saving ? <Loader2 className="animate-spin" /> : null}
             {saving ? "Saving…" : "Save"}
           </Button>

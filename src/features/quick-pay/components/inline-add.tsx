@@ -54,7 +54,7 @@ export function InlineAdd({ label, placeholder, onAdd }: { label: string; placeh
           type="button"
           onClick={() => void add()}
           disabled={busy}
-          className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-neutral-900 px-2.5 text-xs font-semibold text-white outline-none hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
+          className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-semibold text-white outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
         >
           {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}
           Add

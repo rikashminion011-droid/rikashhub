@@ -23,7 +23,10 @@ export function CreditsPanel({
   canCycle: cycleEnabled = true,
   source,
   debitAmount,
+  onTurnOff,
 }: {
+  /** Closes Credit History and detaches any chosen credit. */
+  onTurnOff?: () => void;
   credits: RecentCredit[] | null;
   loading: boolean;
   selected: readonly string[];
@@ -63,10 +66,10 @@ export function CreditsPanel({
                   aria-checked={on}
                   disabled={!isCredit}
                   onClick={() => onChoose(c.id, !on)}
-                  className={cn("flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none focus-visible:bg-accent", isCredit ? "hover:bg-accent/50" : "opacity-60", on && "bg-amber-50")}
+                  className={cn("flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none focus-visible:bg-accent", isCredit ? "hover:bg-accent/50" : "opacity-60", on && "bg-primary/5")}
                 >
-                  <span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", on ? "border-neutral-900" : "border-input")}>
-                    {on ? <span className="size-2 rounded-full bg-neutral-900" /> : null}
+                  <span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", on ? "border-primary" : "border-input")}>
+                    {on ? <span className="size-2 rounded-full bg-primary" /> : null}
                   </span>
                   <span className="min-w-0 flex-1 truncate">
                     <span className={isCredit ? "font-semibold tabular-nums text-green-600" : "font-semibold tabular-nums text-red-600"}>
@@ -94,6 +97,11 @@ export function CreditsPanel({
             </span>
           ) : null}
         </p>
+      ) : null}
+      {onTurnOff ? (
+        <button type="button" onClick={onTurnOff} className="text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground">
+          Don&apos;t attach a credit
+        </button>
       ) : null}
     </div>
   );

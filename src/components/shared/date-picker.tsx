@@ -41,9 +41,12 @@ export function DatePicker({
   className,
   compact = false,
   bare = false,
+  hideIcon = false,
 }: {
   /** No box around it: it looks like plain text until hovered or focused (for spreadsheet-style rows). */
   bare?: boolean;
+  /** Leave out the little calendar icon: the date alone is the button. */
+  hideIcon?: boolean;
   value: string;
   onChange: (value: string) => void;
   min?: string;
@@ -100,7 +103,7 @@ export function DatePicker({
               <X className="size-3.5" />
             </span>
           ) : null}
-          <CalendarDays className="size-3.5" aria-hidden />
+          {hideIcon ? null : <CalendarDays className="size-3.5" aria-hidden />}
         </span>
       </Popover.Trigger>
       <PopupShell>
@@ -139,7 +142,7 @@ export function DatePicker({
                 }}
                 className={cn(
                   "mx-auto flex size-9 items-center justify-center rounded-full text-sm tabular-nums transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30",
-                  day === value ? "bg-neutral-950 font-semibold text-white" : "hover:bg-muted",
+                  day === value ? "bg-primary font-semibold text-white" : "hover:bg-muted",
                 )}
               >
                 {Number(day.slice(8))}
@@ -206,7 +209,7 @@ export function MonthPicker({ value, onChange, max, ariaLabel, className, cleara
                   onChange(month);
                   setOpen(false);
                 }}
-                className={cn("h-9 rounded-lg text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30", month === value ? "bg-neutral-950 font-semibold text-white" : "hover:bg-muted")}
+                className={cn("h-9 rounded-lg text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30", month === value ? "bg-primary font-semibold text-white" : "hover:bg-muted")}
               >
                 {name.slice(0, 3)}
               </button>
@@ -564,7 +567,7 @@ export function DateRangePicker({
                 onClick={() => pick(day)}
                 className={cn(
                   "mx-auto flex size-9 items-center justify-center rounded-full text-sm tabular-nums transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30",
-                  end ? "bg-neutral-950 font-semibold text-white" : inside ? "bg-muted" : "hover:bg-muted",
+                  end ? "bg-primary font-semibold text-white" : inside ? "bg-muted" : "hover:bg-muted",
                 )}
               >
                 {Number(day.slice(8))}

@@ -146,14 +146,23 @@ describe("category rules on a sheet row (as in Quick Entry)", () => {
     const chosen = rowWithReason(r({ categoryId: "office", categoryManual: true }), "Tiffin", keywords);
     expect(chosen.categoryId).toBe("office");
   });
-  it("a credit has its own categories: the keywords it is given pick one, and turning a debit into a credit (or back) clears the category", () => {
+  it("a debit and a credit share the categories: keywords pick one for either, and switching between them keeps the category", () => {
     expect(rowWithReason(r({ debit: "", credit: "50" }), "Salary", [{ keyword: "salary", categoryId: "income-salary" }]).categoryId).toBe("income-salary");
-    const dropped = rowWithAmounts(r({ categoryId: "food", categoryAuto: true }), { debit: "", credit: "50" });
-    expect(dropped).toMatchObject({ categoryId: null, categoryAuto: false });
+    const kept = rowWithAmounts(r({ categoryId: "food", categoryAuto: true }), { debit: "", credit: "50" });
+    expect(kept).toMatchObject({ categoryId: "food", categoryAuto: true });
     const back = rowWithAmounts(r({ debit: "", credit: "50", categoryId: "income-salary" }), { credit: "", debit: "60" });
-    expect(back.categoryId).toBeNull();
+    expect(back.categoryId).toBe("income-salary");
     // changing the amount without changing the kind keeps the category
     expect(rowWithAmounts(r({ categoryId: "food" }), { debit: "60" }).categoryId).toBe("food");
+  });
+  it("turning a debit into a credit drops its people and its Debt, because a credit has neither", () => {
+    const shared = r({ debit: "100", shares: [{ partyId: "p1", method: "PERCENT", value: "50" }], splitKind: "DEBT" });
+    expect(rowWithAmounts(shared, { debit: "", credit: "100" })).toMatchObject({ shares: [], splitKind: null });
+    // staying a debit keeps them
+    expect(rowWithAmounts(shared, { debit: "120" })).toMatchObject({ splitKind: "DEBT" });
+    expect(rowWithAmounts(shared, { debit: "120" }).shares).toHaveLength(1);
+    // a credit that stays a credit is left alone
+    expect(rowWithAmounts(r({ credit: "5", creditedById: "p2" }), { credit: "6" }).creditedById).toBe("p2");
     expect(isCreditRow({ debit: "", credit: "5" })).toBe(true);
     expect(isCreditRow({ debit: "1", credit: "" })).toBe(false);
   });

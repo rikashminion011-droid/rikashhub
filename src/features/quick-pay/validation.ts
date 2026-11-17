@@ -165,6 +165,8 @@ export interface BulkRowInput {
   transfer?: { fromId: string; toId: string } | null;
   /** For a Credit row: the person who gave the money. Left out or null means Others. */
   creditedById?: string | null;
+  /** Whether the people in `shares` share this debit (SPLIT, the default) or owe it (DEBT, a Debit only). */
+  splitKind?: "SPLIT" | "DEBT" | null;
 }
 
 export interface BulkRowErrors {
@@ -190,6 +192,8 @@ export interface ValidBulkRow {
   transfer?: { toId: string } | null;
   /** For a Credit row: who credited it, or null (Others). */
   creditedById?: string | null;
+  /** SPLIT or DEBT when `shares` is not empty. */
+  splitKind?: "SPLIT" | "DEBT" | null;
 }
 
 /** A row nobody has typed anything into (the date and time are pre-filled, so they do not count). */
@@ -236,7 +240,9 @@ export function validateBulkRow(row: BulkRowInput, now: Date): { ok: true; value
   } else if (!row.accountId) errors.bank = "Choose a bank.";
 
   let shares: ResolvedShare[] = [];
-  if (!row.transfer && row.shares.length > 0 && !errors.amount) {
+  if (!row.transfer && row.shares.length > 0 && !errors.amount && row.splitKind === "DEBT" && type === "CREDIT") {
+    errors.split = "A Debt can only be added to a Debit.";
+  } else if (!row.transfer && row.shares.length > 0 && !errors.amount) {
     const resolved = resolveShares(amountPaise, row.shares);
     if (resolved.ok) shares = resolved.shares;
     else errors.split = resolved.error;
@@ -247,7 +253,7 @@ export function validateBulkRow(row: BulkRowInput, now: Date): { ok: true; value
     ok: true,
     value: row.transfer
       ? { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.transfer.fromId, categoryId: null, shares: [], transfer: { toId: row.transfer.toId } }
-      : { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.accountId!, categoryId: row.categoryId, shares, transfer: null, creditedById: type === "CREDIT" ? (row.creditedById ?? null) : null },
+      : { key: row.key, type, amountPaise, occurredAt, reason, accountId: row.accountId!, categoryId: row.categoryId, shares, transfer: null, creditedById: type === "CREDIT" ? (row.creditedById ?? null) : null, splitKind: shares.length > 0 ? (row.splitKind === "DEBT" ? "DEBT" : "SPLIT") : null },
   };
 }
 

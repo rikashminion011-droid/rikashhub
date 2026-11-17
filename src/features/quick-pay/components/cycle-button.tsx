@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight } from "lucide-react";
+import { SwapArrowsIcon } from "@/components/shared/swap-icon";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,11 +16,11 @@ export function CycleButton({ label, onClick, disabled = false, className }: { l
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex size-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40",
+        "flex size-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background text-primary transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40",
         className,
       )}
     >
-      <ArrowLeftRight className="size-4" aria-hidden />
+      <SwapArrowsIcon className="size-5" />
     </button>
   );
 }

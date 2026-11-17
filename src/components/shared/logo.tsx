@@ -7,7 +7,7 @@ export function Logo({ className, inverted = false }: { className?: string; inve
         aria-hidden
         className={cn(
           "flex size-8 items-center justify-center rounded-lg text-sm font-semibold tracking-tight",
-          inverted ? "bg-white text-zinc-950" : "bg-foreground text-background",
+          inverted ? "bg-white text-zinc-950" : "bg-primary text-primary-foreground",
         )}
       >
         R

@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowDownToLine, ArrowLeftRight, ArrowUpToLine, Copy, Loader2, MoreVertical, Plus, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, Copy, Loader2, MoreVertical, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CascadingSelect } from "@/components/shared/cascading-select";
+import { SwapArrowsIcon } from "@/components/shared/swap-icon";
 import { DatePicker, TimePicker } from "@/components/shared/date-picker";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { Button } from "@/components/ui/button";
@@ -15,17 +16,20 @@ import { Input } from "@/components/ui/input";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { BulkDraftActions, saveBulkAction, saveTransferAction } from "../actions";
-import { availablePersons, keywordsFor } from "../availability";
+import { keywordsFor } from "../availability";
 import { cleanDraftRows, clearLocalDraft, readLocalDraft, writeLocalDraft } from "../bulk-draft";
 import { addRowsAtEnd, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type AddRowsMode, type BulkRow, type Direction, type RowChange } from "../bulk-rows";
 import { groupBanks, groupCategories } from "../cascade";
 import { istTimeOf } from "../datetime";
-import { peopleShares, shareValueOf, type FormShare } from "../entry-state";
+import { bulkRowTone } from "../row-tone";
+import { nextSwitch } from "../switching";
 import type { QuickPayOptions } from "../types";
-import { MAX_BULK_ROWS, isBlankBulkRow, validateBulk, type BulkRowErrors } from "../validation";
+import { MAX_BULK_ROWS, isBlankBulkRow, validateBulk, type BulkRowErrors, type EntryType } from "../validation";
 import { InlineAdd } from "./inline-add";
-import { PeoplePicker } from "./people-picker";
-import { ShareFields } from "./split-control";
+import { BulkRowMore } from "./bulk-row-more";
+import { CycleButton } from "./cycle-button";
+import { ReasonCategoryDialog } from "./reason-category-dialog";
+import { SelfTransferButton, TypeToggle } from "./type-toggle";
 import { SelfTransferDialog, SelfTransferItem } from "./transfer-dialog";
 import { useQuickAdd, type QuickAddHostActions } from "./use-quick-add";
 
@@ -40,17 +44,8 @@ const blankRow = (date: string, time: string, key = newKey()): BulkRow => ({
 /** The five starting rows. Their keys are fixed (not random) so the server-rendered page and the browser agree. */
 const startingRows = (date: string, time: string) => Array.from({ length: 5 }, (_, i) => blankRow(date, time, `start-${i}`));
 
-const WIDE = "(min-width: 1400px)";
-const subscribe = (notify: () => void) => {
-  const query = window.matchMedia(WIDE);
-  query.addEventListener("change", notify);
-  return () => query.removeEventListener("change", notify);
-};
-/** True where the sheet is a table (a wide screen); smaller screens get a card for each row. */
-const useIsWide = () => useSyncExternalStore(subscribe, () => window.matchMedia(WIDE).matches, () => false);
-
 /** The columns the arrow keys move through, left to right. */
-const COLS = 8;
+const COLS = 6;
 const CONTROL = "input:not(:disabled), button[role=combobox], button[data-grid-control]:not(:disabled)";
 
 const controlIn = (row: Element | null | undefined, col: number): HTMLElement | null => row?.querySelector<HTMLElement>(`td[data-col="${col}"]`)?.querySelector<HTMLElement>(CONTROL) ?? null;
@@ -61,16 +56,6 @@ function focusControl(control: HTMLElement | null) {
   control.scrollIntoView({ block: "nearest", inline: "nearest" });
   // Typing replaces what was there, like a spreadsheet.
   if (control instanceof HTMLInputElement && control.type === "text") control.select();
-}
-
-/** One cell of the grid. On a phone the label shows above the box; on a wide screen the column header does that job. */
-function Cell({ col, label, wide = false, children }: { col: number; label: string; wide?: boolean; children: React.ReactNode }) {
-  return (
-    <td data-col={col} className={cn("px-1 py-1 align-top max-[1399px]:block max-[1399px]:p-0 min-[1400px]:border-r min-[1400px]:border-border/60", wide && "max-[1399px]:col-span-2")}>
-      <span className="mb-1 block text-xs font-medium text-muted-foreground min-[1400px]:hidden">{label}</span>
-      {children}
-    </td>
-  );
 }
 
 /**
@@ -103,12 +88,15 @@ export function BulkEntry({
   const [options, setOptions] = useState(initialOptions);
   const adders = useQuickAdd(quickActions, setOptions);
   const router = useRouter();
-  const wide = useIsWide();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [rows, setRows] = useState<BulkRow[]>(() => startingRows(today, nowTime));
   const [restored, setRestored] = useState(false);
   const [errors, setErrors] = useState<Record<string, BulkRowErrors>>({});
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  // Rows whose Debit/Credit button was pressed while still empty (the amount then decides which it is).
+  const [kinds, setKinds] = useState<Record<string, EntryType>>({});
+  // The row whose Reason is being put under a category.
+  const [assignFor, setAssignFor] = useState<BulkRow | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   // How many rows each Add row button adds (1 to begin with).
   const [howMany, setHowMany] = useState("1");
@@ -123,7 +111,9 @@ export function BulkEntry({
 
   const bankGroups = useMemo(() => groupBanks(options.banks), [options.banks]);
   const categoryGroups = useMemo(() => groupCategories(options.categories), [options.categories]);
-  const creditCategoryGroups = useMemo(() => groupCategories(options.creditCategories), [options.creditCategories]);
+  // The main categories the switch icon steps through (a Debit and a Credit share one list).
+  const mainCategoryIds = useMemo(() => options.categories.filter((c) => !c.isSub).map((c) => c.id), [options.categories]);
+  const switches = options.settings.switch;
 
   // Bring back the draft: the one saved on the server (the same on every device), or this browser's copy if that is newer.
   useEffect(() => {
@@ -302,8 +292,8 @@ export function BulkEntry({
     }
 
     // Space: the next box (amounts), or two spaces in a row in Reason.
-    if (event.key === " " && isInput && (col === 2 || col === 3 || col === 4) && !event.ctrlKey && !event.altKey && !event.metaKey) {
-      if (col === 4) {
+    if (event.key === " " && isInput && (col === 2 || col === 3) && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      if (col === 3) {
         const atEnd = target.selectionStart === target.value.length && target.selectionEnd === target.value.length;
         if (!(target.value.endsWith(" ") && atEnd)) return; // the first space is typed as usual
         const key = tr.id.replace(/^row-/, "");
@@ -334,6 +324,18 @@ export function BulkEntry({
     if (!found) return;
     event.preventDefault();
     focusControl(controlIn(trs[found.row], found.col));
+  }
+
+  // ── Debit or Credit ──
+  /** A row is a Credit when its amount is in Credit, a Debit when it is in Debit; an empty row follows the button last pressed. */
+  const typeOf = (row: BulkRow): EntryType => (row.credit.trim() !== "" && row.debit.trim() === "" ? "CREDIT" : row.debit.trim() !== "" ? "DEBIT" : (kinds[row.key] ?? "DEBIT"));
+
+  /** The − and + buttons: the amount moves to the other column, so what is saved is exactly what the sheet showed. */
+  function setType(row: BulkRow, next: EntryType) {
+    const amount = row.debit.trim() || row.credit.trim();
+    setKinds((k) => ({ ...k, [row.key]: next }));
+    if (amount === "") return void (next === "CREDIT" && update(row.key, { shares: [], splitKind: null }));
+    change(row.key, (r) => rowWithAmounts(r, next === "CREDIT" ? { credit: amount, debit: "" } : { debit: amount, credit: "" }));
   }
 
   // ── Saving ──
@@ -369,9 +371,13 @@ export function BulkEntry({
     toast.success(result.duplicate ? "That sheet was already saved." : `${result.count} transaction${result.count === 1 ? "" : "s"} saved.`, {
       description: "Totals, the table and bank balances are updated.",
     });
+    // The saved rows leave the draft. The server already removed it with the save; this makes the browser's copy and any
+    // draft save still waiting to run agree, so leaving the page right now cannot put the saved rows back.
+    const fresh = startingRows(today, nowTime);
+    latestRows.current = fresh;
     clearLocalDraft();
     void draftActions.clear().catch(() => undefined);
-    setRows(startingRows(today, nowTime));
+    setRows(fresh);
     setSelected(new Set());
     setRequestId(newRequestId());
   }
@@ -390,7 +396,7 @@ export function BulkEntry({
 
   const bad = (key: string, field: keyof BulkRowErrors) => Boolean(errors[key]?.[field]);
   // On a wide screen the boxes are plain (like a spreadsheet); they only show a frame when hovered or focused.
-  const field = cn("h-8 text-base min-[1400px]:text-sm", wide && "border-transparent bg-transparent shadow-none hover:bg-muted/60 focus-visible:bg-background");
+  const field = "h-8 border-transparent bg-transparent text-base shadow-none hover:bg-muted/60 focus-visible:bg-background min-[1400px]:text-sm";
   const count = selected.size;
 
   const menu = (key: string, index: number) => (
@@ -448,214 +454,188 @@ export function BulkEntry({
         )}
       </div>
 
-      <div className="min-[1400px]:rounded-lg min-[1400px]:border min-[1400px]:bg-card">
-        <table className="w-full table-fixed text-sm" onKeyDown={onGridKeyDown}>
-          <colgroup className="max-[1399px]:hidden">
-            <col style={{ width: "3.25rem" }} />
-            <col style={{ width: "12.5rem" }} />
-            <col style={{ width: "7rem" }} />
-            <col style={{ width: "6.5rem" }} />
-            <col style={{ width: "6.5rem" }} />
-            <col />
-            <col style={{ width: "10rem" }} />
+      {/* One line per transaction, with the same choices as Quick Entry. Wider than a phone, so it scrolls sideways there. */}
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="w-full min-w-[88rem] table-fixed text-sm" onKeyDown={onGridKeyDown}>
+          <colgroup>
+            <col style={{ width: "3.5rem" }} />
             <col style={{ width: "11rem" }} />
-            <col style={{ width: "16rem" }} />
-            <col style={{ width: "2.25rem" }} />
+            <col style={{ width: "8rem" }} />
+            <col style={{ width: "8.75rem" }} />
+            <col style={{ width: "7.5rem" }} />
+            <col />
+            <col style={{ width: "14rem" }} />
+            <col style={{ width: "14rem" }} />
+            <col style={{ width: "6.5rem" }} />
+            <col style={{ width: "2.5rem" }} />
           </colgroup>
-          <thead className="hidden border-b bg-muted/50 text-xs text-muted-foreground min-[1400px]:table-header-group">
+          <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
             <tr>
               <th scope="col" className="px-2 py-2 text-left font-medium">
                 <span className="sr-only">Select and row number</span>#
               </th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Date</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Time</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Debit</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Credit</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">
+                <span className="sr-only">Debit or Credit, Self Transfer</span>
+                <span aria-hidden>Debit / Credit</span>
+              </th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Amount</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Reason</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Bank Through</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Category</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Split / Credited By</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Bank Through</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">More</th>
               <th scope="col" className="px-1 py-2">
                 <span className="sr-only">Row actions</span>
               </th>
             </tr>
           </thead>
-          <tbody className="max-[1399px]:block min-[1400px]:divide-y">
+          <tbody className="divide-y">
             {rows.map((row, index) => {
               const e = errors[row.key] ?? {};
-              const hasDebit = row.debit.trim() !== "";
-              const hasCredit = row.credit.trim() !== "";
-              const credit = isCreditRow(row);
+              const type = typeOf(row);
+              const credit = type === "CREDIT";
               const on = selected.has(row.key);
-              const amountPaise = parseAmountInput(hasDebit ? row.debit : row.credit);
-              const shares = row.shares as FormShare[];
-              const people = availablePersons(options, "SPLIT", shares.map((s) => s.partyId));
+              const amountText = credit ? row.credit : row.debit;
+              const amountPaise = parseAmountInput(amountText);
+              const tone = bulkRowTone(row.transfer ? "TRANSFER" : isBlankBulkRow(row) ? null : type);
               return (
                 <tr
                   key={row.key}
                   id={`row-${row.key}`}
                   data-grid-row=""
                   aria-selected={on}
-                  className={cn(
-                    "max-[1399px]:mb-3 max-[1399px]:grid max-[1399px]:grid-cols-2 max-[1399px]:gap-x-2 max-[1399px]:gap-y-2 max-[1399px]:rounded-xl max-[1399px]:border max-[1399px]:bg-card max-[1399px]:p-3",
-                    on && "bg-amber-50/60 max-[1399px]:border-amber-300",
-                    Object.keys(e).length > 0 && "bg-destructive/5",
-                  )}
+                  className={cn("align-top transition-colors", tone, on && "outline-2 -outline-offset-2 outline-primary/60", Object.keys(e).length > 0 && "bg-destructive/5")}
                 >
-                  <td className="px-2 py-2.5 max-[1399px]:col-span-2 max-[1399px]:flex max-[1399px]:items-center max-[1399px]:justify-between max-[1399px]:p-0 min-[1400px]:border-r min-[1400px]:border-border/60">
+                  <td className="border-r border-border/60 px-2 py-2.5">
                     <span className="flex items-center gap-2">
                       <Checkbox checked={on} onCheckedChange={() => toggle(row.key)} aria-label={`Select row ${index + 1}`} />
                       <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
                     </span>
-                    {/* On a phone the menu sits in the card's top corner */}
-                    <span className="min-[1400px]:hidden">{menu(row.key, index)}</span>
                   </td>
-                  <Cell col={0} label="Date">
-                    <DatePicker compact bare={wide} ariaLabel={`Row ${index + 1} date`} value={row.date} max={today} invalid={bad(row.key, "date")} onChange={(d) => update(row.key, { date: d })} />
+                  <td data-col={0} className="border-r border-border/60 px-1 py-1 align-top">
+                    <DatePicker compact bare hideIcon ariaLabel={`Row ${index + 1} date`} value={row.date} max={today} invalid={bad(row.key, "date")} onChange={(d) => update(row.key, { date: d })} />
                     {e.date ? <p className="mt-0.5 text-[11px] text-destructive">{e.date}</p> : null}
-                  </Cell>
-                  <Cell col={1} label="Time">
-                    <TimePicker compact bare={wide} ariaLabel={`Row ${index + 1} time`} value={row.time} invalid={bad(row.key, "time")} onChange={(t) => update(row.key, { time: t })} />
+                  </td>
+                  <td data-col={1} className="border-r border-border/60 px-1 py-1 align-top">
+                    <TimePicker compact bare ariaLabel={`Row ${index + 1} time`} value={row.time} invalid={bad(row.key, "time")} onChange={(t) => update(row.key, { time: t })} />
                     {e.time ? <p className="mt-0.5 text-[11px] text-destructive">{e.time}</p> : null}
-                  </Cell>
-                  <Cell col={2} label="Debit">
+                  </td>
+                  <td className="border-r border-border/60 px-2 py-1 align-top">
+                    <div className="flex items-center gap-1.5">
+                      <TypeToggle size="sm" value={type} onChange={(t) => setType(row, t)} />
+                      {quickActions.saveTransfer ? <SelfTransferButton size="sm" onClick={() => openTransfer(row)} /> : null}
+                    </div>
+                  </td>
+                  <td data-col={2} className="border-r border-border/60 px-1 py-1 align-top">
                     <Input
                       inputMode="decimal"
-                      aria-label={`Row ${index + 1} debit`}
+                      aria-label={`Row ${index + 1} amount`}
                       placeholder="0.00"
-                      value={row.debit}
-                      disabled={hasCredit}
+                      value={amountText}
                       aria-invalid={bad(row.key, "amount")}
-                      onChange={(ev) => change(row.key, (r) => rowWithAmounts(r, { debit: ev.target.value }))}
+                      onChange={(ev) => change(row.key, (r) => rowWithAmounts(r, credit ? { credit: ev.target.value, debit: "" } : { debit: ev.target.value, credit: "" }))}
                       className={cn(field, "text-right tabular-nums")}
-                    />
-                  </Cell>
-                  <Cell col={3} label="Credit">
-                    <Input
-                      inputMode="decimal"
-                      aria-label={`Row ${index + 1} credit`}
-                      placeholder="0.00"
-                      value={row.credit}
-                      disabled={hasDebit}
-                      aria-invalid={bad(row.key, "amount")}
-                      onChange={(ev) => change(row.key, (r) => rowWithAmounts(r, { credit: ev.target.value }))}
-                      className={cn(field, "text-right tabular-nums")}
-                    />
-                  </Cell>
-                  <Cell col={4} label="Reason" wide>
-                    <Input
-                      aria-label={`Row ${index + 1} reason`}
-                      placeholder="Reason"
-                      value={row.reason}
-                      maxLength={200}
-                      onChange={(ev) => change(row.key, (r) => rowWithReason(r, ev.target.value, keywordsFor(options, isCreditRow(r) ? "CREDIT" : "DEBIT")))}
-                      className={field}
                     />
                     {e.amount ? <p className="mt-0.5 text-[11px] text-destructive">{e.amount}</p> : null}
+                  </td>
+                  <td data-col={3} className="border-r border-border/60 px-1 py-1 align-top">
+                    <div className="relative">
+                      <Input
+                        aria-label={`Row ${index + 1} reason`}
+                        placeholder="Reason"
+                        value={row.reason}
+                        maxLength={200}
+                        onChange={(ev) => change(row.key, (r) => rowWithReason(r, ev.target.value, keywordsFor(options, isCreditRow(r) ? "CREDIT" : "DEBIT")))}
+                        className={cn(field, adders.assignReason && "pr-8")}
+                      />
+                      {adders.assignReason ? (
+                        <span className="absolute top-1/2 right-2 -translate-y-1/2" title="Choose which category this reason belongs to">
+                          <Checkbox checked={assignFor?.key === row.key} disabled={row.reason.trim() === ""} onCheckedChange={(next) => setAssignFor(next === true ? row : null)} aria-label={`Row ${index + 1}: put this reason under a category`} />
+                        </span>
+                      ) : null}
+                    </div>
                     {e.reason ? <p className="mt-0.5 text-[11px] text-destructive">{e.reason}</p> : null}
-                  </Cell>
-                  <Cell col={5} label="Bank Through">
+                  </td>
+                  <td data-col={4} className="border-r border-border/60 px-1 py-1 align-top">
                     {row.transfer ? (
-                      <div className="flex h-8 items-center gap-1.5 rounded-md bg-sky-50 px-2 text-sm text-sky-800" title="Self transfer, saved with Save All">
-                        <ArrowLeftRight className="size-3.5 shrink-0" aria-hidden />
+                      <p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <div className="min-w-0 flex-1">
+                          {/* A Debit and a Credit share one list of categories; a keyword in the Reason picks it; a new one can be added here */}
+                          <CascadingSelect
+                            compact
+                            bare
+                            clearable
+                            ariaLabel={`Row ${index + 1} category`}
+                            groups={categoryGroups}
+                            value={row.categoryId}
+                            onChange={(v) => update(row.key, { categoryId: v, categoryManual: true, categoryAuto: false })}
+                            placeholder={row.categoryAuto ? "Category · auto" : "Category"}
+                            searchPlaceholder="Search categories…"
+                            emptyText="No category found. Add one below."
+                            footer={
+                              <InlineAdd
+                                label="New category"
+                                placeholder="Add a category…"
+                                onAdd={async (name) => {
+                                  const added = await adders.addCategory(name, type);
+                                  if (added.ok) update(row.key, { categoryId: added.id, categoryManual: true, categoryAuto: false });
+                                  return added;
+                                }}
+                              />
+                            }
+                          />
+                        </div>
+                        {switches.category.enabled ? (
+                          <CycleButton
+                            label={`Row ${index + 1}: switch to the next category`}
+                            className="size-8"
+                            disabled={mainCategoryIds.length < 2}
+                            onClick={() => update(row.key, { categoryId: nextSwitch(switches.category, mainCategoryIds, row.categoryId), categoryManual: true, categoryAuto: false })}
+                          />
+                        ) : null}
+                      </div>
+                    )}
+                  </td>
+                  <td data-col={5} className="border-r border-border/60 px-1 py-1 align-top">
+                    {row.transfer ? (
+                      <div className="flex h-8 items-center gap-1.5 rounded-md bg-yellow-100 px-2 text-sm text-yellow-900" title="Self transfer, saved with Save All">
+                        <SwapArrowsIcon className="size-4 shrink-0" />
                         <span className="min-w-0 flex-1 truncate">
                           {bankName(options, row.transfer.fromId)} → {bankName(options, row.transfer.toId)}
                         </span>
-                        <button type="button" data-grid-control="" aria-label={`Row ${index + 1}: remove the self transfer`} onClick={() => update(row.key, { transfer: null, accountId: null })} className="rounded p-0.5 hover:bg-sky-100">
+                        <button type="button" data-grid-control="" aria-label={`Row ${index + 1}: remove the self transfer`} onClick={() => update(row.key, { transfer: null, accountId: null })} className="rounded p-0.5 hover:bg-yellow-200">
                           <X className="size-3.5" aria-hidden />
                         </button>
                       </div>
                     ) : (
-                    <CascadingSelect compact bare={wide} ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} footer={quickActions.saveTransfer ? <SelfTransferItem onOpen={() => openTransfer(row)} /> : undefined} />
+                      <div className="flex items-center gap-1">
+                        <div className="min-w-0 flex-1">
+                          <CascadingSelect compact bare ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} footer={quickActions.saveTransfer ? <SelfTransferItem onOpen={() => openTransfer(row)} /> : undefined} />
+                        </div>
+                        {switches.bank.enabled ? (
+                          <CycleButton
+                            label={`Row ${index + 1}: switch to the next bank`}
+                            className="size-8"
+                            disabled={options.banks.length < 2}
+                            onClick={() => update(row.key, { accountId: nextSwitch(switches.bank, options.banks.map((b) => b.id), row.accountId) })}
+                          />
+                        ) : null}
+                      </div>
                     )}
                     {e.bank ? <p className="mt-0.5 text-[11px] text-destructive">{e.bank}</p> : null}
-                  </Cell>
-                  <Cell col={6} label="Category">
-                    {row.transfer ? (<p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>) : (<>
-                    {/* As in Quick Entry: a Debit and a Credit have different categories; a keyword in the Reason picks it; a new one can be added here */}
-                    <CascadingSelect
-                      compact
-                      bare={wide}
-                      clearable
-                      ariaLabel={`Row ${index + 1} category`}
-                      groups={credit ? creditCategoryGroups : categoryGroups}
-                      value={row.categoryId}
-                      onChange={(v) => update(row.key, { categoryId: v, categoryManual: true, categoryAuto: false })}
-                      placeholder={row.categoryAuto ? "Category · auto" : "Category"}
-                      searchPlaceholder="Search categories…"
-                      emptyText="No category found. Add one below."
-                      footer={
-                        <InlineAdd
-                          label="New category"
-                          placeholder="Add a category…"
-                          onAdd={async (name) => {
-                            const added = await adders.addCategory(name, credit ? "CREDIT" : "DEBIT");
-                            if (added.ok) update(row.key, { categoryId: added.id, categoryManual: true, categoryAuto: false });
-                            return added;
-                          }}
-                        />
-                      }
-                    />
-
-                  </>)}
-                  </Cell>
-                  <Cell col={7} label={credit ? "Credited By" : "Split"} wide>
-                    {row.transfer ? (<p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>) : credit ? (
-                      // A credit has no split: it says who gave the money (Others when nobody is chosen).
-                      <PeoplePicker
-                        compact
-                        bare={wide}
-                        single
-                        emptyLabel="Others"
-                        ariaLabel={`Row ${index + 1} credited by`}
-                        people={people}
-                        selected={row.creditedById ? [row.creditedById] : []}
-                        onChange={(ids) => update(row.key, { creditedById: ids[0] ?? null })}
-                        onAddPerson={async (name) => adders.addPerson(name)}
-                      />
-                    ) : (<>
-                    {/* As in Quick Entry: pick people; each gets a percentage and an amount */}
-                    <PeoplePicker
-                      compact
-                      bare={wide}
-                      ariaLabel={`Row ${index + 1} split`}
-                      people={people}
-                      selected={shares.map((s) => s.partyId)}
-                      invalid={bad(row.key, "split")}
-                      onChange={(ids) => update(row.key, { shares: peopleShares(shares, ids, "SPLIT", options.settings) })}
-                      onAddPerson={async (name) => adders.addPerson(name)}
-                    />
-                    {shares.length > 0 ? (
-                      <ul className="mt-1 space-y-1" aria-label={`Row ${index + 1} shares`}>
-                        {shares.map((share) => {
-                          const name = options.persons.find((p) => p.id === share.partyId)?.name ?? "Person";
-                          return (
-                            <li key={share.partyId} className="flex items-center gap-1.5">
-                              {shares.length > 1 ? (
-                                <span className="min-w-0 flex-1 truncate text-xs font-medium" title={name}>
-                                  {name}
-                                </span>
-                              ) : null}
-                              <ShareFields
-                                compact
-                                share={share}
-                                name={name}
-                                amountPaise={amountPaise}
-                                savedPaise={null}
-                                percentOptions={options.settings.split.percentOptions}
-                                showPercent={options.settings.split.showPercent}
-                                showAmount={options.settings.split.showAmount}
-                                onChange={(method, value) => update(row.key, { shares: shareValueOf(shares, share.partyId, method, value) })}
-                              />
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : null}
+                  </td>
+                  <td className="border-r border-border/60 px-1 py-1 align-top">
+                    {row.transfer ? (
+                      <p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>
+                    ) : (
+                      <BulkRowMore row={row} index={index} credit={credit} amountPaise={amountPaise} options={options} invalid={bad(row.key, "split")} onChange={(changes) => update(row.key, changes)} onAddPerson={async (name) => adders.addPerson(name)} />
+                    )}
                     {e.split ? <p className="mt-0.5 text-[11px] text-destructive">{e.split}</p> : null}
-                  </>)}
-                  </Cell>
-                  <td className={cn("px-1 py-1 align-top max-[1399px]:hidden")}>{menu(row.key, index)}</td>
+                  </td>
+                  <td className="px-1 py-1 align-top">{menu(row.key, index)}</td>
                 </tr>
               );
             })}
@@ -700,6 +680,22 @@ export function BulkEntry({
           fixedAmount={transferFor ? (transferFor.debit.trim() || transferFor.credit.trim()) : undefined}
           initialReason={transferFor?.reason}
           initial={transferFor?.transfer ? { fromId: transferFor.transfer.fromId, toId: transferFor.transfer.toId } : undefined}
+        />
+      ) : null}
+      {adders.assignReason ? (
+        <ReasonCategoryDialog
+          open={assignFor !== null}
+          onOpenChange={(open) => !open && setAssignFor(null)}
+          reason={assignFor?.reason.trim() ?? ""}
+          categories={options.categories}
+          currentId={assignFor?.categoryId ?? null}
+          onAssign={async (input) => {
+            if (!assignFor) return null;
+            const done = await adders.assignReason!(assignFor.reason.trim(), typeOf(assignFor), input);
+            if (!done.ok) return done.error;
+            update(assignFor.key, { categoryId: done.categoryId, categoryManual: true, categoryAuto: false });
+            return null;
+          }}
         />
       ) : null}
       <ConfirmDialog

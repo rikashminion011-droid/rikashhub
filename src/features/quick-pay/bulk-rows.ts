@@ -152,10 +152,13 @@ export function rowWithReason<T extends BulkRow>(row: T, reason: string, keyword
   return next;
 }
 
-/** The row after an amount is typed. When it turns from a debit into a credit (or back) its category is dropped, because the two kinds have different categories. */
+/**
+ * The row after an amount is typed. A Debit and a Credit share one list of categories, so the category stays when a row turns
+ * from a debit into a credit (or back). A credit has no people to split with and no Debt, so those are dropped.
+ */
 export function rowWithAmounts<T extends BulkRow>(row: T, changes: Partial<Pick<BulkRowInput, "debit" | "credit">>): T {
   const next = { ...row, ...changes };
-  return isCreditRow(next) !== isCreditRow(row) ? { ...next, categoryId: null, categoryAuto: false, categoryManual: false } : next;
+  return isCreditRow(next) && !isCreditRow(row) ? { ...next, shares: [], splitKind: null } : next;
 }
 
 /** How many rows of a sheet have something typed in them. Reads rows loosely, so a damaged saved draft cannot break it. */

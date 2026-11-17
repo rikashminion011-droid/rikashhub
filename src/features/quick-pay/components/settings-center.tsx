@@ -12,6 +12,7 @@ import { PeopleManager } from "@/features/users/components/people-manager";
 import type { PersonRow } from "@/features/users/types";
 import { cn } from "@/lib/utils";
 import type { addBankAction, addCategoryAction, addSubBankAction, addSubCategoryAction, removeBankAction, removeCategoryAction, renameBankAction, renameCategoryAction, setKeywordsAction } from "../actions";
+import { sharedCategories } from "../availability";
 import type { QuickPaySettingsData } from "../settings-model";
 import { SETTINGS_PAGES, type SettingsPage, type SettingsTab } from "../settings-tabs";
 import type { BankOption, BankTreeNode, CategoryTreeNode, QuickPayOptions } from "../types";
@@ -125,7 +126,9 @@ export function SettingsCenter({
       { id: m.id, label: m.name, mainName: m.name, name: m.name, isSub: false },
       ...m.subs.map((s) => ({ id: s.id, label: `${m.name} → ${s.name}`, mainName: m.name, name: s.name, isSub: true })),
     ]);
-  const liveOptions: QuickPayOptions = { ...options, settings, banks: bankOptions, categories: categoryOptions, creditCategories: toOptions(creditTree) };
+  // A Debit and a Credit share one list of categories (the Debit and Credit tabs below still manage them separately).
+  const sharedOptions = sharedCategories(categoryOptions, toOptions(creditTree));
+  const liveOptions: QuickPayOptions = { ...options, settings, banks: bankOptions, categories: sharedOptions, creditCategories: sharedOptions };
   const shownTree = catKind === "CREDIT" ? creditTree : categories;
 
   return (
@@ -177,7 +180,7 @@ export function SettingsCenter({
                     onClick={() => choose(id)}
                     className={cn(
                       "flex h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
-                      tab === id ? "bg-neutral-950 text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
+                      tab === id ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
                     )}
                   >
                     <Icon className="size-4 shrink-0" aria-hidden />
@@ -205,7 +208,7 @@ export function SettingsCenter({
                       role="radio"
                       aria-checked={catKind === kind}
                       onClick={() => setCatKind(kind)}
-                      className={cn("h-9 rounded-lg px-4 text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50", catKind === kind ? "bg-neutral-950 text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground")}
+                      className={cn("h-9 rounded-lg px-4 text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50", catKind === kind ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground")}
                     >
                       {label}
                     </button>

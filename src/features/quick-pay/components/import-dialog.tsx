@@ -349,7 +349,7 @@ function ResultTabs({
             role="tab"
             aria-selected={filter === t.id}
             onClick={() => setFilter(t.id)}
-            className={cn("rounded-full border px-3 py-1 text-xs font-medium", filter === t.id ? "border-neutral-950 bg-neutral-950 text-white" : "text-muted-foreground hover:bg-muted")}
+            className={cn("rounded-full border px-3 py-1 text-xs font-medium", filter === t.id ? "border-primary bg-primary text-white" : "text-muted-foreground hover:bg-muted")}
           >
             {t.label} <span className="tabular-nums">{t.count}</span>
           </button>

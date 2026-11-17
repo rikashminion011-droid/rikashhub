@@ -2,6 +2,7 @@
 
 import { CycleButton } from "./cycle-button";
 import { PeoplePicker } from "./people-picker";
+import { PersonChips } from "./person-chips";
 import type { AddResult } from "./inline-add";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ export function SplitControl({
   clearError,
   idPrefix,
   onAddPerson,
+  chips = false,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -37,6 +39,8 @@ export function SplitControl({
   clearError: (key: keyof QuickPayErrors) => void;
   idPrefix: string;
   onAddPerson: (name: string) => Promise<AddResult>;
+  /** Show every person as a chip right here, instead of a dropdown to open. */
+  chips?: boolean;
 }) {
   const { percentOptions } = options.settings.split;
   const kind = form.splitKind ?? "SPLIT";
@@ -55,20 +59,16 @@ export function SplitControl({
     clearError("splitValue");
   };
 
-  const picker = (
-    <PeoplePicker
-      ariaLabel={kind === "DEBT" ? "Who owes this" : "Split with"}
-      people={people}
-      selected={chosenIds}
-      invalid={!!errors.split}
-      single={kind === "DEBT"}
-      onChange={(ids) => {
-        setForm((f) => withPeople(f, ids, options.settings));
-        clearError("split");
-        clearError("splitValue");
-      }}
-      onAddPerson={onAddPerson}
-    />
+  const onPeople = (ids: string[]) => {
+    setForm((f) => withPeople(f, ids, options.settings));
+    clearError("split");
+    clearError("splitValue");
+  };
+  const ariaLabel = kind === "DEBT" ? "Who owes this" : "Split with";
+  const picker = chips ? (
+    <PersonChips ariaLabel={ariaLabel} people={people} selected={chosenIds} invalid={!!errors.split} single={kind === "DEBT"} onChange={onPeople} onAddPerson={onAddPerson} />
+  ) : (
+    <PeoplePicker ariaLabel={ariaLabel} people={people} selected={chosenIds} invalid={!!errors.split} single={kind === "DEBT"} onChange={onPeople} onAddPerson={onAddPerson} />
   );
   const cycle = switchConfig.enabled ? (
     <CycleButton
@@ -84,21 +84,29 @@ export function SplitControl({
 
   return (
     <div id={`${idPrefix}-field-split`} className="scroll-mt-24 space-y-2">
-      <div className="flex items-center gap-2">
+      <div className={chips ? "space-y-2" : "flex items-center gap-2"}>
         <div className="min-w-0 flex-1">{picker}</div>
         {form.shares.length === 1 ? (
-          <ShareFields
-            share={form.shares[0]!}
-            name={nameOf(form.shares[0]!.partyId)}
-            amountPaise={amountPaise}
-            savedPaise={totals?.ok ? (totals.shares[0]?.sharePaise ?? null) : null}
-            percentOptions={percentOptions}
-            showPercent={showPercent}
-            showAmount={showAmount}
-            onChange={edit(form.shares[0]!)}
-          />
+          <div className={chips ? "flex items-center gap-2" : "contents"}>
+            {chips ? (
+              <span className="min-w-0 flex-1 truncate text-sm font-medium" title={nameOf(form.shares[0]!.partyId)}>
+                {nameOf(form.shares[0]!.partyId)}
+              </span>
+            ) : null}
+            <ShareFields
+              share={form.shares[0]!}
+              name={nameOf(form.shares[0]!.partyId)}
+              amountPaise={amountPaise}
+              savedPaise={totals?.ok ? (totals.shares[0]?.sharePaise ?? null) : null}
+              percentOptions={percentOptions}
+              showPercent={showPercent}
+              showAmount={showAmount}
+              onChange={edit(form.shares[0]!)}
+            />
+            {chips ? cycle : null}
+          </div>
         ) : null}
-        {cycle}
+        {chips ? null : cycle}
       </div>
 
       {several ? (

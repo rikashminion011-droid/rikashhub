@@ -576,28 +576,36 @@ describe("GPay Transactions: several filters at once", () => {
   });
 });
 
-describe("Debit categories and Credit categories are separate lists", () => {
-  it("a credit has its own categories, listed apart from the debit ones", async () => {
+describe("Debit and Credit share one list of categories", () => {
+  it("a category added as a credit one is offered to a debit too, and the other way round", async () => {
     const before = await options();
     const salary = await addMainCategory(db, ME.id, { name: "Salary", kind: "CREDIT" });
     const after = await options();
+    // Both lists hold every category.
+    expect(after.categories.map((c) => c.label)).toContain("Salary");
     expect(after.creditCategories.map((c) => c.label)).toContain("Salary");
-    expect(after.categories.map((c) => c.label)).not.toContain("Salary");
-    expect(before.creditCategories.map((c) => c.id)).not.toContain(salary);
+    expect(after.categories.map((c) => c.id)).toEqual(after.creditCategories.map((c) => c.id));
+    expect(before.categories.map((c) => c.id)).not.toContain(salary);
+    expect(after.categories.map((c) => c.label)).toContain("Food");
+    // Settings still keeps the two trees apart for managing them.
     expect((await getCategoryTree(db, ME.id, "CREDIT")).map((n) => n.name)).toContain("Salary");
     expect((await getCategoryTree(db, ME.id, "DEBIT")).map((n) => n.name)).not.toContain("Salary");
   });
 
-  it("a credit can use a credit category but not a debit one, and a debit the other way round", async () => {
+  it("either kind of category can be used on either kind of entry, but never someone else's", async () => {
     const o = await options();
     const hdfc = bank(o, "HDFC");
     const incomeCat = (await options()).creditCategories.find((c) => c.label === "Salary")!.id;
     const debitCat = cat(o, "Food");
-    const ok = await createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "CREDIT", categoryId: incomeCat, reason: "pay" }), istInstant("2026-12-10", "09:00"));
-    expect((await getEntry(db, ME.id, ok.id))!.categoryId).toBe(incomeCat);
-    await expect(createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "CREDIT", categoryId: debitCat }))).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "DEBIT", categoryId: incomeCat }))).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(createBulk(db, ME.id, rid(), [row2(o, 1) && { ...row2(o, 1), type: "CREDIT" as const, categoryId: debitCat }])).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const credit = await createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "CREDIT", categoryId: debitCat, reason: "refund" }), istInstant("2026-12-10", "09:00"));
+    expect((await getEntry(db, ME.id, credit.id))!.categoryId).toBe(debitCat);
+    const debit = await createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "DEBIT", categoryId: incomeCat, reason: "lunch" }), istInstant("2026-12-10", "10:00"));
+    expect((await getEntry(db, ME.id, debit.id))!.categoryId).toBe(incomeCat);
+    await expect(createBulk(db, ME.id, rid(), [{ ...row2(o, 1), type: "CREDIT" as const, categoryId: debitCat }])).resolves.toMatchObject({ count: 1 });
+
+    const theirs = await options(OTHER.id);
+    await expect(createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "CREDIT", categoryId: cat(theirs, "Food") }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(createEntry(db, ME.id, rid(), entry({ accountId: hdfc, type: "DEBIT", categoryId: cat(theirs, "Food") }))).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 
@@ -630,6 +638,27 @@ describe("self transfers saved with the rest of an Add Bulk sheet", () => {
   });
 });
 
+describe("Debt to on an Add Bulk sheet", () => {
+  it("saves a row marked Debt as a debt, a row marked Split as a split, and a plain row as neither", async () => {
+    const o = await options();
+    const mukesh = person(o, "Mukesh");
+    const saved = await createBulk(db, ME.id, rid(), [
+      { ...row2(o, 11), amountPaise: 10000, reason: "bulk-debt", shares: [{ partyId: mukesh, sharePaise: 10000, percent: 100 }], splitKind: "DEBT" },
+      { ...row2(o, 12), amountPaise: 8000, reason: "bulk-split", shares: [{ partyId: mukesh, sharePaise: 4000, percent: 50 }], splitKind: "SPLIT" },
+      { ...row2(o, 13), amountPaise: 500, reason: "bulk-plain" },
+    ]);
+    expect(saved).toMatchObject({ count: 3, duplicate: false });
+    const rows = await db.transaction.findMany({ where: { userId: ME.id, description: { in: ["bulk-debt", "bulk-split", "bulk-plain"] } }, include: { splits: true } });
+    const by = (reason: string) => rows.find((r) => r.description === reason)!;
+    expect(by("bulk-debt")).toMatchObject({ isSplit: true, splitKind: "DEBT" });
+    expect(by("bulk-split")).toMatchObject({ isSplit: true, splitKind: "SPLIT" });
+    expect(by("bulk-plain")).toMatchObject({ isSplit: false, splitKind: null });
+    // The people's shares are written the same way for both: the person's part, and the rest stays with you.
+    expect(by("bulk-debt").splits.some((s) => s.partyId === mukesh && s.amount.toString() === "100")).toBe(true);
+    expect(by("bulk-split").splits.some((s) => s.partyId === mukesh && s.amount.toString() === "40")).toBe(true);
+  });
+});
+
 describe("the Add Bulk draft kept on the server", () => {
   const draftRows = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `d${i}`, date: "2026-11-01", time: "10:00", debit: "10", credit: "", reason: `draft ${i}`, accountId: null, categoryId: null, shares: [] }));
 
@@ -653,6 +682,34 @@ describe("the Add Bulk draft kept on the server", () => {
     await clearBulkDraft(db, OTHER.id);
     expect(await getBulkDraft(db, OTHER.id)).toBeNull();
     expect((await getBulkDraft(db, ME.id))!.count).toBe(2);
+  });
+
+  it("saving the sheet takes its rows out of the draft, for good, and only for the person who saved", async () => {
+    const o = await options();
+    await saveBulkDraft(db, ME.id, draftRows(3));
+    await saveBulkDraft(db, OTHER.id, draftRows(4));
+    const requestId = rid();
+    const rows = [row2(o, 1), row2(o, 2)];
+    const saved = await createBulk(db, ME.id, requestId, rows);
+    expect(saved).toMatchObject({ count: 2, duplicate: false });
+    expect(await getBulkDraft(db, ME.id)).toBeNull();
+    expect(await getBulkDraftCount(db, ME.id)).toBe(0);
+    // Someone else's draft is not touched.
+    expect(await getBulkDraftCount(db, OTHER.id)).toBe(4);
+
+    // A retry of the same sheet (double click, bad connection) saves nothing more and a draft kept by a late save is cleared too.
+    await saveBulkDraft(db, ME.id, draftRows(2));
+    expect(await createBulk(db, ME.id, requestId, rows)).toMatchObject({ duplicate: true });
+    expect(await getBulkDraft(db, ME.id)).toBeNull();
+    await clearBulkDraft(db, OTHER.id);
+  });
+
+  it("a sheet that fails to save stays in the draft", async () => {
+    const o = await options();
+    await saveBulkDraft(db, ME.id, draftRows(3));
+    await expect(createBulk(db, ME.id, rid(), [{ ...row2(o, 3), accountId: "00000000-0000-4000-8000-000000000000" }])).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await getBulkDraftCount(db, ME.id)).toBe(3);
+    await clearBulkDraft(db, ME.id);
   });
 
   it("a sheet with nothing typed clears the draft, as does cancelling", async () => {

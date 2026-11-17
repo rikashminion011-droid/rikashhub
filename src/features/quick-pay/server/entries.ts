@@ -42,11 +42,12 @@ async function resolveBanks(tx: Prisma.TransactionClient, userId: string, ids: r
   if (withAccounts) throw new ExpenseError(`Choose one of the accounts under ${withAccounts.name}.`);
 }
 
-/** A Debit uses a Debit category and a Credit uses a Credit category; the two lists are separate. */
+/** A Debit and a Credit share one list of categories: either kind of category can be used on either kind of entry. */
 async function resolveCategories(tx: Prisma.TransactionClient, userId: string, ids: readonly (string | null)[], entryType: EntryType = "DEBIT"): Promise<void> {
+  void entryType;
   const unique = [...new Set(ids.filter((id): id is string => id !== null))];
   if (unique.length === 0) return;
-  const found = await tx.transactionCategory.count({ where: { id: { in: unique }, userId, deletedAt: null, type: entryType === "CREDIT" ? "INCOME" : "EXPENSE" } });
+  const found = await tx.transactionCategory.count({ where: { id: { in: unique }, userId, deletedAt: null, type: { in: ["EXPENSE", "INCOME"] } } });
   if (found !== unique.length) throw new ExpenseError("A selected category no longer exists. Pick another.", "NOT_FOUND");
 }
 
@@ -281,7 +282,11 @@ export async function createBulk(
     return await db.$transaction(
       async (tx) => {
         const existing = await tx.transaction.count({ where: { userId, dedupeKey: { in: rows.map(keyOf) } } });
-        if (existing > 0) return { count: existing, duplicate: true };
+        if (existing > 0) {
+          // This sheet was already saved (a retry or a double click): its draft must not linger either.
+          await tx.bulkDraft.deleteMany({ where: { userId } });
+          return { count: existing, duplicate: true };
+        }
 
         await resolveBanks(tx, userId, rows.flatMap((r) => [r.accountId, ...(r.transfer ? [r.transfer.toId] : [])]));
         await resolveCategories(tx, userId, rows.filter((r) => r.type === "DEBIT").map((r) => r.categoryId), "DEBIT");
@@ -301,7 +306,7 @@ export async function createBulk(
             description: row.reason || null,
             categoryId: row.categoryId,
             isSplit: row.shares.length > 0,
-            splitKind: row.shares.length > 0 ? "SPLIT" : null,
+            splitKind: row.shares.length > 0 ? (row.splitKind === "DEBT" ? "DEBT" : "SPLIT") : null,
             quickPay: true,
             dedupeKey: keyOf(row),
           })),
@@ -333,6 +338,9 @@ export async function createBulk(
         await linkBulkToPortals(tx, userId, rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => !x.row.transfer).map((x) => ({ transactionId: x.id, accountId: x.row.accountId, kind: x.row.type, occurredAt: x.row.occurredAt, reason: x.row.reason, amountPaise: x.row.amountPaise })));
         await recomputeBalances(tx, userId, rows.flatMap((r) => [r.accountId, ...(r.transfer ? [r.transfer.toId] : [])]));
         await tx.auditLog.create({ data: { userId, action: "quickpay.bulk", entity: "transaction", after: { rows: rows.length } } });
+        // The rows are saved, so they are no longer a draft. Cleared in the same transaction: either both happen or neither,
+        // and no timing in the browser can bring the saved rows back into the draft.
+        await tx.bulkDraft.deleteMany({ where: { userId } });
         return { count: rows.length, duplicate: false };
       },
       { timeout: 60_000, maxWait: 15_000 },

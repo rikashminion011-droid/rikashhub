@@ -8,6 +8,7 @@ import { MultiSelect } from "@/components/shared/multi-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { sharedCategories } from "../availability";
 import { monthBounds } from "../datetime";
 import type { QuickPayOptions } from "../types";
 
@@ -50,9 +51,9 @@ export function TransactionsFilterBar({ today, defaultMonth, options }: { today:
   const changed = multi > 0 || Boolean(params.get("q")) || custom || all || (params.get("month") !== null && params.get("month") !== defaultMonth);
 
   const bankOptions = useMemo(() => options.banks.map((b) => ({ value: b.id, label: b.label })), [options.banks]);
-  // Debit categories and Credit categories are separate lists; both can be chosen here.
+  // A Debit and a Credit share one list of categories.
   const categoryOptions = useMemo(
-    () => [...options.categories.map((c) => ({ value: c.id, label: c.label })), ...options.creditCategories.map((c) => ({ value: c.id, label: `${c.label} (Credit)` }))],
+    () => sharedCategories(options.categories, options.creditCategories).map((c) => ({ value: c.id, label: c.label })),
     [options.categories, options.creditCategories],
   );
   const personOptions = useMemo(() => options.persons.map((p) => ({ value: p.id, label: p.name })), [options.persons]);

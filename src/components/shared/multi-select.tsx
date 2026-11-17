@@ -42,11 +42,11 @@ export function MultiSelect({
       <Popover.Trigger
         type="button"
         aria-label={`${label}${chosen.length ? `: ${chosen.length} selected` : ""}`}
-        className={cn("flex h-9 min-w-36 items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50", selected.length > 0 && "border-neutral-950", className)}
+        className={cn("flex h-9 min-w-36 items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50", selected.length > 0 && "border-primary", className)}
       >
         <span className="truncate">{label}</span>
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-          {chosen.length > 0 ? <span className="rounded-full bg-neutral-950 px-1.5 text-xs font-semibold text-white tabular-nums">{chosen.length}</span> : null}
+          {chosen.length > 0 ? <span className="rounded-full bg-primary px-1.5 text-xs font-semibold text-white tabular-nums">{chosen.length}</span> : null}
           <ChevronsUpDown className="size-3.5" aria-hidden />
         </span>
       </Popover.Trigger>

@@ -141,7 +141,7 @@ export function EntryModeSwitch({
       onClick={onClick}
       className={cn(
         "flex h-10 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap transition-colors sm:flex-none sm:px-5",
-        selected ? "bg-neutral-950 text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
+        selected ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
       )}
     >
       {icon}

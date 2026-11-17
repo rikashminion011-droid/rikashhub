@@ -198,7 +198,7 @@ export function TransferForm({
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" className="h-11 w-full rounded-xl bg-neutral-900 text-base text-white hover:bg-neutral-800" disabled={saving}>
+      <Button type="submit" size="lg" className="h-11 w-full rounded-xl bg-primary text-base text-white hover:bg-primary/90" disabled={saving}>
         {saving ? <Loader2 className="animate-spin" /> : <Check />}
         {saving ? "Saving…" : onChoose ? "Add to the sheet" : "Save Transfer"}
       </Button>

@@ -187,7 +187,7 @@ export function SwitchSection({
                           role="radio"
                           aria-checked={cfg.mode === mode}
                           onClick={() => update(feature, { mode, order: mode === "CUSTOM" && cfg.order.length === 0 ? list.map((c) => c.id) : cfg.order })}
-                          className={cn("rounded-xl border p-3 text-left", cfg.mode === mode ? "border-neutral-950 bg-neutral-50" : "hover:bg-muted/50")}
+                          className={cn("rounded-xl border p-3 text-left", cfg.mode === mode ? "border-primary bg-neutral-50" : "hover:bg-muted/50")}
                         >
                           <p className="text-sm font-semibold">{MODE_TEXT[mode][0]}</p>
                           <p className="text-xs text-muted-foreground">{MODE_TEXT[mode][1]}</p>

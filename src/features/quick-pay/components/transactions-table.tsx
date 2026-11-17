@@ -21,6 +21,7 @@ import { matchCategory } from "../keywords";
 import { formatPercent } from "../split";
 import type { QuickPayOptions, TxRow } from "../types";
 import { MAX_REASON_LENGTH } from "../validation";
+import { rowTone } from "../row-tone";
 import { EditEntryDialog } from "./edit-entry-dialog";
 import { SplitDialog, type SplitChoice } from "./split-dialog";
 
@@ -191,12 +192,12 @@ export function TransactionsTable({
               const c = cells(row);
               return (
                 <Fragment key={row.id}>
-                <tr className="align-top hover:bg-muted/30">
+                <tr className={cn("align-top", rowTone(row))}>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     <p className="font-medium">{when.date}</p>
                     <p className="text-xs text-muted-foreground">{when.timeAndDay}</p>
                   </td>
-                  <td className={cn("px-3 py-2.5 text-right font-medium tabular-nums", row.transfer ? "text-sky-600" : "text-destructive")}>{row.type === "DEBIT" ? `${row.transfer ? "⇄ " : ""}${formatINR(row.amountPaise)}` : ""}</td>
+                  <td className={cn("px-3 py-2.5 text-right font-medium tabular-nums", row.transfer ? "text-yellow-700" : "text-destructive")}>{row.type === "DEBIT" ? `${row.transfer ? "⇄ " : ""}${formatINR(row.amountPaise)}` : ""}</td>
                   <td className="px-3 py-2.5 text-right font-medium text-success tabular-nums">{row.type === "CREDIT" && !row.transfer ? formatINR(row.amountPaise) : ""}</td>
                   <td className="max-w-56 px-3 py-1.5">{c.reason}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">{row.bankName || <span className="text-muted-foreground">—</span>}</td>
@@ -226,10 +227,10 @@ export function TransactionsTable({
           const c = cells(row);
           const debit = row.type === "DEBIT";
           return (
-            <li key={row.id} className="space-y-2 rounded-xl border bg-card p-3">
+            <li key={row.id} className={cn("space-y-2 rounded-xl border p-3", rowTone(row))}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className={cn("text-lg font-semibold tabular-nums", row.transfer ? "text-sky-600" : debit ? "text-destructive" : "text-success")}>
+                  <p className={cn("text-lg font-semibold tabular-nums", row.transfer ? "text-yellow-700" : debit ? "text-destructive" : "text-success")}>
                     {row.transfer ? "⇄ " : debit ? "−" : "+"}
                     {formatINR(row.amountPaise)}
                   </p>

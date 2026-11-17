@@ -160,7 +160,7 @@ export function FieldsSection({ settings, options, actions, onSaved }: { setting
                 role="radio"
                 aria-checked={draft.defaults.type === t}
                 onClick={() => setDraft({ ...draft, defaults: { ...draft.defaults, type: t } })}
-                className={cn("h-9 rounded-lg border px-4 text-sm font-medium", draft.defaults.type === t ? "border-neutral-950 bg-neutral-950 text-white" : "hover:bg-muted")}
+                className={cn("h-9 rounded-lg border px-4 text-sm font-medium", draft.defaults.type === t ? "border-primary bg-primary text-white" : "hover:bg-muted")}
               >
                 {t === "DEBIT" ? "Debit" : "Credit"}
               </button>
@@ -242,7 +242,7 @@ export function SplitSection({ settings, options, actions, onSaved }: { settings
               role="radio"
               aria-checked={draft.method === value}
               onClick={() => setDraft({ ...draft, method: value })}
-              className={cn("rounded-xl border p-3 text-left", draft.method === value ? "border-neutral-950 bg-neutral-50" : "hover:bg-muted/50")}
+              className={cn("rounded-xl border p-3 text-left", draft.method === value ? "border-primary bg-neutral-50" : "hover:bg-muted/50")}
             >
               <p className="text-sm font-semibold">{title}</p>
               <p className="text-xs text-muted-foreground">{text}</p>
@@ -355,7 +355,7 @@ export function SplitSection({ settings, options, actions, onSaved }: { settings
               role="radio"
               aria-checked={draft.equalDivide === value}
               onClick={() => setDraft({ ...draft, equalDivide: value })}
-              className={cn("rounded-xl border p-3 text-left", draft.equalDivide === value ? "border-neutral-950 bg-neutral-50" : "hover:bg-muted/50")}
+              className={cn("rounded-xl border p-3 text-left", draft.equalDivide === value ? "border-primary bg-neutral-50" : "hover:bg-muted/50")}
             >
               <p className="text-sm font-semibold">{title}</p>
               <p className="text-xs text-muted-foreground">{text}</p>
@@ -449,7 +449,7 @@ export function CreditsSection({ settings, actions, onSaved }: { settings: Credi
               role="radio"
               aria-checked={draft.source === source}
               onClick={() => setDraft({ ...draft, source })}
-              className={cn("rounded-xl border p-3 text-left", draft.source === source ? "border-neutral-950 bg-neutral-50" : "hover:bg-muted/50")}
+              className={cn("rounded-xl border p-3 text-left", draft.source === source ? "border-primary bg-neutral-50" : "hover:bg-muted/50")}
             >
               <p className="text-sm font-semibold">{CREDIT_SOURCE_LABEL[source]}</p>
               <p className="text-xs text-muted-foreground">{SOURCE_TEXT[source]}</p>
@@ -484,7 +484,7 @@ export function CreditsSection({ settings, actions, onSaved }: { settings: Credi
               role="radio"
               aria-checked={draft.defaultSelection === value}
               onClick={() => setDraft({ ...draft, defaultSelection: value })}
-              className={cn("h-9 rounded-lg border px-4 text-sm font-medium", draft.defaultSelection === value ? "border-neutral-950 bg-neutral-950 text-white" : "hover:bg-muted")}
+              className={cn("h-9 rounded-lg border px-4 text-sm font-medium", draft.defaultSelection === value ? "border-primary bg-primary text-white" : "hover:bg-muted")}
             >
               {SELECTION_LABEL[value]}
             </button>

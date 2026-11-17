@@ -2,6 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError, addAccount, addCategory, addPaymentMethod, archiveOption, kindOfAccount } from "@/features/expenses/server/service";
 import type { MethodKind } from "@/features/expenses/types";
 import { listPlatforms } from "@/features/shopping/server/service";
+import { sharedCategories } from "../availability";
 import type { SettingsScope } from "../settings-model";
 import { getKeywordEntries, getSettings } from "./prefs";
 import type { BankOption, BankTreeNode, CategoryOption, CategoryTreeNode, PersonOption, QuickPayOptions } from "../types";
@@ -185,5 +186,7 @@ export async function getQuickPayOptions(db: PrismaClient, userId: string, scope
   ]);
   const persons: PersonOption[] = people.map((p) => ({ id: p.id, name: p.name }));
   const [settings, keywords, frequentReasons] = await Promise.all([getSettings(db, userId, scope), getKeywordEntries(db, userId), getFrequentReasons(db, userId)]);
-  return { banks: bankOptionsFrom(banks), categories: categoryOptionsFrom(categories), creditCategories: categoryOptionsFrom(creditCategories), persons, shoppingPlatforms, frequentReasons, settings, keywords };
+  // A Debit and a Credit share one list of categories, so both lists hold all of them.
+  const shared = sharedCategories(categoryOptionsFrom(categories), categoryOptionsFrom(creditCategories));
+  return { banks: bankOptionsFrom(banks), categories: shared, creditCategories: shared, persons, shoppingPlatforms, frequentReasons, settings, keywords };
 }

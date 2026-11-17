@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
-import { addCategoryAction, clearBulkDraftAction, getGpayOptionsAction, loadBulkDraftAction, saveBulkAction, saveBulkDraftAction, saveTransferAction } from "@/features/quick-pay/actions";
+import { addCategoryAction, assignReasonAction, clearBulkDraftAction, getGpayOptionsAction, loadBulkDraftAction, saveBulkAction, saveBulkDraftAction, saveTransferAction } from "@/features/quick-pay/actions";
 import { addPersonAction } from "@/features/users/actions";
 import { BulkEntry } from "@/features/quick-pay/components/bulk-entry";
 import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
@@ -35,9 +35,9 @@ export default async function BulkPage() {
   return (
     <>
       <PageHeader title="Add Bulk" />
-      {/* The sheet is allowed to use the whole width of the screen, not only the page's usual column, so every column can be read in full */}
-      <div className="relative left-1/2 w-[min(calc(100vw-4rem),120rem)] -translate-x-1/2">
-      <BulkEntry options={options} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveBulkAction} draftActions={{ load: loadBulkDraftAction, save: saveBulkDraftAction, clear: clearBulkDraftAction }} quickActions={{ addCategory: addCategoryAction, addPerson: addPersonAction, getOptions: getGpayOptionsAction, saveTransfer: saveTransferAction }} />
+      {/* The sheet uses the whole width of the screen (the page has no side space here), so every column can be read in full */}
+      <div className="w-full">
+      <BulkEntry options={options} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveBulkAction} draftActions={{ load: loadBulkDraftAction, save: saveBulkDraftAction, clear: clearBulkDraftAction }} quickActions={{ addCategory: addCategoryAction, assignReason: assignReasonAction, addPerson: addPersonAction, getOptions: getGpayOptionsAction, saveTransfer: saveTransferAction }} />
       </div>
     </>
   );

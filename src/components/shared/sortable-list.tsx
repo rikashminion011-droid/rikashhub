@@ -52,7 +52,7 @@ export function SortableList({ items, onChange, onRemove, emptyText }: { items: 
   ) : (
     <ul ref={list} className="space-y-1.5">
       {items.map((item, index) => (
-        <li key={item.id} data-sortable-row className={cn("flex items-center gap-2 rounded-lg border bg-background px-2 py-1.5", dragging === item.id && "border-neutral-950 shadow-sm")}>
+        <li key={item.id} data-sortable-row className={cn("flex items-center gap-2 rounded-lg border bg-background px-2 py-1.5", dragging === item.id && "border-primary shadow-sm")}>
           <button
             type="button"
             aria-label={`Move ${item.label}. Drag, or use the Up and Down arrows.`}

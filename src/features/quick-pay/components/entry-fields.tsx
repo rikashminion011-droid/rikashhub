@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowDown, ArrowLeftRight, ArrowUp, Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { Popover } from "@base-ui/react/popover";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { CascadingSelect } from "@/components/shared/cascading-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,11 @@ import { MAX_REASON_LENGTH, type EntryType, type QuickPayErrors } from "../valid
 import { CreditsPanel } from "./credits-panel";
 import { CycleButton } from "./cycle-button";
 import { InlineAdd, type AddResult } from "./inline-add";
+import { PersonChips } from "./person-chips";
 import { SplitControl } from "./split-control";
 import { ReasonCategoryDialog } from "./reason-category-dialog";
 import { SelfTransferItem } from "./transfer-dialog";
+import { SelfTransferButton, TypeToggle } from "./type-toggle";
 
 const SETTINGS = {
   banks: "/quick-pay/settings?tab=banks",
@@ -36,16 +38,24 @@ function AddLink({ href, children }: { href: string; children: React.ReactNode }
 
 const labelClass = "text-xs font-semibold text-muted-foreground";
 
-/** Older saved settings still call it "Credits Added"; it is now Credit History. */
-const creditLabel = (label: string) => (label === "Credits Added" ? "Credit History" : label);
+/** One tick box in the Explore more list. */
+function OptionRow({ checked, disabled = false, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange: (on: boolean) => void }) {
+  return (
+    <label className={cn("flex min-h-9 cursor-pointer items-center gap-2.5 text-sm font-semibold", disabled && "cursor-not-allowed opacity-50")}>
+      <Checkbox checked={checked} disabled={disabled} aria-label={label} onCheckedChange={(next) => onChange(next === true)} />
+      {label}
+    </label>
+  );
+}
 
 /**
- * The fields of an entry, laid out compactly so they fit a phone without scrolling:
- *   Amount · Debit · Credit             (one line)
- *   Reason · Category                   (one line)
+ * The fields of an entry, laid out compactly so they fit a phone with little scrolling:
+ *   [date]  − Debit  + Credit  ⇄ Self Transfer     (one line; the date comes from the page via `headerLeft`)
+ *   Amount
+ *   Reason (with its Category tick) · Category
  *   Bank Through (with its switch icon)
- *   Split · Debt · Credit History       (one line)
- * then the Split and Credit History sections when ticked. No boxes: the form is plain fields on the page.
+ *   Explore more: Split, Debt to, Shopping Portals, one under another; ticking one shows the people (or portals) right there
+ * Credit History is no longer a tick box: double-click the Debit (−) button, or press and hold it on a phone.
  * Used by Quick Entry and by the edit pop-up.
  */
 export function EntryFields({
@@ -62,6 +72,7 @@ export function EntryFields({
   onAddPerson,
   onSelfTransfer,
   onAssignReason,
+  headerLeft,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -76,35 +87,35 @@ export function EntryFields({
   onAddCategory: (name: string, type: EntryType) => Promise<AddResult>;
   /** Adds a person right here. Resolves with the new id. */
   onAddPerson: (name: string) => Promise<AddResult>;
-  /** When given, the Bank Through list ends with a Self Transfer item that calls this (it opens the transfer pop-up). */
+  /** When given, the Bank Through list ends with a Self Transfer item and a Self Transfer button sits beside Debit and Credit. */
   onSelfTransfer?: () => void;
-  /** When given, a small checkbox beside Reason opens a pop-up that puts the reason under a category. */
+  /** When given, a small checkbox in the Reason box opens a pop-up that puts the reason under a category. */
   onAssignReason?: (reason: string, type: EntryType, input: { categoryId: string | null; newCategory?: string }) => Promise<{ ok: true; categoryId: string } | { ok: false; error: string }>;
+  /** What goes at the start of the top line, normally the date. */
+  headerLeft?: ReactNode;
 }) {
   const labels = options.settings.fields.labels;
   // Banks switched off in Customized Settings are not offered (the one already on the entry still is).
   const banks = useMemo(() => visibleBanks(options, [form.accountId]), [options, form.accountId]);
   const bankGroups = useMemo(() => groupBanks(banks), [banks]);
   const switches = options.settings.switch;
-  // A Debit and a Credit have different categories.
+  // A Debit and a Credit share one list of categories.
   const categoryList = categoriesFor(options, form.type);
   const categoryGroups = useMemo(() => groupCategories(categoryList), [categoryList]);
   const showCredits = form.type === "DEBIT" && form.creditsAdded;
   const isDebit = form.type === "DEBIT";
   const [reasonFocus, setReasonFocus] = useState(false);
   const [reasonDialog, setReasonDialog] = useState(false);
-  // Split, Debt, Shopping Portals and Credit History each open a small pop-up beside their tick box (not a panel below).
-  const [panel, setPanel] = useState<"split" | "debt" | "shopping" | "credits" | null>(null);
-  const splitAnchor = useRef<HTMLSpanElement>(null);
-  const debtAnchor = useRef<HTMLSpanElement>(null);
-  const shoppingAnchor = useRef<HTMLSpanElement>(null);
-  const creditsAnchor = useRef<HTMLSpanElement>(null);
+  // Explore more starts open when the entry already uses one of its options (for example when editing).
+  const [moreOpen, setMoreOpen] = useState(() => form.splitKind !== null || form.shoppingPlatformId !== null);
+  const [creditsOpen, setCreditsOpen] = useState(false);
+  const debitRef = useRef<HTMLButtonElement>(null);
   // A mistake in the people or their shares is shown where it can be fixed.
   const splitProblem = errors.split || errors.splitValue;
   const [shownProblem, setShownProblem] = useState(false);
   if (Boolean(splitProblem) !== shownProblem) {
     setShownProblem(Boolean(splitProblem));
-    if (splitProblem && form.splitKind) setPanel(form.splitKind === "DEBT" ? "debt" : "split");
+    if (splitProblem && form.splitKind) setMoreOpen(true);
   }
   // Reasons used often, narrowed by what is typed. A reason that is already typed in full is not offered again.
   const suggestions = useMemo(() => {
@@ -113,85 +124,73 @@ export function EntryFields({
   }, [options.frequentReasons, form.reason]);
   const id = (name: string) => `${idPrefix}-${name}`;
 
+  const setKind = (kind: "SPLIT" | "DEBT", on: boolean) => {
+    setForm((f) => withKind(f, on ? kind : null, options.settings, options.settings.split.defaultPartyId));
+    clearError("split");
+    clearError("splitValue");
+  };
+
+  /** Double-click (or hold) on Debit: the recent credits to attach. Works from Credit too, by switching to Debit first. */
+  const openHistory = () => {
+    if (!isDebit) setForm((f) => ({ ...f, type: "DEBIT" }));
+    if (!form.creditsAdded || !isDebit) onToggleCredits(true);
+    setCreditsOpen(true);
+  };
+  const closeHistory = () => {
+    setCreditsOpen(false);
+    // Closing without choosing a credit means none is attached.
+    if (form.creditsAdded && form.creditIds.length === 0) onToggleCredits(false);
+  };
+
   return (
     <div className="space-y-3">
-      {/* Amount, Debit and Credit on one line */}
+      {/* The date (from the page), Debit −, Credit + and Self Transfer on one line */}
+      <div className="flex items-center gap-2" role="group" aria-label="Date, Debit or Credit, Self Transfer">
+        {headerLeft ? <div className="min-w-0 flex-1">{headerLeft}</div> : null}
+        <TypeToggle
+          value={form.type}
+          debitRef={debitRef}
+          historyOn={isDebit && form.creditIds.length > 0}
+          onDebitHistory={openHistory}
+          onChange={(t) =>
+            setForm((f) => ({
+              ...f,
+              type: t,
+              // A Credit has no Debt, no Credit History and no shopping portal.
+              ...(t === "CREDIT" ? { creditsAdded: false, creditIds: [], shoppingPlatformId: null, ...(f.splitKind === "DEBT" ? { splitKind: null, shares: [] } : {}) } : {}),
+            }))
+          }
+        />
+        {onSelfTransfer ? <SelfTransferButton onClick={onSelfTransfer} /> : null}
+      </div>
+
+      {/* Amount */}
       <div id={id("field-amount")} className="scroll-mt-24 space-y-1">
         <label htmlFor={id("amount")} className={labelClass}>
           {labels.amount}
         </label>
-        <div className="flex flex-wrap items-stretch gap-2">
-          <div
-            className="order-1 flex min-w-0 flex-1 basis-40 overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 focus-within:ring-3 focus-within:ring-amber-300/40 aria-[invalid=true]:border-destructive"
+        <div
+          className="flex min-w-0 overflow-hidden rounded-xl border border-primary/40 bg-primary/5 focus-within:ring-3 focus-within:ring-primary/25 aria-[invalid=true]:border-destructive"
+          aria-invalid={!!errors.amount}
+        >
+          <span aria-hidden className="flex w-9 items-center justify-center bg-primary/10 text-base text-primary">
+            ₹
+          </span>
+          <Input
+            id={id("amount")}
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="0.00"
+            value={form.amount}
             aria-invalid={!!errors.amount}
-          >
-            <span aria-hidden className="flex w-9 items-center justify-center bg-amber-100/60 text-base">
-              ₹
-            </span>
-            <Input
-              id={id("amount")}
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="0.00"
-              value={form.amount}
-              aria-invalid={!!errors.amount}
-              aria-describedby={errors.amount ? id("error-amount") : undefined}
-              onChange={(e) => {
-                const value = e.target.value;
-                setForm((f) => ({ ...f, amount: value }));
-                clearError("amount");
-              }}
-              className="h-10 min-w-0 rounded-none border-0 bg-transparent px-2 text-lg font-semibold tabular-nums shadow-none focus-visible:ring-0"
-            />
-          </div>
-          <div role="radiogroup" aria-label="Transaction type" className="order-3 grid w-full grid-cols-2 gap-2 sm:order-2 sm:flex sm:w-auto sm:shrink-0 sm:gap-1.5">
-            {(["DEBIT", "CREDIT"] as const).map((t) => {
-              const on = form.type === t;
-              const debit = t === "DEBIT";
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() =>
-                    setForm((f) => ({
-                      ...f,
-                      type: t,
-                      // The category lists differ, so the choice is cleared; a Credit has no Debt and no Credits Added.
-                      ...(f.type !== t ? { categoryId: null, categoryAuto: false, categoryManual: false } : {}),
-                      ...(t === "CREDIT" ? { creditsAdded: false, creditIds: [], ...(f.splitKind === "DEBT" ? { splitKind: null, shares: [] } : {}) } : {}),
-                    }))
-                  }
-                  className={cn(
-                    "flex h-11 items-center justify-center gap-1 rounded-xl border px-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-10 sm:px-3.5",
-                    on
-                      ? debit
-                        ? "border-red-300 bg-red-50 text-red-700"
-                        : "border-green-300 bg-green-50 text-green-700"
-                      : debit
-                        ? "border-transparent bg-red-50/40 text-red-700/60 hover:bg-red-50"
-                        : "border-transparent bg-green-50/40 text-green-700/60 hover:bg-green-50",
-                  )}
-                >
-                  {debit ? <ArrowDown className="size-3.5" aria-hidden /> : <ArrowUp className="size-3.5" aria-hidden />}
-                  {debit ? "Debit" : "Credit"}
-                </button>
-              );
-            })}
-          </div>
-          {onSelfTransfer ? (
-            <button
-              type="button"
-              onClick={onSelfTransfer}
-              aria-label="Self Transfer"
-              title="Self Transfer: move money between your own banks"
-              className="order-2 flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-input bg-background px-2.5 text-sm font-semibold transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:order-3 sm:px-3.5"
-            >
-              <ArrowLeftRight className="size-3.5" aria-hidden />
-              <span className="hidden min-[440px]:inline">Self Transfer</span>
-            </button>
-          ) : null}
+            aria-describedby={errors.amount ? id("error-amount") : undefined}
+            onChange={(e) => {
+              const value = e.target.value;
+              setForm((f) => ({ ...f, amount: value }));
+              clearError("amount");
+            }}
+            className="h-10 min-w-0 rounded-none border-0 bg-transparent px-2 text-lg font-semibold tabular-nums shadow-none focus-visible:ring-0"
+          />
         </div>
         {errors.amount ? (
           <p id={id("error-amount")} role="alert" className="text-xs text-destructive">
@@ -222,20 +221,12 @@ export function EntryFields({
         </div>
       ) : null}
 
-      {/* Reason and Category on one line (each kind has its own categories) */}
+      {/* Reason (its Category tick sits in the box) and Category on one line */}
       <div className="grid grid-cols-2 gap-2">
         <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <label htmlFor={id("reason")} className={labelClass}>
-              {labels.reason}
-            </label>
-            {onAssignReason ? (
-              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-muted-foreground" title="Choose which category this reason belongs to">
-                <Checkbox checked={reasonDialog} disabled={form.reason.trim() === ""} onCheckedChange={(next) => setReasonDialog(next === true)} aria-label="Put this reason under a category" />
-                <span className="hidden min-[400px]:inline">Category</span>
-              </label>
-            ) : null}
-          </div>
+          <label htmlFor={id("reason")} className={labelClass}>
+            {labels.reason}
+          </label>
           <div className="relative">
             <Input
               id={id("reason")}
@@ -249,8 +240,13 @@ export function EntryFields({
                 const value = e.target.value;
                 setForm((f) => withReason(f, value, keywordsFor(options, f.type)));
               }}
-              className="h-10 text-base sm:text-sm"
+              className={cn("h-10 text-base sm:text-sm", onAssignReason && "pr-9")}
             />
+            {onAssignReason ? (
+              <span className="absolute top-1/2 right-2.5 -translate-y-1/2" title="Choose which category this reason belongs to">
+                <Checkbox checked={reasonDialog} disabled={form.reason.trim() === ""} onCheckedChange={(next) => setReasonDialog(next === true)} aria-label="Put this reason under a category" />
+              </span>
+            ) : null}
             {reasonFocus && suggestions.length > 0 ? (
               <ul role="listbox" aria-label="Reasons you use often" className="absolute top-full right-0 left-0 z-40 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
                 {suggestions.map((r) => (
@@ -276,46 +272,45 @@ export function EntryFields({
         <div className="min-w-0 space-y-1">
           <label htmlFor={id("category")} className={labelClass}>
             {labels.category}
-            {form.categoryAuto ? <span className="ml-1 font-normal text-amber-600">· auto</span> : null}
+            {form.categoryAuto ? <span className="ml-1 font-normal text-primary">· auto</span> : null}
           </label>
           <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-          <CascadingSelect
-            id={id("category")}
-            ariaLabel={labels.category}
-            groups={categoryGroups}
-            value={form.categoryId}
-            onChange={(v) => setForm((f) => withCategory(f, v))}
-            placeholder="Optional"
-            searchPlaceholder="Search categories…"
-            emptyText="No category found. Add one below."
-            clearable
-            footer={
-              <InlineAdd
-                label="New category"
-                placeholder="Add a category…"
-                onAdd={async (name) => {
-                  const result = await onAddCategory(name, form.type);
-                  if (result.ok) setForm((f) => withCategory(f, result.id));
-                  return result;
-                }}
+            <div className="min-w-0 flex-1">
+              <CascadingSelect
+                id={id("category")}
+                ariaLabel={labels.category}
+                groups={categoryGroups}
+                value={form.categoryId}
+                onChange={(v) => setForm((f) => withCategory(f, v))}
+                placeholder="Optional"
+                searchPlaceholder="Search categories…"
+                emptyText="No category found. Add one below."
+                clearable
+                footer={
+                  <InlineAdd
+                    label="New category"
+                    placeholder="Add a category…"
+                    onAdd={async (name) => {
+                      const result = await onAddCategory(name, form.type);
+                      if (result.ok) setForm((f) => withCategory(f, result.id));
+                      return result;
+                    }}
+                  />
+                }
               />
-            }
-          />
-          </div>
-          {switches.category.enabled ? (
-            <CycleButton
-              label="Switch to the next category"
-              disabled={categoryList.filter((c) => !c.isSub).length < 2}
-              onClick={() => setForm((f) => withCategory(f, nextSwitch(switches.category, categoryList.filter((c) => !c.isSub).map((c) => c.id), f.categoryId)))}
-            />
-          ) : null}
+            </div>
+            {switches.category.enabled ? (
+              <CycleButton
+                label="Switch to the next category"
+                disabled={categoryList.filter((c) => !c.isSub).length < 2}
+                onClick={() => setForm((f) => withCategory(f, nextSwitch(switches.category, categoryList.filter((c) => !c.isSub).map((c) => c.id), f.categoryId)))}
+              />
+            ) : null}
           </div>
         </div>
-
       </div>
 
-      {/* Bank Through on its own line */}
+      {/* Bank Through, under Category */}
       <div id={id("field-bank")} className="scroll-mt-24 space-y-1">
         <label htmlFor={id("bank")} className={labelClass}>
           {labels.bank}
@@ -360,125 +355,100 @@ export function EntryFields({
         </p>
       ) : null}
 
-      {/* Split, Debt, Shopping Portals and Credit History. Split and Debt cannot both be on. Each opens a small pop-up beside it. */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" role="group" aria-label="Share and credits">
-        <span ref={splitAnchor} className={cn("inline-flex h-9 items-center gap-2 text-sm font-semibold", form.splitKind === "DEBT" && "cursor-not-allowed opacity-50")}>
-          <Checkbox
-            checked={form.splitKind === "SPLIT"}
-            disabled={form.splitKind === "DEBT"}
-            aria-label={labels.split}
-            onCheckedChange={(next) => {
-              setForm((f) => withKind(f, next === true ? "SPLIT" : null, options.settings, options.settings.split.defaultPartyId));
-              clearError("split");
-              clearError("splitValue");
-              setPanel(next === true ? "split" : null);
-            }}
-          />
-          <button type="button" disabled={form.splitKind === "DEBT"} onClick={() => (form.splitKind === "SPLIT" ? setPanel("split") : (setForm((f) => withKind(f, "SPLIT", options.settings, options.settings.split.defaultPartyId)), setPanel("split")))} className="text-left outline-none focus-visible:underline">
-            {labels.split}
-          </button>
-        </span>
-        {isDebit ? (
-          <span ref={debtAnchor} className={cn("inline-flex h-9 items-center gap-2 text-sm font-semibold", form.splitKind === "SPLIT" && "cursor-not-allowed opacity-50")}>
-            <Checkbox
-              checked={form.splitKind === "DEBT"}
-              disabled={form.splitKind === "SPLIT"}
-              aria-label="Debt"
-              onCheckedChange={(next) => {
-                setForm((f) => withKind(f, next === true ? "DEBT" : null, options.settings, options.settings.split.defaultPartyId));
-                clearError("split");
-                clearError("splitValue");
-                setPanel(next === true ? "debt" : null);
-              }}
-            />
-            <button type="button" disabled={form.splitKind === "SPLIT"} onClick={() => (form.splitKind === "DEBT" ? setPanel("debt") : (setForm((f) => withKind(f, "DEBT", options.settings, options.settings.split.defaultPartyId)), setPanel("debt")))} className="text-left outline-none focus-visible:underline">
-              Debt
-            </button>
-          </span>
-        ) : null}
-        {isDebit && options.shoppingPlatforms.length > 0 ? (
-          <span ref={shoppingAnchor} className="inline-flex h-9 items-center gap-2 text-sm font-semibold">
-            <Checkbox
-              checked={form.shoppingPlatformId !== null}
-              aria-label="Shopping Portals"
-              onCheckedChange={(next) => {
-                setForm((f) => ({ ...f, shoppingPlatformId: next === true ? (f.shoppingPlatformId ?? options.shoppingPlatforms[0]!.id) : null }));
-                setPanel(next === true ? "shopping" : null);
-              }}
-            />
-            <button type="button" onClick={() => (form.shoppingPlatformId !== null ? setPanel("shopping") : (setForm((f) => ({ ...f, shoppingPlatformId: options.shoppingPlatforms[0]!.id })), setPanel("shopping")))} className="whitespace-nowrap outline-none focus-visible:underline">
-              Shopping Portals
-            </button>
-          </span>
-        ) : null}
-        {isDebit ? (
-          <span ref={creditsAnchor} className="inline-flex h-9 items-center gap-2 text-sm font-semibold">
-            <Checkbox
-              checked={form.creditsAdded}
-              aria-label={creditLabel(labels.creditsAdded)}
-              onCheckedChange={(next) => {
-                onToggleCredits(next === true);
-                setPanel(next === true ? "credits" : null);
-              }}
-            />
-            <button type="button" onClick={() => (form.creditsAdded ? setPanel("credits") : (onToggleCredits(true), setPanel("credits")))} className="whitespace-nowrap outline-none focus-visible:underline">
-              {creditLabel(labels.creditsAdded)}
-            </button>
-          </span>
+      {/* Explore more: the options one under another. Ticking one shows the people (or portals) right under it. */}
+      <div>
+        <button
+          type="button"
+          aria-expanded={moreOpen}
+          aria-controls={id("more")}
+          onClick={() => setMoreOpen((open) => !open)}
+          className="flex h-9 items-center gap-1.5 rounded-lg text-sm font-semibold text-primary outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <ChevronDown className={cn("size-4 transition-transform", moreOpen && "rotate-180")} aria-hidden />
+          Explore more
+        </button>
+        {moreOpen ? (
+          <div id={id("more")} className="mt-1 space-y-1 rounded-xl border bg-card/70 p-3">
+            <OptionRow label={labels.split} checked={form.splitKind === "SPLIT"} disabled={form.splitKind === "DEBT"} onChange={(on) => setKind("SPLIT", on)} />
+            {form.splitKind === "SPLIT" ? (
+              <div className="pb-2 pl-7">
+                <SplitControl chips form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} />
+              </div>
+            ) : null}
+
+            {isDebit ? (
+              <>
+                <OptionRow label="Debt to" checked={form.splitKind === "DEBT"} disabled={form.splitKind === "SPLIT"} onChange={(on) => setKind("DEBT", on)} />
+                {form.splitKind === "DEBT" ? (
+                  <div className="pb-2 pl-7">
+                    <SplitControl chips form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} />
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {isDebit && options.shoppingPlatforms.length > 0 ? (
+              <>
+                <OptionRow
+                  label="Shopping Portals"
+                  checked={form.shoppingPlatformId !== null}
+                  onChange={(on) => setForm((f) => ({ ...f, shoppingPlatformId: on ? (f.shoppingPlatformId ?? options.shoppingPlatforms[0]!.id) : null }))}
+                />
+                {form.shoppingPlatformId !== null ? (
+                  <div className="space-y-2 pb-2 pl-7">
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <PersonChips
+                          ariaLabel="Shopping platform"
+                          single
+                          people={options.shoppingPlatforms}
+                          selected={[form.shoppingPlatformId]}
+                          // One portal stays chosen while this is ticked: tapping the chosen one again changes nothing.
+                          onChange={(ids) => setForm((f) => ({ ...f, shoppingPlatformId: ids[0] ?? f.shoppingPlatformId }))}
+                        />
+                      </div>
+                      {switches.shopping.enabled ? (
+                        <CycleButton
+                          label="Switch to the next shopping platform"
+                          disabled={options.shoppingPlatforms.length < 2}
+                          onClick={() => setForm((f) => ({ ...f, shoppingPlatformId: nextSwitch(switches.shopping, options.shoppingPlatforms.map((p) => p.id), f.shoppingPlatformId) }))}
+                        />
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Saving adds this purchase to Shopping Records as Pending. Add the image, recipients and items there.</p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
-      <Popover.Root open={panel !== null} onOpenChange={(open) => !open && setPanel(null)}>
+      {/* Credit History: opens beside the Debit button (double-click, or press and hold) */}
+      <Popover.Root open={creditsOpen && showCredits} onOpenChange={(open) => !open && closeHistory()}>
         <Popover.Portal>
-          <Popover.Positioner anchor={() => (panel === "split" ? splitAnchor : panel === "debt" ? debtAnchor : panel === "shopping" ? shoppingAnchor : creditsAnchor).current} side="bottom" align="start" sideOffset={6} collisionPadding={8} className="isolate z-[70]">
+          <Popover.Positioner anchor={() => debitRef.current} side="bottom" align="start" sideOffset={6} collisionPadding={8} className="isolate z-[70]">
             <Popover.Popup data-popup="" className="w-[min(26rem,calc(100vw-1rem))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-xl outline-none">
-              {(panel === "split" || panel === "debt") && form.splitKind ? (
-                <SplitControl form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} />
-              ) : null}
-              {panel === "shopping" && form.shoppingPlatformId !== null ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Shopping platform</p>
-                  <div className="flex items-center gap-2">
-                    <select
-                      aria-label="Shopping platform"
-                      value={form.shoppingPlatformId}
-                      onChange={(e) => setForm((f) => ({ ...f, shoppingPlatformId: e.target.value }))}
-                      className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
-                    >
-                      {options.shoppingPlatforms.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    {switches.shopping.enabled ? (
-                      <CycleButton
-                        label="Switch to the next shopping platform"
-                        disabled={options.shoppingPlatforms.length < 2}
-                        onClick={() => setForm((f) => ({ ...f, shoppingPlatformId: nextSwitch(switches.shopping, options.shoppingPlatforms.map((p) => p.id), f.shoppingPlatformId) }))}
-                      />
-                    ) : null}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Saving adds this purchase to Shopping Records as Pending. Add the image, recipients and items there.</p>
-                </div>
-              ) : null}
-              {panel === "credits" && showCredits ? (
-                <CreditsPanel
-                  credits={credits}
-                  loading={loadingCredits}
-                  selected={form.creditIds}
-                  onChoose={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [creditId] : [] }))}
-                  canCycle={switches.credit.enabled}
-                  onCycle={() =>
-                    setForm((f) => {
-                      const next = nextSwitch(switches.credit, (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), f.creditIds[0] ?? null);
-                      return next ? { ...f, creditIds: [next] } : f;
-                    })
-                  }
-                  source={options.settings.credits.source}
-                  debitAmount={form.amount}
-                />
-              ) : null}
+              <CreditsPanel
+                credits={credits}
+                loading={loadingCredits}
+                selected={form.creditIds}
+                onChoose={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [creditId] : [] }))}
+                canCycle={switches.credit.enabled}
+                onCycle={() =>
+                  setForm((f) => {
+                    const next = nextSwitch(switches.credit, (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), f.creditIds[0] ?? null);
+                    return next ? { ...f, creditIds: [next] } : f;
+                  })
+                }
+                source={options.settings.credits.source}
+                debitAmount={form.amount}
+                onTurnOff={() => {
+                  setForm((f) => ({ ...f, creditIds: [] }));
+                  onToggleCredits(false);
+                  setCreditsOpen(false);
+                }}
+              />
             </Popover.Popup>
           </Popover.Positioner>
         </Popover.Portal>

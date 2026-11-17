@@ -29,11 +29,17 @@ describe("Debit and Credit categories", () => {
     creditCategories: [{ id: "c-salary", label: "Salary", mainName: "Salary", name: "Salary", isSub: false }],
     keywords: [{ keyword: "tiffin", categoryId: "c-food" }, { keyword: "pay", categoryId: "c-salary" }],
   };
-  it("a Debit and a Credit each see only their own categories and their own reason keywords", async () => {
+  it("a Debit and a Credit share the same categories and the same reason keywords", async () => {
     const { categoriesFor, keywordsFor } = await import("@/features/quick-pay/availability");
-    expect(categoriesFor(withCats, "DEBIT").map((c) => c.id)).toEqual(["c-food"]);
-    expect(categoriesFor(withCats, "CREDIT").map((c) => c.id)).toEqual(["c-salary"]);
-    expect(keywordsFor(withCats, "DEBIT").map((k) => k.keyword)).toEqual(["tiffin"]);
-    expect(keywordsFor(withCats, "CREDIT").map((k) => k.keyword)).toEqual(["pay"]);
+    expect(categoriesFor(withCats, "DEBIT").map((c) => c.id)).toEqual(["c-food", "c-salary"]);
+    expect(categoriesFor(withCats, "CREDIT").map((c) => c.id)).toEqual(["c-food", "c-salary"]);
+    expect(keywordsFor(withCats, "DEBIT").map((k) => k.keyword)).toEqual(["tiffin", "pay"]);
+    expect(keywordsFor(withCats, "CREDIT").map((k) => k.keyword)).toEqual(["tiffin", "pay"]);
+  });
+
+  it("lists a category once even when both lists already hold it", async () => {
+    const { sharedCategories } = await import("@/features/quick-pay/availability");
+    const food = withCats.categories[0]!;
+    expect(sharedCategories([food], [food, ...withCats.creditCategories]).map((c) => c.id)).toEqual(["c-food", "c-salary"]);
   });
 });
