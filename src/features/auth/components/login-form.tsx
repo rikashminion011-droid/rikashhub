@@ -3,14 +3,15 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Mail } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { Suspense, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { Field } from "@/components/shared/form-field";
 import { login } from "../actions";
 import { loginSchema, type LoginValues } from "../schemas";
 import { AuthCheckbox, AuthInput, AuthPasswordInput, AuthSubmit, authErrorClass } from "./auth-inputs";
+import { LoginNotice } from "./login-notice";
 
-export function LoginForm({ next, notice }: { next?: string; notice?: string }) {
+export function LoginForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const {
@@ -24,6 +25,9 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
 
   const onSubmit = handleSubmit((values) => {
     setServerError(null);
+    // Where to go after signing in (set by the proxy when a signed-out visitor opened a page). Read now,
+    // at submit time, when the address is certainly current; the server re-checks it is a same-site path.
+    const next = new URLSearchParams(window.location.search).get("next") ?? undefined;
     startTransition(async () => {
       const result = await login(values, next);
       // On success the action redirects, so a returned value is always a failure.
@@ -35,11 +39,9 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
     // method="post": if the form is submitted before the page finishes loading, the browser must
     // never fall back to a GET that puts the email and password in the address bar.
     <form onSubmit={onSubmit} noValidate method="post" className="mt-5 space-y-4 xl:mt-5">
-      {notice ? (
-        <p role="status" className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm text-neutral-700">
-          {notice}
-        </p>
-      ) : null}
+      <Suspense fallback={null}>
+        <LoginNotice />
+      </Suspense>
 
       <Field id="email" label="Email or Username" error={errors.email?.message} hideLabel>
         <AuthInput
