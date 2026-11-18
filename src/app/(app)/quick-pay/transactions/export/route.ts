@@ -28,10 +28,13 @@ export async function GET(request: NextRequest) {
     const { rows, totals, truncated } = await listForExport(getPrisma(), user.id, filters);
     const meta = { from, to, totals, generatedAt: new Date(), search: filters.q || undefined };
     const stamp = istDateOf(meta.generatedAt);
+    // A file name chosen in Export Report; anything a file name cannot hold becomes "-".
+    const chosen = (params.name ?? "").normalize("NFKC").replace(/[\\/:*?"<>|\r\n]+/g, "-").trim().slice(0, 120);
+    const base = chosen || `transaction-history-${stamp}`;
 
     const headers: Record<string, string> = {
       "Cache-Control": "private, no-store",
-      "Content-Disposition": `attachment; filename="gpay-transactions-${stamp}.${format}"`,
+      "Content-Disposition": `attachment; filename="${base.replace(/"/g, "")}.${format}"; filename*=UTF-8''${encodeURIComponent(base)}.${format}`,
       ...(truncated ? { "X-Export-Truncated": "true" } : {}),
     };
 

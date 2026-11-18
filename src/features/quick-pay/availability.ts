@@ -8,7 +8,7 @@ import type { EntryType } from "./validation";
  * that is already chosen on an entry is still shown, so opening an old entry never loses its bank or person.
  */
 
-/** The banks offered in Bank Through dropdowns. `keep` are ids that must stay (the bank already chosen). */
+/** The banks offered in Through dropdowns. `keep` are ids that must stay (the bank already chosen). */
 export function visibleBanks(options: Pick<QuickPayOptions, "banks" | "settings">, keep: readonly (string | null)[] = []): BankOption[] {
   const hidden = new Set(options.settings.banks.hiddenIds);
   return options.banks.filter((b) => !hidden.has(b.id) || keep.includes(b.id));
@@ -27,7 +27,16 @@ export function availablePersons(options: Pick<QuickPayOptions, "persons" | "set
  */
 export function sharedCategories(debit: readonly CategoryOption[], credit: readonly CategoryOption[]): CategoryOption[] {
   const seen = new Set<string>();
-  return [...debit, ...credit].filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
+  const names = new Set<string>();
+  return [...debit, ...credit].filter((c) => {
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    // A Credit category with the same name as a Debit one (OFFICE and Office) is the same choice: it is listed once, the Debit one.
+    const name = c.label.trim().toLowerCase();
+    if (names.has(name)) return false;
+    names.add(name);
+    return true;
+  });
 }
 
 /** The categories offered on an entry. A Debit and a Credit share the same list (see `sharedCategories`). */

@@ -1,7 +1,7 @@
 import type { SwitchSettings } from "./settings-model";
 
 /**
- * The switch icon beside Bank Through, Split and Credit History: which options it moves through, and which one it moves to
+ * The switch icon beside Through, Split and Credit History: which options it moves through, and which one it moves to
  * next. Sequential switching follows the dropdown's own order; custom order follows the list set in Customized Settings.
  */
 

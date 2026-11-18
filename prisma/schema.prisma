@@ -1144,6 +1144,8 @@ model MonthlyDueSetting {
   id              String   @id @default(uuid()) @db.Uuid
   userId          String   @unique @db.Uuid
   personalPartyId String?  @db.Uuid
+  /// The recipients chosen in Debt Management: its default view, and the ones counted in Monthly Due. Empty means everyone.
+  debtPartyIds    String[] @db.Uuid
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

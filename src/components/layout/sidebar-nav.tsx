@@ -14,7 +14,7 @@ function NavLink({ id, title, pathname, onNavigate }: { id: string; title: strin
   const item = BY_HREF.get(id);
   if (!item) return null;
   const Icon = item.icon;
-  // Only the most specific item is highlighted (GPay Transactions, not Quick Entry as well).
+  // Only the most specific item is highlighted (Transaction History, not Quick Entry as well).
   const active = findNavItem(pathname)?.href === id;
   return (
     <li>

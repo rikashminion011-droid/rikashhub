@@ -62,7 +62,7 @@ function OptionRow({ checked, disabled = false, label, onChange }: { checked: bo
  *   [date]  − Debit  + Credit  ⇄ Self Transfer     (one line; the date comes from the page via `headerLeft`)
  *   Amount
  *   Reason (with its Category tick) · Category
- *   Bank Through (with its switch icon)
+ *   Through (with its switch icon)
  *   Explore more: Split, Debt to, Shopping Portals, one under another; ticking one shows the people (or portals) right there
  * Credit History is no longer a tick box: double-click the Debit (−) button, or press and hold it on a phone.
  * Used by Quick Entry and by the edit pop-up.
@@ -96,7 +96,7 @@ export function EntryFields({
   onAddCategory: (name: string, type: EntryType) => Promise<AddResult>;
   /** Adds a person right here. Resolves with the new id. */
   onAddPerson: (name: string) => Promise<AddResult>;
-  /** When given, the Bank Through list ends with a Self Transfer item and a Self Transfer button sits beside Debit and Credit. */
+  /** When given, the Through list ends with a Self Transfer item and a Self Transfer button sits beside Debit and Credit. */
   onSelfTransfer?: () => void;
   /** When given, a small checkbox in the Reason box opens a pop-up that puts the reason under a category. */
   onAssignReason?: (reason: string, type: EntryType, input: { categoryId: string | null; newCategory?: string }) => Promise<{ ok: true; categoryId: string } | { ok: false; error: string }>;
@@ -116,7 +116,7 @@ export function EntryFields({
   const [reasonFocus, setReasonFocus] = useState(false);
   const [reasonDialog, setReasonDialog] = useState(false);
   // Explore more starts open when the entry already uses one of its options (for example when editing).
-  const [moreOpen, setMoreOpen] = useState(() => form.splitKind !== null || form.shoppingPlatformId !== null);
+  const [moreOpen, setMoreOpen] = useState(() => form.splitKind !== null || form.shoppingPlatformId !== null || form.creditedById !== null);
   const [creditsOpen, setCreditsOpen] = useState(false);
   // When a Split or Debt appears (for example Office picks its Debt), the options open so it can be seen.
   const [seenKind, setSeenKind] = useState(form.splitKind);
@@ -214,28 +214,6 @@ export function EntryFields({
         ) : null}
       </div>
 
-      {/* A Credit says who gave the money: Others, or one of your people. It counts as a payment by that person in Debt Management. */}
-      {!isDebit ? (
-        <div className="space-y-1">
-          <label htmlFor={id("credited-by")} className={labelClass}>
-            Credited By
-          </label>
-          <select
-            id={id("credited-by")}
-            value={form.creditedById ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, creditedById: e.target.value || null }))}
-            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
-          >
-            <option value="">Others</option>
-            {options.persons.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-
       {/* Reason (its Category tick sits in the box) and Category on one line */}
       <div className="grid grid-cols-2 gap-2">
         <div className="min-w-0 space-y-1">
@@ -325,7 +303,7 @@ export function EntryFields({
         </div>
       </div>
 
-      {/* Bank Through, under Category */}
+      {/* Through, under Category */}
       <div id={id("field-bank")} className="scroll-mt-24 space-y-1">
         <label htmlFor={id("bank")} className={labelClass}>
           {labels.bank}
@@ -384,6 +362,22 @@ export function EntryFields({
         </button>
         {moreOpen ? (
           <div id={id("more")} className="mt-1 space-y-1 rounded-xl border bg-card/70 p-3">
+            {/* A Credit says who gave the money: Others, or one of your people. It counts as a payment by that person in Debt Management. */}
+            {!isDebit ? (
+              <div className="space-y-2 pb-1">
+                <p className="text-sm font-semibold">Credited By</p>
+                <PersonChips
+                  ariaLabel="Credited by"
+                  single
+                  noneLabel="Others"
+                  people={options.persons}
+                  selected={form.creditedById ? [form.creditedById] : []}
+                  onChange={(ids) => setForm((f) => ({ ...f, creditedById: ids[0] ?? null }))}
+                  onAddPerson={onAddPerson}
+                />
+                <SaveChoice onClick={() => setMoreOpen(false)} />
+              </div>
+            ) : null}
             <OptionRow label={labels.split} checked={form.splitKind === "SPLIT"} disabled={form.splitKind === "DEBT"} onChange={(on) => setKind("SPLIT", on)} />
             {form.splitKind === "SPLIT" ? (
               <div className="pb-2 pl-7">

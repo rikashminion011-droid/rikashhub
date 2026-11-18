@@ -1,7 +1,7 @@
 /** The pages Customized Settings can configure, and the sections of Quick Entry's settings. Kept out of the client component so server code (the page) can read them. */
 export const SETTINGS_PAGES = [
   { id: "quick-entry", label: "Quick Entry" },
-  { id: "gpay", label: "GPay Transactions" },
+  { id: "gpay", label: "Transaction History" },
   { id: "food", label: "Food Tracking" },
   { id: "shopping", label: "Shopping Records" },
   { id: "credit-portal", label: "Credit Portal" },

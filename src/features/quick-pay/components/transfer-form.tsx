@@ -22,7 +22,7 @@ const newRequestId = () => crypto.randomUUID();
 
 /**
  * Self Transfer: move money from one of your banks to another. Pick the bank it leaves and the bank it goes to, the amount
- * and a reason, and save. Both balances change at once, and the transfer is one transaction in GPay Transactions.
+ * and a reason, and save. Both balances change at once, and the transfer is one transaction in Transaction History.
  */
 export function TransferForm({
   options,
@@ -92,7 +92,7 @@ export function TransferForm({
     }
     const name = (id: string | null) => options.banks.find((b) => b.id === id)?.label ?? "";
     toast.success(result.duplicate ? "That transfer was already saved." : `Moved ${formatINR(result.amountPaise)} from ${name(fromId)} to ${name(toId)}.`, {
-      description: "Both bank balances are updated. It shows as one transaction in GPay Transactions.",
+      description: "Both bank balances are updated. It shows as one transaction in Transaction History.",
     });
     if (fixedAmount === undefined) setAmount("");
     setReason(initialReason);

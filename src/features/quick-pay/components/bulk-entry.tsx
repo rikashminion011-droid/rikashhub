@@ -114,7 +114,7 @@ export function BulkEntry({
   // How many rows each Add row button adds (1 to begin with).
   const [howMany, setHowMany] = useState("1");
   const [saving, setSaving] = useState(false);
-  // The row whose Bank Through list was used to open Self Transfer; its Debit is the (fixed) amount of the transfer.
+  // The row whose Through list was used to open Self Transfer; its Debit is the (fixed) amount of the transfer.
   // The transfer stays on that row, and is saved together with every other row when Save All is pressed.
   const [transferFor, setTransferFor] = useState<BulkRow | null>(null);
   // The row whose Credit History is open (double-click or press and hold on its Debit button), and the credits to choose from.
@@ -419,9 +419,11 @@ export function BulkEntry({
     setRows(fresh);
     setSelected(new Set());
     setRequestId(newRequestId());
+    // The saved transactions are in Transaction History: go there to see them.
+    router.push("/quick-pay/transactions");
   }
 
-  /** Cancel, once confirmed: the sheet and its draft are thrown away (nothing is kept), and the page goes back to GPay Transactions. */
+  /** Cancel, once confirmed: the sheet and its draft are thrown away (nothing is kept), and the page goes back to Transaction History. */
   async function cancelSheet(): Promise<string | null> {
     clearLocalDraft();
     // Waited for, so a draft saved a moment ago cannot come back after the page changes.
@@ -454,7 +456,7 @@ export function BulkEntry({
           Cancel
         </Button>
         <Link href="/quick-pay/transactions" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-          Back to GPay Transactions
+          Back to Transaction History
         </Link>
         <p className="ml-auto text-xs text-muted-foreground tabular-nums" aria-live="polite">
           {totals.filled} row{totals.filled === 1 ? "" : "s"} · Debit {formatINR(totals.debit)} · Credit {formatINR(totals.credit)}
@@ -522,7 +524,7 @@ export function BulkEntry({
               <th scope="col" className="px-2 py-2 text-left font-medium">Amount</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Reason</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">Category</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Bank Through</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Through</th>
               <th scope="col" className="px-2 py-2 text-left font-medium">More</th>
               <th scope="col" className="px-1 py-2">
                 <span className="sr-only">Row actions</span>
@@ -645,7 +647,7 @@ export function BulkEntry({
                     )}
                   </td>
                   <td data-col={5} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0 max-lg:col-span-2">
-                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Bank Through</span>
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Through</span>
                     {row.transfer ? (
                       <div className="flex h-8 items-center gap-1.5 rounded-md bg-yellow-100 px-2 text-sm text-yellow-900" title="Self transfer, saved with Save All">
                         <SwapArrowsIcon className="size-4 shrink-0" />

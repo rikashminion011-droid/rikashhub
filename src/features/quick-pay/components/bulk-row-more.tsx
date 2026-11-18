@@ -1,6 +1,7 @@
 "use client";
 
 import { Popover } from "@base-ui/react/popover";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,8 @@ export function BulkRowMore({
   const chosen = shares.map((s) => s.partyId);
   const used = credit ? Boolean(row.creditedById) : kind !== null;
   const nameOf = (id: string) => options.persons.find((p) => p.id === id)?.name ?? "Person";
+  // Save folds the pop-up away; what was chosen stays on the row and is saved with Save All.
+  const [open, setOpen] = useState(false);
 
   const setKind = (next: "SPLIT" | "DEBT", on: boolean) => onChange({ splitKind: on ? next : null, shares: on ? row.shares : [] });
 
@@ -83,7 +86,7 @@ export function BulkRowMore({
   };
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         type="button"
         data-grid-control=""
@@ -129,6 +132,11 @@ export function BulkRowMore({
                 {kind === "DEBT" ? sharesFor("DEBT") : null}
               </>
             )}
+            <div className="flex justify-end pt-2">
+              <button type="button" onClick={() => setOpen(false)} className="inline-flex h-9 items-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50">
+                Save
+              </button>
+            </div>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

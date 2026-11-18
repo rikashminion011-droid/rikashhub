@@ -557,3 +557,30 @@ export async function linkBulkToPortals(
   await tx.creditPortalEntry.createMany({ data });
   for (const portalId of new Set(data.map((d) => d.portalId))) await reconcilePortal(tx, userId, portalId);
 }
+
+/**
+ * One person's HDFC statement lines in a period, each with their share (a line for several people is shared evenly). Only
+ * the statement counts, not the unbilled transactions. Monthly Due uses this for "My Due".
+ */
+export async function hdfcStatementShares(db: PrismaClient, userId: string, partyId: string, range: { from: string | null; to: string | null }): Promise<PortalShare[]> {
+  const bounds = rangeToInstants(range.from, range.to);
+  const when: Prisma.DateTimeFilter | undefined = bounds.gte || bounds.lt ? bounds : undefined;
+  const portals = (await db.creditPortal.findMany({ where: { userId, deletedAt: null }, select: { id: true, name: true } })).filter((p) => isHdfcPortal(p.name));
+  if (portals.length === 0) return [];
+  const [rows, categories] = await Promise.all([
+    db.creditStatementEntry.findMany({ where: { userId, deletedAt: null, portalId: { in: portals.map((p) => p.id) }, recipientIds: { has: partyId }, ...(when ? { occurredAt: when } : {}) }, orderBy: { occurredAt: "asc" } }),
+    db.transactionCategory.findMany({ where: { userId }, select: { id: true, name: true } }),
+  ]);
+  const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  return rows.map((s) => ({
+    id: s.id,
+    partyId,
+    amountPaise: recipientShare(paiseOf(s.debit) - paiseOf(s.credit), s.recipientIds, partyId),
+    occurredAt: s.occurredAt.toISOString(),
+    reason: s.reason || s.details,
+    portalId: s.portalId,
+    portal: portals.find((p) => p.id === s.portalId)?.name ?? "HDFC",
+    category: s.categoryId ? (categoryName.get(s.categoryId) ?? "") : "",
+    source: "STATEMENT" as const,
+  }));
+}

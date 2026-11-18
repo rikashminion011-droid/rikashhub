@@ -77,9 +77,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     { label: "Shopping", value: formatINR(d.shoppingPaise), note: `${d.shoppingCount} purchases${d.pendingShopping ? ` · ${d.pendingShopping} pending` : ""}`, href: "/shopping" },
     { label: "Total debt", value: formatINR(o.debt.totalPaise), note: `${formatINR(o.debt.paidPaise)} paid · ${signed(o.debt.remainingPaise)} remaining`, href: `/debt${q}` },
     { label: "My Due", value: formatINR(o.myDuePaise), href: `/monthly-due${q}` },
-    { label: "My Balance", value: signed(o.myBalancePaise), href: `/monthly-due${q}`, tone: o.myBalancePaise < 0 ? "text-destructive" : "text-success" },
-    { label: "Old Balance", value: signed(o.oldBalancePaise), href: "/quick-pay/transactions" },
-    { label: "New Balance", value: signed(o.newBalancePaise), href: `/monthly-due${q}`, tone: o.newBalancePaise < 0 ? "text-destructive" : undefined },
+    { label: "My Balance", value: signed(o.myBalancePaise), href: `/monthly-due${q}`, tone: o.myBalancePaise < 0 ? "text-destructive" : undefined },
+        { label: "New Balance", value: signed(o.newBalancePaise), href: `/monthly-due${q}`, tone: o.newBalancePaise < 0 ? "text-destructive" : undefined },
   ];
 
   return (

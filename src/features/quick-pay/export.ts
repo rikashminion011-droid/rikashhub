@@ -46,9 +46,9 @@ export async function buildXlsx(rows: readonly TxRow[], meta: ExportMeta): Promi
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Rikash Hub";
   workbook.created = meta.generatedAt;
-  const sheet = workbook.addWorksheet("GPay Transactions", { views: [{ state: "frozen", ySplit: 7 }] });
+  const sheet = workbook.addWorksheet("Transaction History", { views: [{ state: "frozen", ySplit: 7 }] });
 
-  sheet.addRow(["GPay Transactions"]).font = { bold: true, size: 14 };
+  sheet.addRow(["Transaction History"]).font = { bold: true, size: 14 };
   sheet.addRow(["Period", describeRange(meta.from, meta.to)]);
   if (meta.search) sheet.addRow(["Search", meta.search]);
   else sheet.addRow([]);
@@ -109,7 +109,7 @@ export function buildPdf(rows: readonly TxRow[], meta: ExportMeta): { bytes: Uin
   const pageWidth = doc.internal.pageSize.getWidth();
   const generated = formatTransactionWhen(meta.generatedAt);
 
-  doc.setFont("helvetica", "bold").setFontSize(18).text("GPay Transactions Report", 40, 44);
+  doc.setFont("helvetica", "bold").setFontSize(18).text("Transaction History Report", 40, 44);
   doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(90);
   doc.text(`Period: ${describeRange(meta.from, meta.to)}${meta.search ? `   |   Search: "${meta.search}"` : ""}`, 40, 64);
   doc.text(`Report generated: ${generated.date}, ${generated.timeAndDay.split(" – ")[0]}`, 40, 79);

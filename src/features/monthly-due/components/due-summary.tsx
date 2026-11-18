@@ -2,35 +2,40 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { DebtItems } from "@/features/debt/components/debt-table";
 import { formatLongDate } from "@/features/quick-pay/date-format";
+import { formatClock } from "@/features/quick-pay/date-format";
+import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { DueOverview } from "../server/service";
+import type { DueItem, DueOverview } from "../server/service";
 
-type Key = "myDue" | "debt" | "myBalance" | "old" | "new";
+type Key = "myDue" | "debt" | "myBalance" | "new";
 
 const signed = (paise: number) => (paise < 0 ? `−${formatINR(-paise)}` : formatINR(paise));
+const when = (iso: string) => {
+  const d = new Date(iso);
+  return `${formatLongDate(istDateOf(d))}, ${formatClock(istTimeOf(d))}`;
+};
 
 /**
- * The figures of Monthly Due. Each one can be pressed to see exactly what it is made of: My Due by food, credit portal, shopping
- * and expenses (date by date), and the Debt Amount person by person.
+ * The figures of Monthly Due. My Due is Food + HDFC statement (your lines) + Shopping Records (your part) + Monthly Expenses;
+ * the Debt Amount is the total value of the recipients chosen in Debt Management; My Balance is the total of Update Balance;
+ * New Balance is My Balance + Debt Amount - My Due. Each figure can be pressed to see what it is made of.
  */
 export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: string }) {
   const [open, setOpen] = useState<Key | null>(null);
   const toggle = (k: Key) => setOpen((cur) => (cur === k ? null : k));
 
   const cards: { key: Key; label: string; value: string; note: string; tone?: string }[] = [
-    { key: "myDue", label: "My Due", value: formatINR(o.myDuePaise), note: "Food + credit portal + shopping + splits + monthly expenses" },
-    { key: "debt", label: "Debt Amount", value: formatINR(o.debtAmountPaise), note: "Total of Debt Management" },
-    { key: "myBalance", label: "My Balance", value: signed(o.myBalancePaise), note: "Debt Amount − My Due", tone: o.myBalancePaise < 0 ? "text-destructive" : "text-success" },
-    { key: "old", label: "Old Balance", value: signed(o.oldBalancePaise), note: "All your banks now (View Balances)" },
-    { key: "new", label: "New Balance", value: signed(o.newBalancePaise), note: "Old Balance + My Balance", tone: o.newBalancePaise < 0 ? "text-destructive" : undefined },
+    { key: "myDue", label: "My Due", value: formatINR(o.myDuePaise), note: "Food + HDFC statement + Shopping + Monthly Expenses" },
+    { key: "debt", label: "Debt Amount", value: formatINR(o.debtAmountPaise), note: "Recipients chosen in Debt Management" },
+    { key: "myBalance", label: "My Balance", value: signed(o.myBalancePaise), note: "Total of Update Balance" },
+    { key: "new", label: "New Balance", value: signed(o.newBalancePaise), note: "My Balance + Debt Amount − My Due", tone: o.newBalancePaise < 0 ? "text-destructive" : undefined },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map((c) => (
           <button
             key={c.key}
@@ -49,7 +54,7 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
       {open === "myDue" ? (
         <div className="space-y-5 rounded-xl border bg-card p-4">
           <h2 className="text-sm font-semibold">My Due{o.personalName ? ` · ${o.personalName}` : ""}</h2>
-          {!o.personalPartyId ? <p className="text-sm text-muted-foreground">Choose your name above to include your credit portal, shopping and split amounts. Food and monthly expenses are counted already.</p> : null}
+          {!o.personalPartyId ? <p className="text-sm text-muted-foreground">Choose your name above to include your HDFC statement and shopping amounts. Food and monthly expenses are counted already.</p> : null}
 
           <Part title="Food" totalPaise={o.food.totalPaise} link={{ href: `/food${periodQuery}`, label: "Open Food Tracking" }}>
             {o.food.days.length === 0 ? (
@@ -65,14 +70,11 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
               </ul>
             )}
           </Part>
-          <Part title="Credit Portal" totalPaise={o.portal.totalPaise} link={{ href: "/credit-cards", label: "Open Credit Portal" }}>
-            <DebtItems items={o.portal.items} />
+          <Part title={`HDFC statement · ${formatLongDate(o.hdfc.range.from)} to ${formatLongDate(o.hdfc.range.to)}`} totalPaise={o.hdfc.totalPaise} link={{ href: "/credit-cards", label: "Open Credit Portal" }}>
+            <Items items={o.hdfc.items} />
           </Part>
           <Part title="Shopping Records" totalPaise={o.shopping.totalPaise} link={{ href: "/shopping", label: "Open Shopping Records" }}>
-            <DebtItems items={o.shopping.items} />
-          </Part>
-          <Part title="Splits and debts that name me" totalPaise={o.splits.totalPaise}>
-            <DebtItems items={o.splits.items} />
+            <Items items={o.shopping.items} />
           </Part>
           <Part title="Monthly Expenses" totalPaise={o.expenses.totalPaise}>
             <ul className="divide-y rounded-lg border text-sm">
@@ -98,38 +100,38 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
             </Link>
           </div>
           {o.debt.people.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing is owed in this period.</p>
+            <p className="text-sm text-muted-foreground">Nothing is owed by the chosen recipients in this period.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
+            <div className="overflow-x-auto">
               <table className="w-full min-w-[28rem] text-sm">
-                <thead className="bg-muted/50 text-xs text-muted-foreground">
-                  <tr>
-                    <th scope="col" className="px-3 py-2 text-left font-medium">Recipient</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium">Debt</th>
+                <thead className="text-xs text-muted-foreground">
+                  <tr className="border-b">
+                    <th scope="col" className="py-2 pr-3 text-left font-medium">Recipient</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Total value</th>
                     <th scope="col" className="px-3 py-2 text-right font-medium">Paid</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium">Remaining</th>
+                    <th scope="col" className="py-2 pl-3 text-right font-medium">Remaining</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {o.debt.people.map((p) => (
                     <tr key={p.partyId}>
-                      <td className="px-3 py-2">
+                      <td className="py-2 pr-3">
                         <Link href={`/debt/${p.partyId}${periodQuery}`} className="font-medium underline-offset-4 hover:underline">
                           {p.name}
                         </Link>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatINR(p.totalDebtPaise)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-success">{formatINR(p.paidPaise)}</td>
-                      <td className="px-3 py-2 text-right font-medium tabular-nums">{signed(p.remainingPaise)}</td>
+                      <td className="py-2 pl-3 text-right font-medium tabular-nums">{signed(p.remainingPaise)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t bg-muted/30 font-semibold">
-                    <td className="px-3 py-2">Total</td>
+                  <tr className="border-t font-semibold">
+                    <td className="py-2 pr-3">Total</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatINR(o.debt.totalPaise)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatINR(o.debt.paidPaise)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{signed(o.debt.remainingPaise)}</td>
+                    <td className="py-2 pl-3 text-right tabular-nums">{signed(o.debt.remainingPaise)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -139,21 +141,79 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
       ) : null}
 
       {open === "myBalance" ? (
-        <Formula title="My Balance" lines={[["Debt Amount", formatINR(o.debtAmountPaise)], ["− My Due", formatINR(o.myDuePaise)]]} result={signed(o.myBalancePaise)} />
-      ) : null}
-      {open === "old" ? (
         <div className="space-y-2 rounded-xl border bg-card p-4 text-sm">
-          <p>
-            The money in all your banks right now, added together. See each bank in{" "}
-            <Link href="/quick-pay/transactions" className="font-medium underline underline-offset-4">
-              GPay Transactions, View Balances
-            </Link>
-            .
+          <h2 className="text-sm font-semibold">My Balance</h2>
+          <ul className="divide-y rounded-lg border">
+            {o.updateBalance.rows.map((r) => (
+              <li key={r.id} className="flex items-center justify-between px-3 py-1.5">
+                <span>{r.name}</span>
+                <span className="font-medium tabular-nums">{signed(r.amountPaise)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="flex justify-between font-semibold tabular-nums">
+            <span>Total</span>
+            <span>{signed(o.myBalancePaise)}</span>
           </p>
-          <p className="text-lg font-semibold tabular-nums">{signed(o.oldBalancePaise)}</p>
         </div>
       ) : null}
-      {open === "new" ? <Formula title="New Balance" lines={[["Old Balance", signed(o.oldBalancePaise)], ["+ My Balance", signed(o.myBalancePaise)]]} result={signed(o.newBalancePaise)} /> : null}
+
+      {open === "new" ? (
+        <div className="space-y-1 rounded-xl border bg-card p-4 text-sm">
+          <h2 className="text-sm font-semibold">New Balance</h2>
+          {[
+            ["My Balance", signed(o.myBalancePaise)],
+            ["+ Debt Amount", formatINR(o.debtAmountPaise)],
+            ["− My Due", formatINR(o.myDuePaise)],
+          ].map(([label, value]) => (
+            <p key={label} className="flex justify-between gap-4 tabular-nums">
+              <span className="text-muted-foreground">{label}</span>
+              <span>{value}</span>
+            </p>
+          ))}
+          <p className="flex justify-between gap-4 border-t pt-1 font-semibold tabular-nums">
+            <span>New Balance</span>
+            <span>{signed(o.newBalancePaise)}</span>
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Dated lines, with the reason opening the original entry. A plain list, not boxes. */
+function Items({ items }: { items: DueItem[] }) {
+  if (items.length === 0) return <p className="text-sm text-muted-foreground">Nothing in this period.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[30rem] text-sm">
+        <thead className="text-xs text-muted-foreground">
+          <tr className="border-b">
+            <th scope="col" className="py-2 pr-3 text-left font-medium">Date and time</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Reason</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">Portal / platform</th>
+            <th scope="col" className="py-2 pl-3 text-right font-medium">Amount</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {items.map((i) => (
+            <tr key={i.id}>
+              <td className="py-1.5 pr-3 whitespace-nowrap">{when(i.occurredAt)}</td>
+              <td className="px-3 py-1.5">
+                {i.href ? (
+                  <Link href={i.href} className="underline-offset-4 hover:underline">
+                    {i.reason || "Open"}
+                  </Link>
+                ) : (
+                  i.reason || "—"
+                )}
+              </td>
+              <td className="px-3 py-1.5">{i.related || "—"}</td>
+              <td className="py-1.5 pl-3 text-right tabular-nums">{formatINR(i.amountPaise)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -173,23 +233,5 @@ function Part({ title, totalPaise, link, children }: { title: string; totalPaise
       </div>
       {children}
     </section>
-  );
-}
-
-function Formula({ title, lines, result }: { title: string; lines: [string, string][]; result: string }) {
-  return (
-    <div className="space-y-1 rounded-xl border bg-card p-4 text-sm">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      {lines.map(([label, value]) => (
-        <p key={label} className="flex justify-between gap-4 tabular-nums">
-          <span className="text-muted-foreground">{label}</span>
-          <span>{value}</span>
-        </p>
-      ))}
-      <p className="flex justify-between gap-4 border-t pt-1 font-semibold tabular-nums">
-        <span>{title}</span>
-        <span>{result}</span>
-      </p>
-    </div>
   );
 }

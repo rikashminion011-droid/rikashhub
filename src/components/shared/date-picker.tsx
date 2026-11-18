@@ -491,7 +491,10 @@ export function DateRangePicker({
   ariaLabel,
   className,
   placeholder = "Choose dates",
+  iconOnly = false,
 }: {
+  /** Just a calendar icon button (the period is in its tooltip), for a toolbar. */
+  iconOnly?: boolean;
   from: string;
   to: string;
   onChange: (range: { from: string; to: string }) => void;
@@ -529,9 +532,14 @@ export function DateRangePicker({
         if (next) setView({ y: Number(start.slice(0, 4)), m: Number(start.slice(5, 7)) - 1 });
       }}
     >
-      <Popover.Trigger type="button" aria-label={`${ariaLabel}${from && to ? `: ${label}` : ""}`} className={cn(triggerClass, "h-10 sm:h-9", className)}>
-        <span className={cn("truncate", !(from && to) && "text-muted-foreground")}>{label}</span>
-        <CalendarDays className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <Popover.Trigger
+        type="button"
+        title={iconOnly ? (from && to ? label : "Dates") : undefined}
+        aria-label={`${ariaLabel}${from && to ? `: ${label}` : ""}`}
+        className={iconOnly ? cn("relative flex size-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50", className) : cn(triggerClass, "h-10 sm:h-9", className)}
+      >
+        {iconOnly ? null : <span className={cn("truncate", !(from && to) && "text-muted-foreground")}>{label}</span>}
+        <CalendarDays className={iconOnly ? "size-5" : "size-4 shrink-0 text-muted-foreground"} aria-hidden />
       </Popover.Trigger>
       <PopupShell>
         <div className="mb-2 flex items-center justify-between gap-1">

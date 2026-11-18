@@ -37,7 +37,7 @@ export interface SettingsActions extends SettingsFormActions {
 
 const SECTIONS: { id: SettingsTab; label: string; hint: string; icon: LucideIcon }[] = [
   { id: "categories", label: "Categories", hint: "Reasons and their category", icon: Tags },
-  { id: "banks", label: "Bank Through", hint: "Banks and the default", icon: Banknote },
+  { id: "banks", label: "Through", hint: "Banks and the default", icon: Banknote },
   { id: "switch", label: "Switch", hint: "The ⇄ icon beside dropdowns", icon: ArrowLeftRight },
   { id: "split", label: "Split", hint: "People, percentages, fields", icon: UsersRound },
   { id: "debt", label: "Debt", hint: "Debt Management page", icon: HandCoins },
@@ -54,7 +54,7 @@ const leavesOf = (tree: BankTreeNode[]): BankOption[] =>
   tree.flatMap((main) => (main.accounts.length === 0 ? [{ id: main.id, label: main.name, mainName: main.name, name: main.name }] : main.accounts.map((a) => ({ id: a.id, label: `${main.name} → ${a.name}`, mainName: main.name, name: a.name }))));
 
 /**
- * Customized Settings: choose a page at the top, then one section at a time. Quick Entry has Categories, Bank Through, Switch,
+ * Customized Settings: choose a page at the top, then one section at a time. Quick Entry has Categories, Through, Switch,
  * Split, Debt and Food Entry (and General for labels and Credit History). Everything saved here is used by Quick Entry,
  * the edit pop-up, Add Bulk and Debt Management straight away. The other pages are listed for later.
  */
@@ -76,7 +76,7 @@ export function SettingsCenter({
   creditCategories: CategoryTreeNode[];
   people: PersonRow[];
   options: QuickPayOptions;
-  /** The settings GPay Transactions uses (its own, following Quick Entry where none were set). */
+  /** The settings Transaction History uses (its own, following Quick Entry where none were set). */
   gpaySettings: QuickPaySettingsData;
   food: FoodPricing;
   actions: SettingsActions;
@@ -88,7 +88,7 @@ export function SettingsCenter({
   const [creditTree, setCreditTree] = useState(initialCreditCategories);
   // Which list of categories is open: a Debit has one set, a Credit another.
   const [catKind, setCatKind] = useState<"DEBIT" | "CREDIT">("DEBIT");
-  // Quick Entry and GPay Transactions each have their own settings; the page chosen above decides which are shown and saved.
+  // Quick Entry and Transaction History each have their own settings; the page chosen above decides which are shown and saved.
   const [quickSettings, setQuickSettings] = useState<QuickPaySettingsData>(options.settings);
   const [gpayOwn, setGpayOwn] = useState<QuickPaySettingsData>(gpaySettings);
   const scope = page === "gpay" ? "gpay" : "quick-entry";
@@ -164,7 +164,7 @@ export function SettingsCenter({
       ) : (
         <>
           {page === "gpay" ? (
-            <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">These settings are for GPay Transactions, its edit pop-up and its Add Bulk only; Quick Entry is not changed. A section you have not changed here follows Quick Entry. Categories and the bank list themselves are shared by every page.</p>
+            <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">These settings are for Transaction History, its edit pop-up and its Add Bulk only; Quick Entry is not changed. A section you have not changed here follows Quick Entry. Categories and the bank list themselves are shared by every page.</p>
           ) : null}
           {/* Sections, as horizontal tabs */}
           <nav aria-label="Quick Entry settings sections" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -267,7 +267,7 @@ export function SettingsCenter({
               <>
                 <Card className="overflow-visible">
                   <CardHeader>
-                    <CardTitle>Bank Through</CardTitle>
+                    <CardTitle>Through</CardTitle>
                     <CardDescription>Main bank names and the sub-banks under them, for example GPay → HDFC, SBI, ICICI. Add, rename or delete them; every dropdown updates as soon as you do.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
@@ -302,7 +302,7 @@ export function SettingsCenter({
                     />
                   </CardContent>
                 </Card>
-                <BankVisibilitySection target={scope === "gpay" ? "GPay Transactions" : "Quick Entry"} key={bankOptions.map((b) => b.id).join(",")} settings={settings.banks} banks={bankOptions} actions={scoped} onSaved={setSettings} />
+                <BankVisibilitySection target={scope === "gpay" ? "Transaction History" : "Quick Entry"} key={bankOptions.map((b) => b.id).join(",")} settings={settings.banks} banks={bankOptions} actions={scoped} onSaved={setSettings} />
               </>
             ) : null}
 

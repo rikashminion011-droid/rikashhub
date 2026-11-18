@@ -1,8 +1,11 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
-import { getDebtHistory, getDebtSummary } from "@/features/debt/server/service";
-import type { DebtItem } from "@/features/debt/types";
+import { hdfcCycle } from "@/features/credit-portal/model";
+import { hdfcStatementShares } from "@/features/credit-portal/server/service";
+import { getDebtSummary } from "@/features/debt/server/service";
+
 import { buildGrid } from "@/features/food/grid";
+import { shoppingShares } from "@/features/shopping/server/service";
 import { listFoodEntriesRange } from "@/features/food/server/service";
 import { getBalances } from "@/features/quick-pay/server/entries";
 import { paiseToDecimalString, toPaise } from "@/lib/finance";
@@ -41,6 +44,27 @@ export async function setPersonalParty(db: PrismaClient, userId: string, partyId
   await db.monthlyDueSetting.upsert({ where: { userId }, create: { userId, personalPartyId: partyId }, update: { personalPartyId: partyId } });
 }
 
+// ───────────────────────── Recipients chosen in Debt Management
+
+/** The recipients chosen in Debt Management (its default view, and the ones counted in Monthly Due). Empty means everyone. */
+export async function getDebtRecipients(db: PrismaClient, userId: string): Promise<string[]> {
+  const row = await db.monthlyDueSetting.findUnique({ where: { userId } });
+  if (!row || row.debtPartyIds.length === 0) return [];
+  // A person removed since is dropped from the choice.
+  const alive = await db.expenseParty.findMany({ where: { userId, id: { in: row.debtPartyIds }, deletedAt: null }, select: { id: true } });
+  const keep = new Set(alive.map((p) => p.id));
+  return row.debtPartyIds.filter((id) => keep.has(id));
+}
+
+export async function setDebtRecipients(db: PrismaClient, userId: string, partyIds: readonly string[]): Promise<void> {
+  const ids = [...new Set(partyIds)];
+  if (ids.length > 0) {
+    const found = await db.expenseParty.count({ where: { userId, id: { in: ids }, deletedAt: null } });
+    if (found !== ids.length) throw new ExpenseError("A chosen person no longer exists. Pick again.", "NOT_FOUND");
+  }
+  await db.monthlyDueSetting.upsert({ where: { userId }, create: { userId, debtPartyIds: ids }, update: { debtPartyIds: ids } });
+}
+
 // ───────────────────────── Monthly expenses ─────────────────────────
 
 /** The expenses of a month. A month with none saved starts with Room Rent, for you to fill in. */
@@ -68,71 +92,113 @@ export async function saveMonthlyExpenses(db: PrismaClient, userId: string, mont
   return getMonthlyExpenses(db, userId, month);
 }
 
-// ───────────────────────── The overview ─────────────────────────
+// ───────────────────────── Update Balance
+
+export interface BalanceRow {
+  id: string;
+  name: string;
+  /** The main file it sits under (GPay, Cash). */
+  main: string;
+  amountPaise: number;
+}
+
+/** The money you hold now, one line for each bank and for Cash (credit lines such as Slice are not money you hold). */
+export async function getUpdateBalances(db: PrismaClient, userId: string): Promise<{ rows: BalanceRow[]; totalPaise: number }> {
+  const [data, accounts] = await Promise.all([getBalances(db, userId), db.account.findMany({ where: { userId, deletedAt: null, kind: "ASSET" }, select: { id: true } })]);
+  const held = new Set(accounts.map((a) => a.id));
+  const rows: BalanceRow[] = [];
+  for (const g of data.groups) {
+    for (const l of [...g.accounts, ...(g.direct ? [g.direct] : [])]) {
+      if (held.has(l.id)) rows.push({ id: l.id, name: l.name, main: g.name, amountPaise: l.currentPaise });
+    }
+  }
+  return { rows, totalPaise: rows.reduce((s, r) => s + r.amountPaise, 0) };
+}
+
+// ───────────────────────── The overview
+
+export interface DueItem {
+  id: string;
+  occurredAt: string;
+  reason: string;
+  category: string;
+  related: string;
+  amountPaise: number;
+  href: string | null;
+}
 
 export interface DueOverview {
   personalPartyId: string | null;
   personalName: string;
-  /** Food Rent for the period, with each day. */
+  /** Food for the period, with each day. */
   food: { totalPaise: number; days: { date: string; totalPaise: number }[] };
-  /** Splits and debts that name the personal recipient. */
-  splits: { totalPaise: number; items: DebtItem[] };
-  shopping: { totalPaise: number; items: DebtItem[] };
-  portal: { totalPaise: number; items: DebtItem[] };
+  /** The personal recipient's lines on the HDFC statement (HDFC's 15th to 15th cycle), shared evenly when a line has several people. */
+  hdfc: { totalPaise: number; range: { from: string; to: string }; items: DueItem[] };
+  /** The personal recipient's part of every shopping purchase. */
+  shopping: { totalPaise: number; items: DueItem[] };
   /** The typed expenses of every month the period touches. */
   expenses: { totalPaise: number; months: { month: string; rows: ExpenseRow[] }[] };
+  /** Food + HDFC statement + Shopping Records + Monthly Expenses. */
   myDuePaise: number;
-  debt: { totalPaise: number; paidPaise: number; remainingPaise: number; people: { partyId: string; name: string; totalDebtPaise: number; paidPaise: number; remainingPaise: number }[] };
+  /** The total value of the recipients chosen in Debt Management (everyone when none were chosen). */
+  debt: { totalPaise: number; paidPaise: number; remainingPaise: number; people: { partyId: string; name: string; totalDebtPaise: number; paidPaise: number; remainingPaise: number }[]; chosen: string[] };
   debtAmountPaise: number;
+  /** What the banks and Cash hold, as typed in Update Balance. */
+  updateBalance: { rows: BalanceRow[]; totalPaise: number };
+  /** The total of Update Balance. */
   myBalancePaise: number;
-  oldBalancePaise: number;
+  /** My Balance + Debt Amount - My Due. */
   newBalancePaise: number;
 }
 
 export async function getDueOverview(db: PrismaClient, userId: string, range: { from: string; to: string }): Promise<DueOverview> {
   const personalPartyId = await getPersonalPartyId(db, userId);
   const months = monthsOfRange(range.from, range.to);
+  const hdfcRange = hdfcCycle(range.to);
+  const chosen = await getDebtRecipients(db, userId);
 
-  const [foodData, debtSummary, balances, monthRows, personal, personName] = await Promise.all([
+  const [foodData, debtSummary, updateBalance, monthRows, personName, hdfcShares, shopShares] = await Promise.all([
     listFoodEntriesRange(db, userId, range.from, range.to),
     getDebtSummary(db, userId, { from: range.from, to: range.to, excludePartyIds: personalPartyId ? [personalPartyId] : [] }),
-    getBalances(db, userId),
+    getUpdateBalances(db, userId),
     Promise.all(months.map(async (month) => ({ month, rows: await getMonthlyExpenses(db, userId, month) }))),
-    personalPartyId ? getDebtHistory(db, userId, personalPartyId, { from: range.from, to: range.to }).catch(() => null) : Promise.resolve(null),
     personalPartyId ? db.expenseParty.findFirst({ where: { id: personalPartyId, userId }, select: { name: true } }) : Promise.resolve(null),
+    personalPartyId ? hdfcStatementShares(db, userId, personalPartyId, hdfcRange) : Promise.resolve([]),
+    personalPartyId ? shoppingShares(db, userId, { from: range.from, to: range.to }) : Promise.resolve([]),
   ]);
 
   const days = buildGrid(foodData.rows, "asc").map((d) => ({ date: d.date, totalPaise: d.totalPaise }));
-  const items = personal?.items ?? [];
-  const pick = (...sources: DebtItem["source"][]) => items.filter((i) => sources.includes(i.source));
-  const sum = (list: DebtItem[]) => list.reduce((s, i) => s + i.amountPaise, 0);
-  const splitItems = pick("SPLIT", "DEBT");
-  const shoppingItems = pick("SHOPPING");
-  const portalItems = pick("CREDIT_PORTAL");
-  const expenseTotal = monthRows.reduce((s, m) => s + m.rows.reduce((t, r) => t + r.amountPaise, 0), 0);
+  const hdfcItems: DueItem[] = hdfcShares.map((s) => ({ id: `hdfc:${s.id}`, occurredAt: s.occurredAt, reason: s.reason, category: s.category, related: `${s.portal} · Statement`, amountPaise: s.amountPaise, href: `/credit-cards?portal=${s.portalId}&tab=statement` }));
+  const shopItems: DueItem[] = shopShares
+    .filter((s) => s.partyId === personalPartyId)
+    .map((s, i) => ({ id: `shop:${s.purchaseId}:${i}`, occurredAt: s.occurredAt, reason: s.reason, category: "", related: s.platform, amountPaise: s.amountPaise, href: `/shopping/${s.purchaseId}` }));
+  const sum = (list: DueItem[]) => list.reduce((t, i) => t + i.amountPaise, 0);
+  const expenseTotal = monthRows.reduce((t, m) => t + m.rows.reduce((u, r) => u + r.amountPaise, 0), 0);
+  const myDuePaise = foodData.totalPaise + sum(hdfcItems) + sum(shopItems) + expenseTotal;
 
-  const myDuePaise = foodData.totalPaise + sum(splitItems) + sum(shoppingItems) + sum(portalItems) + expenseTotal;
-  const debtAmountPaise = debtSummary.totalDebtPaise;
-  const { myBalancePaise, newBalancePaise } = computeBalances({ debtPaise: debtAmountPaise, myDuePaise, oldPaise: balances.totalCurrentPaise });
+  // Only the recipients chosen in Debt Management count (everyone when none were chosen).
+  const rows = chosen.length > 0 ? debtSummary.rows.filter((r) => chosen.includes(r.partyId)) : debtSummary.rows;
+  const debtTotal = rows.reduce((t, r) => t + r.totalDebtPaise, 0);
+  const { newBalancePaise } = computeBalances({ debtPaise: debtTotal, myDuePaise, oldPaise: updateBalance.totalPaise });
 
   return {
     personalPartyId,
     personalName: personName?.name ?? "",
     food: { totalPaise: foodData.totalPaise, days },
-    splits: { totalPaise: sum(splitItems), items: splitItems },
-    shopping: { totalPaise: sum(shoppingItems), items: shoppingItems },
-    portal: { totalPaise: sum(portalItems), items: portalItems },
+    hdfc: { totalPaise: sum(hdfcItems), range: hdfcRange, items: hdfcItems },
+    shopping: { totalPaise: sum(shopItems), items: shopItems },
     expenses: { totalPaise: expenseTotal, months: monthRows },
     myDuePaise,
     debt: {
-      totalPaise: debtSummary.totalDebtPaise,
-      paidPaise: debtSummary.totalPaidPaise,
-      remainingPaise: debtSummary.totalRemainingPaise,
-      people: debtSummary.rows.filter((r) => r.totalDebtPaise !== 0 || r.paidPaise !== 0).map((r) => ({ partyId: r.partyId, name: r.name, totalDebtPaise: r.totalDebtPaise, paidPaise: r.paidPaise, remainingPaise: r.remainingPaise })),
+      totalPaise: debtTotal,
+      paidPaise: rows.reduce((t, r) => t + r.paidPaise, 0),
+      remainingPaise: rows.reduce((t, r) => t + r.remainingPaise, 0),
+      people: rows.filter((r) => r.totalDebtPaise !== 0 || r.paidPaise !== 0).map((r) => ({ partyId: r.partyId, name: r.name, totalDebtPaise: r.totalDebtPaise, paidPaise: r.paidPaise, remainingPaise: r.remainingPaise })),
+      chosen,
     },
-    debtAmountPaise,
-    myBalancePaise,
-    oldBalancePaise: balances.totalCurrentPaise,
+    debtAmountPaise: debtTotal,
+    updateBalance,
+    myBalancePaise: updateBalance.totalPaise,
     newBalancePaise,
   };
 }

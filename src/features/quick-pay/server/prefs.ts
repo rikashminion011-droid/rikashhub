@@ -15,8 +15,8 @@ import {
 /** Saved Customized Settings (labels and defaults, Split, Credits Added) and the keywords that pick categories. */
 
 /**
- * The saved settings. For GPay Transactions, each section that was customized there is used; every other section follows
- * Quick Entry, so nothing changes until something is set for GPay Transactions.
+ * The saved settings. For Transaction History, each section that was customized there is used; every other section follows
+ * Quick Entry, so nothing changes until something is set for Transaction History.
  */
 export async function getSettings(db: PrismaClient, userId: string, scope: SettingsScope = "quick-entry"): Promise<QuickPaySettingsData> {
   const row = await db.quickPaySettings.findUnique({ where: { userId } });
@@ -76,7 +76,7 @@ export async function saveSettingsSection<K extends SettingsSection>(db: PrismaC
   await checkReferences(db, userId, section, value);
 
   if (scope === "gpay") {
-    // Only this section is stored for GPay Transactions; Quick Entry is not touched.
+    // Only this section is stored for Transaction History; Quick Entry is not touched.
     const row = await db.quickPaySettings.findUnique({ where: { userId } });
     const own = (row?.gpayData && typeof row.gpayData === "object" && !Array.isArray(row.gpayData) ? row.gpayData : {}) as Record<string, unknown>;
     const gpayData = { ...own, [section]: value } as unknown as Prisma.InputJsonValue;

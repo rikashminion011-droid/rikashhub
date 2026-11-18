@@ -8,8 +8,10 @@ import { saveMonthlyExpensesAction, setPersonalPartyAction } from "@/features/mo
 import { DueSummary } from "@/features/monthly-due/components/due-summary";
 import { MonthlyExpensesEditor } from "@/features/monthly-due/components/monthly-expenses-editor";
 import { PersonalPicker } from "@/features/monthly-due/components/personal-picker";
+import { UpdateBalance } from "@/features/monthly-due/components/update-balance";
+import { setOpeningBalanceAction } from "@/features/quick-pay/actions";
 import { getDueOverview, type DueOverview } from "@/features/monthly-due/server/service";
-import { istDateOf } from "@/features/quick-pay/datetime";
+import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { periodFromParams } from "@/lib/period-params";
@@ -18,7 +20,8 @@ export const metadata: Metadata = { title: "Monthly Due" };
 
 export default async function MonthlyDuePage({ searchParams }: PageProps<"/monthly-due">) {
   const user = await requireUser();
-  const today = istDateOf(new Date());
+  const now = new Date();
+  const today = istDateOf(now);
   const period = periodFromParams(await searchParams, today);
 
   let overview: DueOverview;
@@ -51,12 +54,13 @@ export default async function MonthlyDuePage({ searchParams }: PageProps<"/month
 
   return (
     <>
-      <PageHeader title="Monthly Due" description="Your expenses, what is yours (My Due), what others owe (Debt Amount), and the balances that follow. Press any figure to see what it is made of." />
+      <PageHeader title="Monthly Due" description="Update your balances, your monthly expenses, what is yours (My Due), what the chosen recipients owe (Debt Amount) and the balances that follow. Press any figure to see what it is made of." />
       <div className="space-y-5">
         <PeriodFilter today={today}>
           <PersonalPicker people={people} value={overview.personalPartyId} setPersonal={setPersonalPartyAction} />
         </PeriodFilter>
         {editing ? <MonthlyExpensesEditor key={`${editing.month}-${editing.rows.map((r) => `${r.id}:${r.amountPaise}`).join(",")}`} month={editing.month} monthLabel={formatMonth(editing.month)} rows={editing.rows} saveExpenses={saveMonthlyExpensesAction} /> : null}
+        <UpdateBalance key={overview.updateBalance.rows.map((r) => `${r.id}:${r.amountPaise}`).join(",")} rows={overview.updateBalance.rows} today={today} nowTime={istTimeOf(now)} setOpeningBalance={setOpeningBalanceAction} />
         <DueSummary o={overview} periodQuery={periodQuery} />
       </div>
     </>

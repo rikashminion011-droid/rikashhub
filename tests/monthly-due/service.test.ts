@@ -59,8 +59,9 @@ describe("monthly expenses", () => {
 
 describe("the overview", () => {
   const range = { from: "2026-11-01", to: "2026-11-30" };
+  // A second test below needs the recipients that were chosen.
 
-  it("adds food, shopping, credit portal and expenses to My Due, and the others to the Debt Amount", async () => {
+  it("adds food, my HDFC statement lines, my shopping and the monthly expenses to My Due, and the chosen recipients to the Debt Amount", async () => {
     await setPersonalParty(db, ME.id, me);
     // Food: ₹100 in November (Tiffin 40 + Lunch 60), and ₹40 in October that must not count.
     await createFoodEntry(db, ME.id, rid(), { meal: "TIFFIN", notes: "Idli", amountPaise: 4000 });
@@ -76,7 +77,14 @@ describe("the overview", () => {
 
     // Credit portal: a ₹200 statement line for Dhanush only.
     const portal = await addPortal(db, ME.id, "HDFC");
-    await importStatement(db, ME.id, portal, [{ key: "k1", occurredAt: istInstant("2026-11-06", "12:00"), details: "NETFLIX", debitPaise: 20000, creditPaise: 0, reason: "Netflix", recipientIds: [dhanush], categoryId: null }]);
+    await importStatement(db, ME.id, portal, [
+      { key: "k1", occurredAt: istInstant("2026-11-06", "12:00"), details: "NETFLIX", debitPaise: 20000, creditPaise: 0, reason: "Netflix", recipientIds: [dhanush], categoryId: null },
+      // For me and Mukesh: my half, ₹200, is mine; and on 20 October, inside HDFC's cycle but outside the month.
+      { key: "k2", occurredAt: istInstant("2026-11-08", "12:00"), details: "DINNER", debitPaise: 40000, creditPaise: 0, reason: "Dinner", recipientIds: [me, mukesh], categoryId: null },
+      { key: "k3", occurredAt: istInstant("2026-10-20", "12:00"), details: "OCTOBER", debitPaise: 10000, creditPaise: 0, reason: "", recipientIds: [me], categoryId: null },
+      // Before the cycle starts: not counted.
+      { key: "k4", occurredAt: istInstant("2026-10-10", "12:00"), details: "TOO EARLY", debitPaise: 90000, creditPaise: 0, reason: "", recipientIds: [me], categoryId: null },
+    ]);
 
     // A Split of ₹1000 with Mukesh at 25% (Quick Entry style row written straight to the tables).
     const account = await db.account.findFirstOrThrow({ where: { userId: ME.id, deletedAt: null } });
@@ -89,14 +97,18 @@ describe("the overview", () => {
     const o = await getDueOverview(db, ME.id, range);
     expect(o.food.totalPaise).toBe(10000);
     expect(o.shopping.totalPaise).toBe(15000);
-    expect(o.portal.totalPaise).toBe(0); // the Netflix line is Dhanush's, not mine
+    // HDFC statement, 15 October to 15 November: my half of Dinner (200) and the October line (100); not Netflix (Dhanush's) or the early one.
+    expect(o.hdfc.range).toEqual({ from: "2026-10-15", to: "2026-11-15" });
+    expect(o.hdfc.totalPaise).toBe(20000 + 10000);
     expect(o.expenses.totalPaise).toBe(700000);
-    expect(o.myDuePaise).toBe(10000 + 15000 + 700000);
-    // Debt Amount: Mukesh 250 + 150, Dhanush 200 = 600, and I am not counted as owing myself.
-    expect(o.debtAmountPaise).toBe(25000 + 15000 + 20000);
+    // Splits and the other portals are not part of My Due.
+    expect(o.myDuePaise).toBe(10000 + 30000 + 15000 + 700000);
+    // Debt Amount (nobody chosen yet, so everyone but me): Mukesh 250 + 150 shopping + 200 dinner, Dhanush 200 Netflix.
+    expect(o.debtAmountPaise).toBe(25000 + 15000 + 20000 + 20000);
     expect(o.debt.people.map((p) => p.name).sort()).toEqual(["Dhanush", "Mukesh"].sort());
-    expect(o.myBalancePaise).toBe(o.debtAmountPaise - o.myDuePaise);
-    expect(o.newBalancePaise).toBe(o.oldBalancePaise + o.myBalancePaise);
+    // My Balance is the total of Update Balance; New Balance adds the Debt Amount and takes away My Due.
+    expect(o.myBalancePaise).toBe(o.updateBalance.totalPaise);
+    expect(o.newBalancePaise).toBe(o.myBalancePaise + o.debtAmountPaise - o.myDuePaise);
   });
 
   it("counts a Credited By credit as a payment, and takes it back when removed", async () => {
@@ -188,5 +200,59 @@ describe("Add Bulk, Credit History", () => {
     await createBulk(db, ME.id, rid(), [{ key: "dr", type: "DEBIT", amountPaise: 20000, occurredAt: at, reason: "Paid from it", accountId: bank.id, categoryId: null, shares: [], transfer: null, creditIds: [credit.id] }]);
     const debit = await db.transaction.findFirstOrThrow({ where: { userId: ME.id, description: "Paid from it", deletedAt: null } });
     expect(await db.transactionCreditLink.count({ where: { userId: ME.id, debitId: debit.id, creditId: credit.id } })).toBe(1);
+  });
+});
+
+describe("Transaction History filters", () => {
+  it("filters by who credited a credit, shows who credited each row, and counts debits and credits for the quick filters", async () => {
+    const { createBulk, listTransactions } = await import("@/features/quick-pay/server/entries");
+    const { parseTxFilters } = await import("@/features/quick-pay/filters");
+    const bank = (await db.account.findFirst({ where: { userId: ME.id, name: "HDFC", deletedAt: null } }))!;
+    const at = istInstant("2026-11-12", "10:00");
+    await createBulk(db, ME.id, rid(), [
+      { key: "x1", type: "CREDIT", amountPaise: 11100, occurredAt: at, reason: "From Mukesh", accountId: bank.id, categoryId: null, shares: [], transfer: null, creditedById: mukesh },
+      { key: "x2", type: "CREDIT", amountPaise: 22200, occurredAt: at, reason: "From Dhanush", accountId: bank.id, categoryId: null, shares: [], transfer: null, creditedById: dhanush },
+    ]);
+    const all = await listTransactions(db, ME.id, parseTxFilters({ all: "1" }));
+    const byMukesh = await listTransactions(db, ME.id, parseTxFilters({ all: "1", by: mukesh }));
+    expect(byMukesh.rows.length).toBeGreaterThan(0);
+    expect(byMukesh.rows.every((r) => r.creditedById === mukesh && r.creditedBy === "Mukesh")).toBe(true);
+    expect(byMukesh.rows.some((r) => r.reason === "From Dhanush")).toBe(false);
+    // The counts for the Credits and Debits buttons ignore the kind filter and cover everything else.
+    const credits = await listTransactions(db, ME.id, parseTxFilters({ all: "1", types: "CREDIT" }));
+    expect(credits.rows.every((r) => r.type === "CREDIT")).toBe(true);
+    expect(credits.typeCounts).toEqual(all.typeCounts);
+    expect(all.typeCounts.credit).toBeGreaterThanOrEqual(2);
+    // The page size can be chosen.
+    const small = await listTransactions(db, ME.id, parseTxFilters({ all: "1", size: "10" }));
+    expect(small.rows.length).toBeLessThanOrEqual(10);
+    expect(parseTxFilters({ size: "7" }).size).toBe(50);
+  });
+});
+
+describe("recipients chosen in Debt Management", () => {
+  it("are remembered, count in the Debt Amount, and a removed person drops out", async () => {
+    const { getDebtRecipients, setDebtRecipients } = await import("@/features/monthly-due/server/service");
+    expect(await getDebtRecipients(db, ME.id)).toEqual([]);
+    await setDebtRecipients(db, ME.id, [dhanush]);
+    expect(await getDebtRecipients(db, ME.id)).toEqual([dhanush]);
+    const o = await getDueOverview(db, ME.id, { from: "2026-11-01", to: "2026-11-30" });
+    expect(o.debt.chosen).toEqual([dhanush]);
+    expect(o.debt.people.map((p) => p.name)).toEqual(["Dhanush"]);
+    // The Debt Amount is exactly Dhanush's total value in Debt Management for the same dates (HDFC by its own cycle).
+    const theirs = (await getDebtSummary(db, ME.id, { from: "2026-11-01", to: "2026-11-30", excludePartyIds: [me] })).rows.find((r) => r.partyId === dhanush)!;
+    expect(o.debtAmountPaise).toBe(theirs.totalDebtPaise);
+    expect(o.debtAmountPaise).toBeGreaterThan(0);
+    await expect(setDebtRecipients(db, ME.id, ["00000000-0000-4000-8000-0000000000ff"])).rejects.toThrow(/no longer exists/);
+    await setDebtRecipients(db, ME.id, []);
+    expect(await getDebtRecipients(db, ME.id)).toEqual([]);
+  });
+
+  it("Update Balance lists the banks and Cash that hold money, and leaves out credit lines", async () => {
+    const { getUpdateBalances } = await import("@/features/monthly-due/server/service");
+    const credit = await db.account.create({ data: { userId: ME.id, name: "SliceLine", type: "OTHER", kind: "CREDIT_LINE" } });
+    const { rows, totalPaise } = await getUpdateBalances(db, ME.id);
+    expect(rows.some((r) => r.id === credit.id)).toBe(false);
+    expect(totalPaise).toBe(rows.reduce((t, r) => t + r.amountPaise, 0));
   });
 });

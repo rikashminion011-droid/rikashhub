@@ -13,7 +13,8 @@ import { getDebtSummary } from "@/features/debt/server/service";
 import type { DebtSummary } from "@/features/debt/types";
 import { totals } from "@/features/debt/view";
 import { ensureUserSetup } from "@/features/expenses/server/service";
-import { getPersonalPartyId } from "@/features/monthly-due/server/service";
+import { setDebtRecipientsAction } from "@/features/monthly-due/actions";
+import { getDebtRecipients, getPersonalPartyId } from "@/features/monthly-due/server/service";
 import { istDateOf } from "@/features/quick-pay/datetime";
 import { getSettings } from "@/features/quick-pay/server/prefs";
 import type { DebtSettings } from "@/features/quick-pay/settings-model";
@@ -32,15 +33,18 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
   const params = await searchParams;
   const period = periodFromParams(params, istDateOf(new Date()));
   const today = istDateOf(new Date());
-  const picked = one(params.people).split(",").filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  // An address can still name recipients; otherwise the ones chosen last time are used.
+  const fromAddress = one(params.people).split(",").filter((id) => /^[0-9a-f-]{36}$/i.test(id));
 
   let summary: DebtSummary;
   let settings: DebtSettings;
   let everyone: { id: string; name: string }[];
+  let picked: string[] = fromAddress;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
     const personal = await getPersonalPartyId(db, user.id);
+    if (fromAddress.length === 0) picked = await getDebtRecipients(db, user.id);
     const [full, s] = await Promise.all([getDebtSummary(db, user.id, { from: period.from, to: period.to, excludePartyIds: personal ? [personal] : [] }), getSettings(db, user.id).then((x) => x.debt)]);
     settings = s;
     everyone = full.rows.map((r) => ({ id: r.partyId, name: r.name }));
@@ -76,7 +80,7 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
       />
       <div className="space-y-5">
         <PeriodFilter today={today}>
-          <RecipientFilter people={everyone} selected={picked} />
+          <RecipientFilter key={picked.join(",")} people={everyone} selected={picked} save={setDebtRecipientsAction} />
         </PeriodFilter>
 
         {settings.showTotals ? (

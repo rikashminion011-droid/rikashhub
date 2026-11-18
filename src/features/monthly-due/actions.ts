@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { parseAmountInput } from "@/lib/finance";
 import { RateLimiter } from "@/lib/security/rate-limit";
-import { saveMonthlyExpenses, setPersonalParty, type ExpenseRow } from "./server/service";
+import { saveMonthlyExpenses, setDebtRecipients, setPersonalParty, type ExpenseRow } from "./server/service";
 
 /** Server actions for Monthly Due. Each one confirms who is signed in and checks its input again on the server. */
 
@@ -69,6 +69,24 @@ export async function setPersonalPartyAction(raw: unknown): Promise<DueResult> {
     return { ok: true };
   } catch (error) {
     return failure(error, "set personal recipient");
+  }
+}
+
+/**
+ * Saves the recipients chosen in Debt Management. They stay chosen (the next visit opens on them) and they are the ones counted
+ * in Monthly Due. An empty list means everyone.
+ */
+export async function setDebtRecipientsAction(raw: unknown): Promise<DueResult> {
+  try {
+    const p = z.object({ partyIds: z.array(z.uuid()).max(500) }).safeParse(raw);
+    if (!p.success) return { ok: false, error: "Choose recipients from the list." };
+    const { user, db } = await context();
+    await setDebtRecipients(db, user.id, p.data.partyIds);
+    revalidatePath("/debt", "layout");
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "set debt recipients");
   }
 }
 

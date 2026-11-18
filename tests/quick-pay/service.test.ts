@@ -384,7 +384,7 @@ describe("bulk entry", () => {
   });
 });
 
-describe("GPay Transactions: filters, search, totals, paging", () => {
+describe("Transaction History: filters, search, totals, paging", () => {
   let user: typeof ME;
   let o: QuickPayOptions;
   const bankId = () => bank(o, "HDFC");
@@ -451,12 +451,12 @@ describe("GPay Transactions: filters, search, totals, paging", () => {
     const opts = await getQuickPayOptions(db, bulkUser.id);
     const rows = Array.from({ length: 30 }, (_, i) => row2(opts, i));
     await createBulk(db, bulkUser.id, rid(), rows);
-    const p1 = await listTransactions(db, bulkUser.id, parseTxFilters({}));
-    const p2 = await listTransactions(db, bulkUser.id, parseTxFilters({ page: "2" }));
+    const p1 = await listTransactions(db, bulkUser.id, parseTxFilters({ size: "25" }));
+    const p2 = await listTransactions(db, bulkUser.id, parseTxFilters({ page: "2", size: "25" }));
     expect([p1.rows.length, p2.rows.length, p1.pageCount]).toEqual([25, 5, 2]);
     expect(p1.totals).toMatchObject({ count: 30, debitPaise: 30 * 100 });
     expect(new Set([...p1.rows, ...p2.rows].map((r) => r.id)).size).toBe(30);
-    expect((await listTransactions(db, bulkUser.id, parseTxFilters({ page: "99" }))).page).toBe(2);
+    expect((await listTransactions(db, bulkUser.id, parseTxFilters({ page: "99", size: "25" }))).page).toBe(2);
   });
 
   it("returns everything for export, with the same filters and totals", async () => {
@@ -553,7 +553,7 @@ describe("self transfer", () => {
   });
 });
 
-describe("GPay Transactions: several filters at once", () => {
+describe("Transaction History: several filters at once", () => {
   it("matches any of the chosen banks, categories, kinds and people, and combines the filters", async () => {
     const o = await options();
     const canara = bank(o, "GPay → Canara");

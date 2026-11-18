@@ -14,7 +14,7 @@ export const DEFAULT_LABELS: Record<FieldKey, string> = {
   amount: "Amount",
   reason: "Reason",
   category: "Category",
-  bank: "Bank Through",
+  bank: "Through",
   split: "Split",
   creditsAdded: "Credit History",
 };
@@ -67,12 +67,12 @@ export const splitSchema = z.object({
   equalDivide: z.boolean().default(true),
 });
 
-/** The Bank Through list in Quick Entry: banks listed here are left out of its dropdowns (they still exist everywhere else). */
+/** The Through list in Quick Entry: banks listed here are left out of its dropdowns (they still exist everywhere else). */
 export const banksSchema = z.object({ hiddenIds: z.array(uuid).max(500).default([]) });
 
 export const SWITCH_FEATURES = ["bank", "category", "split", "debt", "shopping", "credit", "foodNotes"] as const;
 export type SwitchFeature = (typeof SWITCH_FEATURES)[number];
-export const SWITCH_LABEL: Record<SwitchFeature, string> = { bank: "Bank Through", category: "Category", split: "Split (person)", debt: "Debt (person)", shopping: "Shopping Portals", credit: "Credit History", foodNotes: "Food Entry notes" };
+export const SWITCH_LABEL: Record<SwitchFeature, string> = { bank: "Through", category: "Category", split: "Split (person)", debt: "Debt (person)", shopping: "Shopping Portals", credit: "Credit History", foodNotes: "Food Entry notes" };
 
 /** Switches that move through the other options of a list you can arrange. Credit History and Food Entry notes simply move to the next one. */
 export const SWITCH_HAS_LIST: Record<SwitchFeature, boolean> = { bank: true, category: true, split: true, debt: true, shopping: true, credit: false, foodNotes: false };
@@ -196,6 +196,6 @@ export function parseSettings(stored: unknown): QuickPaySettingsData {
   return { fields: read("fields"), split: read("split"), credits: read("credits"), banks: read("banks"), switch: read("switch"), debt: read("debt") };
 }
 
-/** Which page a set of settings is for. GPay Transactions (with its edit pop-up and Add Bulk) can differ from Quick Entry. */
+/** Which page a set of settings is for. Transaction History (with its edit pop-up and Add Bulk) can differ from Quick Entry. */
 export const SETTINGS_SCOPES = ["quick-entry", "gpay"] as const;
 export type SettingsScope = (typeof SETTINGS_SCOPES)[number];

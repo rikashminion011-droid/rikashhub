@@ -199,7 +199,7 @@ export async function updateEntry(db: PrismaClient, userId: string, id: string, 
 
 /**
  * Moves money from one bank to another as a single transaction: the first bank goes down and the second goes up by the same
- * amount, and it appears once in GPay Transactions. `requestId` makes a double click save it once.
+ * amount, and it appears once in Transaction History. `requestId` makes a double click save it once.
  */
 export async function createTransfer(
   db: PrismaClient,
@@ -420,7 +420,7 @@ export async function listCreditChoices(db: PrismaClient, userId: string, source
 /** The latest credits, for older callers. */
 export const listRecentCredits = (db: PrismaClient, userId: string, limit = 10) => listCreditChoices(db, userId, "recent_credits", limit);
 
-// ───────────────────────── GPay Transactions ─────────────────────────
+// ───────────────────────── Transaction History ─────────────────────────
 
 const includeForRows = {
   account: { select: { name: true, parent: { select: { name: true } } } },
@@ -455,7 +455,7 @@ function splitPercentOf(split: { amount: { toString(): string }; percentage: { t
   return txAmountPaise > 0 ? Math.round((paiseOf(split.amount) / txAmountPaise) * 100 * 10_000) / 10_000 : 0;
 }
 
-export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "from" | "to" | "q"> & Partial<Pick<TxFilters, "banks" | "categories" | "people" | "types">>): Prisma.TransactionWhereInput {
+export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "from" | "to" | "q"> & Partial<Pick<TxFilters, "banks" | "categories" | "people" | "types">>, creditedIds: readonly string[] | null = null): Prisma.TransactionWhereInput {
   const { from, to } = effectiveRange(filters);
   const bounds = rangeToInstants(from, to);
   const where: Prisma.TransactionWhereInput = { userId, quickPay: true, deletedAt: null };
@@ -479,6 +479,8 @@ export function buildWhere(userId: string, filters: Pick<TxFilters, "month" | "f
   if (filters.banks?.length) and.push({ OR: [{ accountId: { in: filters.banks } }, { toAccountId: { in: filters.banks } }] });
   if (filters.categories?.length) and.push({ OR: [{ categoryId: { in: filters.categories } }, { category: { is: { parentId: { in: filters.categories } } } }] });
   if (filters.people?.length) and.push({ splits: { some: { partyId: { in: filters.people } } } });
+  // "Credited by": only the transactions those people credited (found beforehand, see creditedIdsFor).
+  if (creditedIds) and.push({ id: { in: [...creditedIds] } });
   if (filters.types?.length) {
     const kinds = filters.types.map((t) => (t === "DEBIT" ? "EXPENSE" : t === "CREDIT" ? "INCOME" : "TRANSFER")) as ("EXPENSE" | "INCOME" | "TRANSFER")[];
     and.push({ type: { in: kinds } });
@@ -511,7 +513,35 @@ function toRow(row: RowWithRelations): TxRow {
     splitKind: kindOf(row, shares),
     shares,
     linkedCreditsPaise: row.creditLinksAsDebit.reduce((sum, l) => sum + paiseOf(l.credit.amount), 0),
+    creditedBy: "",
+    creditedById: null,
   };
+}
+
+/** The ids of the transactions credited by any of the chosen people, or null when that filter is not used. */
+async function creditedIdsFor(db: PrismaClient, userId: string, filters: Pick<TxFilters, "by">): Promise<string[] | null> {
+  if (!filters.by?.length) return null;
+  const rows = await db.splitPayment.findMany({ where: { userId, deletedAt: null, partyId: { in: filters.by }, transactionId: { not: null } }, select: { transactionId: true } });
+  return rows.map((r) => r.transactionId!).filter(Boolean);
+}
+
+/** Puts who credited each Credit on its row. */
+async function withCreditedBy(db: PrismaClient, userId: string, rows: TxRow[]): Promise<TxRow[]> {
+  const credits = rows.filter((r) => r.type === "CREDIT" && !r.transfer).map((r) => r.id);
+  if (credits.length === 0) return rows;
+  const payments = await db.splitPayment.findMany({ where: { userId, deletedAt: null, transactionId: { in: credits } }, select: { transactionId: true, partyId: true, party: { select: { name: true } } } });
+  const by = new Map(payments.map((p) => [p.transactionId!, p]));
+  return rows.map((r) => {
+    const p = by.get(r.id);
+    return p ? { ...r, creditedBy: p.party.name, creditedById: p.partyId } : r;
+  });
+}
+
+/** How many debits and credits match every filter except the kind chosen: the numbers on the Credits and Debits buttons. */
+async function typeCountsFor(db: PrismaClient, userId: string, filters: TxFilters, creditedIds: string[] | null): Promise<{ debit: number; credit: number }> {
+  const groups = await db.transaction.groupBy({ by: ["type"], where: buildWhere(userId, { ...filters, types: [] }, creditedIds), _count: { _all: true } });
+  const n = (type: string) => groups.find((g) => g.type === type)?._count._all ?? 0;
+  return { debit: n("EXPENSE"), credit: n("INCOME") };
 }
 
 async function totalsFor(db: PrismaClient, where: Prisma.TransactionWhereInput): Promise<TxTotals> {
@@ -529,9 +559,10 @@ export async function listTransactions(
   userId: string,
   filters: TxFilters,
   options: { pageSize?: number } = {},
-): Promise<{ rows: TxRow[]; totals: TxTotals; page: number; pageCount: number }> {
-  const size = options.pageSize ?? PAGE_SIZE;
-  const where = buildWhere(userId, filters);
+): Promise<{ rows: TxRow[]; totals: TxTotals; page: number; pageCount: number; typeCounts: { debit: number; credit: number } }> {
+  const size = options.pageSize ?? filters.size ?? PAGE_SIZE;
+  const creditedIds = await creditedIdsFor(db, userId, filters);
+  const where = buildWhere(userId, filters, creditedIds);
   const totals = await totalsFor(db, where);
   const pageCount = Math.max(1, Math.ceil(totals.count / size));
   const page = Math.min(filters.page, pageCount);
@@ -544,20 +575,21 @@ export async function listTransactions(
     skip: (page - 1) * size,
     take: size,
   });
-  return { rows: rows.map(toRow), totals, page, pageCount };
+  const [withCredited, typeCounts] = await Promise.all([withCreditedBy(db, userId, rows.map(toRow)), typeCountsFor(db, userId, filters, creditedIds)]);
+  return { rows: withCredited, totals, page, pageCount, typeCounts };
 }
 
 /** Every transaction matching the filters (for export), newest first. */
 export async function listForExport(db: PrismaClient, userId: string, filters: TxFilters, limit = 20_000): Promise<{ rows: TxRow[]; totals: TxTotals; truncated: boolean }> {
-  const where = buildWhere(userId, filters);
+  const where = buildWhere(userId, filters, await creditedIdsFor(db, userId, filters));
   const totals = await totalsFor(db, where);
   const rows = await db.transaction.findMany({
     where,
     include: includeForRows,
-    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    orderBy: filters.order === "asc" ? [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }] : [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: limit,
   });
-  return { rows: rows.map(toRow), totals, truncated: totals.count > rows.length };
+  return { rows: await withCreditedBy(db, userId, rows.map(toRow)), totals, truncated: totals.count > rows.length };
 }
 
 // ───────────────────────── Balances ─────────────────────────

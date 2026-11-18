@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { localDraftCount } from "../bulk-draft";
 
 /** "Draft": goes back to the Add Bulk sheet exactly where it was left. Shows how many rows are waiting in it. */
-export function DraftLink({ savedCount = 0 }: { /** Rows waiting in the draft saved on the server. */ savedCount?: number }) {
+export function DraftLink({ savedCount = 0, iconOnly = false }: { /** Rows waiting in the draft saved on the server. */ savedCount?: number; /** Just the icon (with the count on it), for the toolbar. */ iconOnly?: boolean }) {
   const [localCount, setLocal] = useState(0);
   const count = Math.max(savedCount, localCount);
   useEffect(() => {
@@ -25,9 +25,9 @@ export function DraftLink({ savedCount = 0 }: { /** Rows waiting in the draft sa
   }, []);
 
   return (
-    <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))} aria-label={count > 0 ? `Draft, ${count} unsaved row${count === 1 ? "" : "s"}` : "Draft"}>
-      <FileClock /> Draft
-      {count > 0 ? <span className="ml-0.5 rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white tabular-nums">{count}</span> : null}
+    <Link href="/quick-pay/transactions/bulk" title="Draft" className={iconOnly ? "relative flex size-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50" : cn(buttonVariants({ variant: "outline" }))} aria-label={count > 0 ? `Draft, ${count} unsaved row${count === 1 ? "" : "s"}` : "Draft"}>
+      <FileClock className={iconOnly ? "size-5" : undefined} /> {iconOnly ? null : "Draft"}
+      {count > 0 ? <span className={iconOnly ? "absolute -top-1.5 -right-1.5 rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white tabular-nums" : "ml-0.5 rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white tabular-nums"}>{count}</span> : null}
     </Link>
   );
 }

@@ -116,6 +116,9 @@ export interface TxRow {
   shares: ShareDetail[];
   /** Total of the credits added to this debit, in paise (0 when none). */
   linkedCreditsPaise: number;
+  /** For a Credit: who credited it (empty for Others). */
+  creditedBy: string;
+  creditedById: string | null;
 }
 
 export interface TxTotals {

@@ -21,7 +21,7 @@ import { useQuickAdd } from "./use-quick-add";
 
 const newRequestId = () => crypto.randomUUID();
 
-/** The Quick Entry form: record a debit or credit. Compact, with the same fields as the edit pop-up in GPay Transactions. */
+/** The Quick Entry form: record a debit or credit. Compact, with the same fields as the edit pop-up in Transaction History. */
 export function QuickEntryForm({
   initialOptions,
   initialEntry,
@@ -161,7 +161,7 @@ export function QuickEntryForm({
       });
     } else {
       toast.success(result.duplicate ? "That entry was already saved." : `${form.type === "CREDIT" ? "Credit" : "Debit"} of ${formatINR(result.amountPaise)} saved.`, {
-        description: "It now appears in GPay Transactions.",
+        description: "It now appears in Transaction History.",
         action: { label: "View", onClick: () => router.push("/quick-pay/transactions") },
       });
       setFormState(emptyState(options.settings, options));
@@ -249,7 +249,7 @@ export function QuickEntryForm({
               <Settings2 className="size-4 shrink-0" aria-hidden /> Customized Settings
             </Link>
             <Link href="/quick-pay/transactions" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
-              <Receipt className="size-4 shrink-0" aria-hidden /> GPay Transactions
+              <Receipt className="size-4 shrink-0" aria-hidden /> Transaction History
             </Link>
           </nav>
         </form>
@@ -260,7 +260,7 @@ export function QuickEntryForm({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete this entry?"
-        description="It disappears from GPay Transactions and the bank balance is recalculated. This cannot be undone."
+        description="It disappears from Transaction History and the bank balance is recalculated. This cannot be undone."
         confirmLabel="Delete entry"
         onConfirm={removeEntry}
       />

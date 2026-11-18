@@ -40,7 +40,7 @@ const FIELD_NAME: Record<(typeof FIELD_KEYS)[number], string> = {
   amount: "Amount",
   reason: "Reason",
   category: "Category",
-  bank: "Bank Through",
+  bank: "Through",
   split: "Split",
   creditsAdded: "Credit History",
 };
@@ -127,7 +127,7 @@ export function FieldsSection({ settings, options, actions, onSaved }: { setting
   return (
     <SectionCard
       title="Fields & Defaults"
-      description="Rename the fields, and choose what is selected when Quick Entry opens. Labels and defaults apply in Quick Entry, the edit pop-up and the GPay Transactions table."
+      description="Rename the fields, and choose what is selected when Quick Entry opens. Labels and defaults apply in Quick Entry, the edit pop-up and the Transaction History table."
       footer={<SaveBar dirty={dirty} saving={saving} error={error} onSave={save} onReset={reset} />}
     >
       <div className="grid gap-3 sm:grid-cols-2">

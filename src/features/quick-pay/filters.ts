@@ -1,7 +1,9 @@
 import { parseISODate } from "@/lib/finance";
 import { isValidMonth, monthBounds } from "./datetime";
 
-export const PAGE_SIZE = 25;
+/** How many transactions a page shows to begin with, and the sizes that can be chosen. */
+export const PAGE_SIZE = 50;
+export const PAGE_SIZES = [10, 25, 50, 100, 200] as const;
 
 export interface TxFilters {
   /** "YYYY-MM" month filter. Ignored when a custom range is set. */
@@ -16,7 +18,11 @@ export interface TxFilters {
   banks?: string[];
   categories?: string[];
   people?: string[];
+  /** Credits that were credited by any of these people. */
+  by?: string[];
   types?: TxKind[];
+  /** How many transactions a page shows. */
+  size?: number;
   /** True when "All time" was chosen, so the current month is not applied by default. */
   all?: boolean;
   /** Newest first (the default) or oldest first. */
@@ -67,6 +73,8 @@ export function parseTxFilters(params: SearchParams, options: { defaultMonth?: s
     banks: idList(params.banks),
     categories: idList(params.cats),
     people: idList(params.people),
+    by: idList(params.by),
+    size: (PAGE_SIZES as readonly number[]).includes(Number.parseInt(first(params.size), 10)) ? Number.parseInt(first(params.size), 10) : PAGE_SIZE,
     types: [...new Set(first(params.types).split(",").filter((t): t is TxKind => (TX_KINDS as readonly string[]).includes(t)))],
     all,
     order: first(params.order) === "asc" ? "asc" : "desc",
@@ -84,7 +92,7 @@ export function effectiveRange(filters: Pick<TxFilters, "month" | "from" | "to">
 }
 
 export function hasActiveFilters(filters: TxFilters): boolean {
-  return Boolean(filters.month || filters.from || filters.to || filters.q || filters.banks?.length || filters.categories?.length || filters.people?.length || filters.types?.length);
+  return Boolean(filters.month || filters.from || filters.to || filters.q || filters.banks?.length || filters.categories?.length || filters.people?.length || filters.by?.length || filters.types?.length);
 }
 
 /** Query string for the filters (used for links, paging and export). Page is only included when asked. */
@@ -97,6 +105,8 @@ export function filtersToQuery(filters: TxFilters, options: { page?: boolean } =
   if (filters.banks?.length) query.set("banks", filters.banks.join(","));
   if (filters.categories?.length) query.set("cats", filters.categories.join(","));
   if (filters.people?.length) query.set("people", filters.people.join(","));
+  if (filters.by?.length) query.set("by", filters.by.join(","));
+  if (filters.size && filters.size !== PAGE_SIZE) query.set("size", String(filters.size));
   if (filters.types?.length) query.set("types", filters.types.join(","));
   if (filters.all) query.set("all", "1");
   if (filters.order === "asc") query.set("order", "asc");

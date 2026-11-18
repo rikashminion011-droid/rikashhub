@@ -146,7 +146,7 @@ export function TransactionsPanel({ today, options, actions }: { today: string; 
 
       {data?.truncated ? <p className="text-xs text-muted-foreground">Showing the latest 500. Narrow the period to see the rest.</p> : null}
       <Link href="/quick-pay/transactions" className="inline-block text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-        Open GPay Transactions (filters, balances, import and export)
+        Open Transaction History (filters, balances, import and export)
       </Link>
 
       <EditEntryDialog

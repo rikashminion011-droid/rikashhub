@@ -43,3 +43,12 @@ describe("Debit and Credit categories", () => {
     expect(sharedCategories([food], [food, ...withCats.creditCategories]).map((c) => c.id)).toEqual(["c-food", "c-salary"]);
   });
 });
+
+describe("categories shared by a Debit and a Credit", () => {
+  it("lists a Credit category that has the same name as a Debit one only once", async () => {
+    const { sharedCategories } = await import("@/features/quick-pay/availability");
+    const c = (id: string, label: string) => ({ id, label, mainName: label, name: label, isSub: false });
+    const out = sharedCategories([c("d1", "OFFICE"), c("d2", "FOOD")], [c("c1", "Office"), c("c2", "Diwali 2026"), c("d1", "OFFICE")]);
+    expect(out.map((x) => x.id)).toEqual(["d1", "d2", "c2"]);
+  });
+});

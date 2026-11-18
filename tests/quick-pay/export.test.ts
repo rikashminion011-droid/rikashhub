@@ -5,6 +5,8 @@ import type { TxRow } from "@/features/quick-pay/types";
 
 const row = (i: number, over: Partial<TxRow> = {}): TxRow => ({
   id: `id-${i}`,
+  creditedBy: "",
+  creditedById: null,
   occurredAt: new Date(Date.UTC(2026, 5, 25, 3, 51 - (i % 50))).toISOString(),
   type: "DEBIT",
   amountPaise: 12345,
@@ -44,12 +46,12 @@ describe("Excel export", () => {
   async function read(rows: TxRow[], m = meta()) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await buildXlsx(rows, m)) as never);
-    return workbook.getWorksheet("GPay Transactions")!;
+    return workbook.getWorksheet("Transaction History")!;
   }
 
   it("has the period, totals, headers and one line per transaction", async () => {
     const sheet = await read([row(1), row(2, { type: "CREDIT", amountPaise: 50000, reason: "Salary", bank: "HDFC", category: "", shares: [], splitKind: null })]);
-    expect(sheet.getCell("A1").value).toBe("GPay Transactions");
+    expect(sheet.getCell("A1").value).toBe("Transaction History");
     expect(sheet.getCell("B2").value).toBe("June 1, 2026 – June 30, 2026");
     expect(sheet.getCell("B4").value).toBe(123.45);
     expect(sheet.getCell("B5").value).toBe(500);

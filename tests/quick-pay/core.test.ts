@@ -240,7 +240,7 @@ describe("validateTransfer", () => {
   });
 });
 
-describe("GPay Transactions filters: current month by default and several choices at once", () => {
+describe("Transaction History filters: current month by default and several choices at once", () => {
   const ID1 = "11111111-1111-4111-8111-111111111111";
   const ID2 = "22222222-2222-4222-8222-222222222222";
 
@@ -290,7 +290,7 @@ describe("bulk rows that are self transfers", () => {
   const now = new Date("2026-11-10T10:00:00Z");
   const base: BulkRowInput = { key: "t1", date: "2026-11-09", time: "14:30", debit: "500", credit: "", reason: "Top up", accountId: null, categoryId: null, shares: [], transfer: { fromId: "a1", toId: "a2" } };
 
-  it("needs no Bank Through, and becomes a transfer from the first bank to the second", () => {
+  it("needs no Through, and becomes a transfer from the first bank to the second", () => {
     const out = validateBulkRow(base, now);
     expect(out.ok && [out.value.accountId, out.value.transfer, out.value.amountPaise, out.value.categoryId, out.value.shares]).toEqual(["a1", { toId: "a2" }, 50000, null, []]);
   });

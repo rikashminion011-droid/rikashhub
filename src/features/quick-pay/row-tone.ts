@@ -1,5 +1,5 @@
 /**
- * The background of a transaction row, the same everywhere (GPay Transactions and Add Bulk): a debit is light red, a credit
+ * The background of a transaction row, the same everywhere (Transaction History and Add Bulk): a debit is light red, a credit
  * light green, and a self transfer light yellow.
  */
 export type RowKind = "DEBIT" | "CREDIT" | "TRANSFER";

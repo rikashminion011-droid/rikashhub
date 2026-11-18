@@ -36,12 +36,12 @@ interface Preview {
 type Filter = "all" | "new" | "duplicate" | "skipped" | "problems";
 
 /** "Import": upload a Google Pay statement (PDF), check what it holds, choose your banks, and add the transactions. */
-export function ImportDialog({ actions }: { actions: ImportActions }) {
+export function ImportDialog({ actions, iconOnly = false }: { actions: ImportActions; /** Just the icon, for the toolbar. */ iconOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>
-        <Upload /> Import
+      <DialogTrigger render={iconOnly ? <button type="button" title="Import" aria-label="Import" className="relative flex size-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50" /> : <Button variant="outline" />}>
+        <Upload className={iconOnly ? "size-5" : undefined} /> {iconOnly ? null : "Import"}
       </DialogTrigger>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[min(64rem,calc(100vw-2rem))]">
         <DialogHeader>

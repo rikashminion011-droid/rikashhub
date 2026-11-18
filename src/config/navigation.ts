@@ -102,7 +102,7 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
     planned: [],
   },
   {
-    title: "GPay Transactions",
+    title: "Transaction History",
     href: "/quick-pay/transactions",
     icon: ReceiptText,
     description: "Every Quick Pay entry, with filters, balances and export.",

@@ -13,7 +13,7 @@ export interface MultiOption {
 
 /**
  * A dropdown where any number of options can be ticked at once (it stays open while you tick). The button shows the label and
- * how many are ticked. Used for the filters of GPay Transactions.
+ * how many are ticked. Used for the filters of Transaction History.
  */
 export function MultiSelect({
   label,

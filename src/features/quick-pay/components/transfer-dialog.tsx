@@ -6,7 +6,7 @@ import type { saveTransferAction } from "../actions";
 import type { QuickPayOptions } from "../types";
 import { TransferForm } from "./transfer-form";
 
-/** The "Self Transfer" choice in a Bank Through list opens this pop-up: from which bank, to which bank, the amount and a reason. */
+/** The "Self Transfer" choice in a Through list opens this pop-up: from which bank, to which bank, the amount and a reason. */
 export function SelfTransferDialog({
   open,
   onOpenChange,
@@ -44,7 +44,7 @@ export function SelfTransferDialog({
   );
 }
 
-/** The item at the bottom of a Bank Through dropdown that opens the Self Transfer pop-up. */
+/** The item at the bottom of a Through dropdown that opens the Self Transfer pop-up. */
 export function SelfTransferItem({ onOpen }: { onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium hover:bg-accent hover:text-accent-foreground">

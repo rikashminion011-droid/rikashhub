@@ -172,7 +172,7 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
       refresh();
       return { ok: true, id: entryId, updated: true, duplicate: false, amountPaise: checked.value.amountPaise };
     }
-    // A new entry can be dated on a day other than today: it then appears under that day in GPay Transactions.
+    // A new entry can be dated on a day other than today: it then appears under that day in Transaction History.
     let when: Date | undefined;
     if (date) {
       try {
@@ -292,7 +292,7 @@ export async function getOptionsAction(): Promise<QuickPayResult<{ options: Quic
   }
 }
 
-/** The options as GPay Transactions (its edit pop-up and Add Bulk) uses them: its own settings, following Quick Entry where none were set. */
+/** The options as Transaction History (its edit pop-up and Add Bulk) uses them: its own settings, following Quick Entry where none were set. */
 export async function getGpayOptionsAction(): Promise<QuickPayResult<{ options: QuickPayOptions }>> {
   try {
     const { user, db } = await context();
@@ -306,7 +306,7 @@ export async function getGpayOptionsAction(): Promise<QuickPayResult<{ options: 
 
 const transferSchema = z.object({ requestId: id, fromId: id.nullable(), toId: id.nullable(), amount: z.string().max(20), reason: z.string().max(1000), date: z.string().max(10).optional(), time: z.string().max(5).optional() });
 
-/** Moves money from one bank to another. Both balances change and it shows once in GPay Transactions. */
+/** Moves money from one bank to another. Both balances change and it shows once in Transaction History. */
 export async function saveTransferAction(raw: unknown): Promise<QuickPayResult<{ id: string; duplicate: boolean; amountPaise: number }>> {
   try {
     const parsed = transferSchema.safeParse(raw);
@@ -672,7 +672,7 @@ export interface QuickPayActions {
   getEntry: typeof getEntryAction;
   getRecentCredits: typeof getRecentCreditsAction;
   getOptions: typeof getOptionsAction;
-  /** Lets the Bank Through list open the Self Transfer pop-up. */
+  /** Lets the Through list open the Self Transfer pop-up. */
   saveTransfer?: typeof saveTransferAction;
 }
 

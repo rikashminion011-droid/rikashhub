@@ -292,7 +292,7 @@ describe("Customized Settings", () => {
     expect(saved.fields.labels.bank).toBe("Paid From");
     expect(saved.split).toEqual(DEFAULT_SETTINGS.split); // other sections untouched
     expect((await getQuickPayOptions(db, ME.id)).settings.fields.defaults).toEqual({ type: "CREDIT", bankId: canara, categoryId: food });
-    expect((await getSettings(db, OTHER.id)).fields.labels.bank).toBe("Bank Through"); // private to each user
+    expect((await getSettings(db, OTHER.id)).fields.labels.bank).toBe("Through"); // private to each user
   });
   it("saves split settings, always keeping the default percentage among the choices, sorted", async () => {
     const saved = await saveSettingsSection(db, ME.id, "split", { enabledByDefault: true, method: "FIXED", defaultPercent: 12.5, percentOptions: [75, 25, 50, 25], defaultPartyId: userA, defaultFixedPaise: 10000 });
@@ -303,7 +303,7 @@ describe("Customized Settings", () => {
     const saved = await saveSettingsSection(db, ME.id, "credits", { source: "last_transaction", listSize: 3, defaultSelection: "custom", customCount: 9 });
     expect(saved.credits).toEqual({ source: "last_transaction", listSize: 3, defaultSelection: "custom", customCount: 3 });
   });
-  it("saves the Bank Through, Switch and Debt sections and puts each back to its defaults", async () => {
+  it("saves the Through, Switch and Debt sections and puts each back to its defaults", async () => {
     const options = await getQuickPayOptions(db, ME.id);
     const bankId = options.banks[0]!.id;
     const sw = { ...DEFAULT_SETTINGS.switch, split: { enabled: true, mode: "CUSTOM" as const, order: [userB, userA], startId: userA } };

@@ -84,7 +84,7 @@ export function BankVisibilitySection({ target = "Quick Entry", settings, banks,
   return (
     <SectionCard
       title={`Banks shown in ${target}`}
-      description={`Untick a bank to leave it out of the Bank Through dropdowns in ${target}${target === "Quick Entry" ? " and Self Transfer" : ""}. It stays in your list, in balances and on past entries.`}
+      description={`Untick a bank to leave it out of the Through dropdowns in ${target}${target === "Quick Entry" ? " and Self Transfer" : ""}. It stays in your list, in balances and on past entries.`}
       footer={<SaveBar dirty={dirty} saving={saving} error={error} onSave={save} onReset={reset} />}
     >
       {banks.length === 0 ? (

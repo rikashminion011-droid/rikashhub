@@ -129,7 +129,7 @@ export function AppShell({
           </div>
         </header>
 
-        {/* Quick Pay (Quick Entry, GPay Transactions, Add Bulk…) uses the full width: only a hair of space is left at the edges so boxes never touch the screen. */}
+        {/* Quick Pay (Quick Entry, Transaction History, Add Bulk…) uses the full width: only a hair of space is left at the edges so boxes never touch the screen. */}
         <main className={cn("w-full flex-1", pathname.startsWith("/quick-pay") ? "px-1 py-3 lg:py-5" : "mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-8")}>{children}</main>
       </div>
     </div>

@@ -22,7 +22,11 @@ import { formatPercent } from "../split";
 import type { QuickPayOptions, TxRow } from "../types";
 import { MAX_REASON_LENGTH } from "../validation";
 import { rowTone } from "../row-tone";
+import { DateRangePicker } from "@/components/shared/date-picker";
+import { sharedCategories } from "../availability";
+import { ColumnFilter, ColumnSearch } from "./column-filter";
 import { EditEntryDialog } from "./edit-entry-dialog";
+import { listOf, useTxParams } from "./use-tx-params";
 import { SplitDialog, type SplitChoice } from "./split-dialog";
 
 export interface TableActions {
@@ -37,7 +41,7 @@ export interface TableActions {
 }
 
 /**
- * The GPay Transactions list. The Reason, Category and Split of every row can be changed right in the table; the ⋮ menu
+ * The Transaction History list. The Reason, Category and Split of every row can be changed right in the table; the ⋮ menu
  * opens a pop-up to edit everything about a transaction, or deletes it. On a phone each transaction is a card.
  */
 export function TransactionsTable({
@@ -53,6 +57,20 @@ export function TransactionsTable({
   actions: TableActions;
 }) {
   const router = useRouter();
+  // The column filters read and write the address, like the toolbar above the table.
+  const { params, go } = useTxParams();
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const bankFilter = useMemo(() => options.banks.map((b) => ({ value: b.id, label: b.label })), [options.banks]);
+  const categoryFilter = useMemo(() => sharedCategories(options.categories, options.creditCategories).map((c) => ({ value: c.id, label: c.label })), [options.categories, options.creditCategories]);
+  const personFilter = useMemo(() => options.persons.map((p) => ({ value: p.id, label: p.name })), [options.persons]);
+  const kindFilter = [
+    { value: "DEBIT", label: "Debit" },
+    { value: "CREDIT", label: "Credit" },
+    { value: "TRANSFER", label: "Self transfer" },
+  ];
+  const kinds = listOf(params.get("types"));
+  const rawFrom = params.get("from") ?? "";
+  const rawTo = params.get("to") ?? "";
   // Rows changed in place; they show the saved result straight away, before the page reloads.
   const [patched, setPatched] = useState<Record<string, TxRow>>({});
   const [editing, setEditing] = useState<string | null>(null);
@@ -170,18 +188,20 @@ export function TransactionsTable({
   return (
     <>
       {/* Wide screens: a table */}
-      <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
-        <table className="w-full min-w-[64rem] text-sm">
-          <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+      <div className="hidden max-h-[calc(100dvh-14rem)] overflow-auto rounded-xl border bg-card md:block">
+        <table className="w-full min-w-[72rem] text-sm">
+          {/* The heading stays in view while the rows scroll */}
+          <thead className="sticky top-0 z-10 border-b bg-muted text-xs text-muted-foreground shadow-[0_1px_0_var(--color-border)]">
             <tr>
-              <th scope="col" className="px-3 py-2.5 text-left font-medium">Date &amp; Time</th>
-              <th scope="col" className="px-3 py-2.5 text-right font-medium">Debit</th>
-              <th scope="col" className="px-3 py-2.5 text-right font-medium">Credit</th>
-              <th scope="col" className="px-3 py-2.5 text-left font-medium">{labels.reason}</th>
-              <th scope="col" className="px-3 py-2.5 text-left font-medium">Bank</th>
-              <th scope="col" className="w-44 px-3 py-2.5 text-left font-medium">{labels.category}</th>
-              <th scope="col" className="px-3 py-2.5 text-left font-medium">{labels.split}</th>
-              <th scope="col" className="w-12 px-2 py-2.5">
+              <th scope="col" className="bg-muted px-3 py-2.5 text-left font-medium "><span className="inline-flex items-center gap-1">Date &amp; Time <DateRangePicker iconOnly from={rawFrom} to={rawTo} max={today} ariaLabel="Filter dates" className="size-6 rounded border-0 bg-transparent [&_svg]:size-3.5" onChange={(r) => go({ from: r.from, to: r.to, month: "", all: "" })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-right font-medium"><span className="inline-flex items-center justify-end gap-1">Debit <ColumnFilter label="Type" options={kindFilter} selected={kinds} searchable={false} onApply={(v) => go({ types: v.join(",") })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-right font-medium"><span className="inline-flex items-center justify-end gap-1">Credit <ColumnFilter label="Type" options={kindFilter} selected={kinds} searchable={false} onApply={(v) => go({ types: v.join(",") })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-left font-medium "><span className="inline-flex items-center gap-1">{labels.reason} <ColumnSearch label={labels.reason} value={params.get("q") ?? ""} onApply={(text) => go({ q: text })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-left font-medium "><span className="inline-flex items-center gap-1">Through <ColumnFilter label="Through" options={bankFilter} selected={listOf(params.get("banks"))} onApply={(v) => go({ banks: v.join(",") })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-left font-medium w-44"><span className="inline-flex items-center gap-1">{labels.category} <ColumnFilter label={labels.category} options={categoryFilter} selected={listOf(params.get("cats"))} onApply={(v) => go({ cats: v.join(",") })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-left font-medium "><span className="inline-flex items-center gap-1">{labels.split} <ColumnFilter label={labels.split} options={personFilter} selected={listOf(params.get("people"))} onApply={(v) => go({ people: v.join(",") })} /></span></th>
+              <th scope="col" className="bg-muted px-3 py-2.5 text-left font-medium "><span className="inline-flex items-center gap-1">Credited By <ColumnFilter label="Credited by" options={personFilter} selected={listOf(params.get("by"))} onApply={(v) => go({ by: v.join(",") })} /></span></th>
+              <th scope="col" className="w-12 bg-muted px-2 py-2.5">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
@@ -203,11 +223,12 @@ export function TransactionsTable({
                   <td className="px-3 py-2.5 whitespace-nowrap">{row.bankName || <span className="text-muted-foreground">—</span>}</td>
                   <td className="px-3 py-1.5">{c.category}</td>
                   <td className="px-3 py-2">{c.split}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">{row.type === "CREDIT" && !row.transfer ? (row.creditedBy || <span className="text-muted-foreground">Others</span>) : ""}</td>
                   <td className="px-2 py-1.5 text-right">{c.menu}</td>
                 </tr>
                 {shownDetails.has(row.id) && row.details ? (
                   <tr className="bg-muted/30">
-                    <td colSpan={8} className="px-3 py-2 text-xs break-words text-muted-foreground">
+                    <td colSpan={9} className="px-3 py-2 text-xs break-words text-muted-foreground">
                       <span className="font-medium text-foreground">Transaction details: </span>
                       {row.details}
                     </td>
@@ -243,6 +264,7 @@ export function TransactionsTable({
                   {c.menu}
                 </div>
               </div>
+              {row.type === "CREDIT" && !row.transfer ? <p className="text-xs text-muted-foreground">Credited by <span className="font-medium text-foreground">{row.creditedBy || "Others"}</span></p> : null}
               {row.details && shownDetails.has(row.id) ? <p className="text-xs break-words text-muted-foreground">{row.details}</p> : null}
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">{labels.reason}</p>
@@ -282,7 +304,7 @@ export function TransactionsTable({
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete this transaction?"
-        description={deleting ? `${deleting.type === "DEBIT" ? "Debit" : "Credit"} of ${formatINR(deleting.amountPaise)} will be removed from GPay Transactions, and the totals and the bank balance will be recalculated. This cannot be undone.` : ""}
+        description={deleting ? `${deleting.type === "DEBIT" ? "Debit" : "Credit"} of ${formatINR(deleting.amountPaise)} will be removed from Transaction History, and the totals and the bank balance will be recalculated. This cannot be undone.` : ""}
         confirmLabel="Delete transaction"
         onConfirm={confirmDelete}
       />
