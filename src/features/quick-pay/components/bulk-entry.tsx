@@ -3,7 +3,7 @@
 import { ArrowDownToLine, ArrowUpToLine, Copy, Loader2, MoreVertical, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { CascadingSelect } from "@/components/shared/cascading-select";
 import { SwapArrowsIcon } from "@/components/shared/swap-icon";
@@ -15,7 +15,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { formatINR, parseAmountInput } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { BulkDraftActions, saveBulkAction, saveTransferAction } from "../actions";
+import type { BulkDraftActions, getRecentCreditsAction, saveBulkAction, saveTransferAction } from "../actions";
+import type { RecentCredit } from "../types";
+import { CreditsPanel } from "./credits-panel";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { keywordsFor } from "../availability";
 import { cleanDraftRows, clearLocalDraft, readLocalDraft, writeLocalDraft } from "../bulk-draft";
 import { addRowsAtEnd, cloneRows, deleteRows, insertRow, isCreditRow, nextCell, rowWithAmounts, rowWithReason, rowsToAdd, type AddRowsMode, type BulkRow, type Direction, type RowChange } from "../bulk-rows";
@@ -30,6 +33,7 @@ import { BulkRowMore } from "./bulk-row-more";
 import { CycleButton } from "./cycle-button";
 import { ReasonCategoryDialog } from "./reason-category-dialog";
 import { SelfTransferButton, TypeToggle } from "./type-toggle";
+import { officeDebtPerson, peopleShares } from "../entry-state";
 import { SelfTransferDialog, SelfTransferItem } from "./transfer-dialog";
 import { useQuickAdd, type QuickAddHostActions } from "./use-quick-add";
 
@@ -46,6 +50,14 @@ const startingRows = (date: string, time: string) => Array.from({ length: 5 }, (
 
 /** The columns the arrow keys move through, left to right. */
 const COLS = 6;
+const WIDE = "(min-width: 1024px)";
+const subscribeWide = (notify: () => void) => {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", notify);
+  return () => query.removeEventListener("change", notify);
+};
+/** True where the sheet is a spreadsheet (a wide screen); a phone gets a card for each row. */
+const useIsWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE).matches, () => false);
 const CONTROL = "input:not(:disabled), button[role=combobox], button[data-grid-control]:not(:disabled)";
 
 const controlIn = (row: Element | null | undefined, col: number): HTMLElement | null => row?.querySelector<HTMLElement>(`td[data-col="${col}"]`)?.querySelector<HTMLElement>(CONTROL) ?? null;
@@ -83,11 +95,12 @@ export function BulkEntry({
   nowTime: string;
   saveBulk: typeof saveBulkAction;
   /** For adding a category or a person without leaving the sheet. */
-  quickActions: QuickAddHostActions & { saveTransfer?: typeof saveTransferAction };
+  quickActions: QuickAddHostActions & { saveTransfer?: typeof saveTransferAction; getRecentCredits?: typeof getRecentCreditsAction };
 }) {
   const [options, setOptions] = useState(initialOptions);
   const adders = useQuickAdd(quickActions, setOptions);
   const router = useRouter();
+  const wide = useIsWide();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [rows, setRows] = useState<BulkRow[]>(() => startingRows(today, nowTime));
   const [restored, setRestored] = useState(false);
@@ -104,6 +117,10 @@ export function BulkEntry({
   // The row whose Bank Through list was used to open Self Transfer; its Debit is the (fixed) amount of the transfer.
   // The transfer stays on that row, and is saved together with every other row when Save All is pressed.
   const [transferFor, setTransferFor] = useState<BulkRow | null>(null);
+  // The row whose Credit History is open (double-click or press and hold on its Debit button), and the credits to choose from.
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [credits, setCredits] = useState<RecentCredit[] | null>(null);
+  const [loadingCredits, setLoadingCredits] = useState(false);
   // One id per sheet: sending the same sheet again (retry, double click) can never save it twice.
   const [requestId, setRequestId] = useState(newRequestId);
   // After rows are added, the cursor goes to the first new one.
@@ -331,10 +348,32 @@ export function BulkEntry({
   const typeOf = (row: BulkRow): EntryType => (row.credit.trim() !== "" && row.debit.trim() === "" ? "CREDIT" : row.debit.trim() !== "" ? "DEBIT" : (kinds[row.key] ?? "DEBIT"));
 
   /** The − and + buttons: the amount moves to the other column, so what is saved is exactly what the sheet showed. */
+  /** Choosing the category Office on a Debit row that is not shared yet puts the Debt on the person called Office. */
+  function officeDebt(row: BulkRow, categoryId: string | null): Partial<BulkRow> {
+    const person = officeDebtPerson(categoryId, options);
+    if (!person || isCreditRow(row) || row.splitKind || row.shares.length > 0) return {};
+    return { splitKind: "DEBT", shares: peopleShares([], [person], "DEBT", options.settings) };
+  }
+
+  /** Credit History for a row: the recent credits to attach. Works from a Credit row too, by making it a Debit first. */
+  function openHistory(row: BulkRow) {
+    if (!quickActions.getRecentCredits) return;
+    if (isCreditRow(row)) setType(row, "DEBIT");
+    setHistoryFor(row.key);
+    if (credits === null && !loadingCredits) {
+      setLoadingCredits(true);
+      void quickActions.getRecentCredits().then((r) => {
+        setLoadingCredits(false);
+        if (r.ok) setCredits(r.credits);
+        else toast.error(r.error);
+      });
+    }
+  }
+
   function setType(row: BulkRow, next: EntryType) {
     const amount = row.debit.trim() || row.credit.trim();
     setKinds((k) => ({ ...k, [row.key]: next }));
-    if (amount === "") return void (next === "CREDIT" && update(row.key, { shares: [], splitKind: null }));
+    if (amount === "") return void (next === "CREDIT" && update(row.key, { shares: [], splitKind: null, creditIds: [] }));
     change(row.key, (r) => rowWithAmounts(r, next === "CREDIT" ? { credit: amount, debit: "" } : { debit: amount, credit: "" }));
   }
 
@@ -396,7 +435,7 @@ export function BulkEntry({
 
   const bad = (key: string, field: keyof BulkRowErrors) => Boolean(errors[key]?.[field]);
   // On a wide screen the boxes are plain (like a spreadsheet); they only show a frame when hovered or focused.
-  const field = "h-8 border-transparent bg-transparent text-base shadow-none hover:bg-muted/60 focus-visible:bg-background min-[1400px]:text-sm";
+  const field = "h-9 text-base lg:h-8 lg:border-transparent lg:bg-transparent lg:text-sm lg:shadow-none lg:hover:bg-muted/60 lg:focus-visible:bg-background";
   const count = selected.size;
 
   const menu = (key: string, index: number) => (
@@ -455,9 +494,9 @@ export function BulkEntry({
       </div>
 
       {/* One line per transaction, with the same choices as Quick Entry. Wider than a phone, so it scrolls sideways there. */}
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full min-w-[88rem] table-fixed text-sm" onKeyDown={onGridKeyDown}>
-          <colgroup>
+      <div className="lg:overflow-x-auto lg:rounded-lg lg:border lg:bg-card">
+        <table className="w-full text-sm max-lg:block lg:min-w-[88rem] lg:table-fixed" onKeyDown={onGridKeyDown}>
+          <colgroup className="max-lg:hidden">
             <col style={{ width: "3.5rem" }} />
             <col style={{ width: "11rem" }} />
             <col style={{ width: "8rem" }} />
@@ -469,7 +508,7 @@ export function BulkEntry({
             <col style={{ width: "6.5rem" }} />
             <col style={{ width: "2.5rem" }} />
           </colgroup>
-          <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+          <thead className="border-b bg-muted/50 text-xs text-muted-foreground max-lg:hidden">
             <tr>
               <th scope="col" className="px-2 py-2 text-left font-medium">
                 <span className="sr-only">Select and row number</span>#
@@ -490,7 +529,7 @@ export function BulkEntry({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="max-lg:block max-lg:space-y-3 lg:divide-y">
             {rows.map((row, index) => {
               const e = errors[row.key] ?? {};
               const type = typeOf(row);
@@ -505,29 +544,33 @@ export function BulkEntry({
                   id={`row-${row.key}`}
                   data-grid-row=""
                   aria-selected={on}
-                  className={cn("align-top transition-colors", tone, on && "outline-2 -outline-offset-2 outline-primary/60", Object.keys(e).length > 0 && "bg-destructive/5")}
+                  className={cn("align-top transition-colors max-lg:relative max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-2 max-lg:gap-y-2 max-lg:rounded-xl max-lg:border max-lg:p-3", tone, on && "outline-2 -outline-offset-2 outline-primary/60", Object.keys(e).length > 0 && "bg-destructive/5")}
                 >
-                  <td className="border-r border-border/60 px-2 py-2.5">
+                  <td className="border-r border-border/60 px-2 py-2.5 max-lg:block max-lg:border-0 max-lg:p-0 max-lg:col-span-2">
                     <span className="flex items-center gap-2">
                       <Checkbox checked={on} onCheckedChange={() => toggle(row.key)} aria-label={`Select row ${index + 1}`} />
                       <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
                     </span>
                   </td>
-                  <td data-col={0} className="border-r border-border/60 px-1 py-1 align-top">
-                    <DatePicker compact bare hideIcon ariaLabel={`Row ${index + 1} date`} value={row.date} max={today} invalid={bad(row.key, "date")} onChange={(d) => update(row.key, { date: d })} />
+                  <td data-col={0} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Date</span>
+                    <DatePicker compact bare={wide} hideIcon={wide} ariaLabel={`Row ${index + 1} date`} value={row.date} max={today} invalid={bad(row.key, "date")} onChange={(d) => update(row.key, { date: d })} />
                     {e.date ? <p className="mt-0.5 text-[11px] text-destructive">{e.date}</p> : null}
                   </td>
-                  <td data-col={1} className="border-r border-border/60 px-1 py-1 align-top">
-                    <TimePicker compact bare ariaLabel={`Row ${index + 1} time`} value={row.time} invalid={bad(row.key, "time")} onChange={(t) => update(row.key, { time: t })} />
+                  <td data-col={1} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Time</span>
+                    <TimePicker compact bare={wide} ariaLabel={`Row ${index + 1} time`} value={row.time} invalid={bad(row.key, "time")} onChange={(t) => update(row.key, { time: t })} />
                     {e.time ? <p className="mt-0.5 text-[11px] text-destructive">{e.time}</p> : null}
                   </td>
-                  <td className="border-r border-border/60 px-2 py-1 align-top">
+                  <td className="border-r border-border/60 px-2 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Debit or Credit</span>
                     <div className="flex items-center gap-1.5">
-                      <TypeToggle size="sm" value={type} onChange={(t) => setType(row, t)} />
+                      <TypeToggle size="sm" value={type} onChange={(t) => setType(row, t)} onDebitHistory={quickActions.getRecentCredits ? () => openHistory(row) : undefined} historyOn={(row.creditIds?.length ?? 0) > 0} />
                       {quickActions.saveTransfer ? <SelfTransferButton size="sm" onClick={() => openTransfer(row)} /> : null}
                     </div>
                   </td>
-                  <td data-col={2} className="border-r border-border/60 px-1 py-1 align-top">
+                  <td data-col={2} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Amount</span>
                     <Input
                       inputMode="decimal"
                       aria-label={`Row ${index + 1} amount`}
@@ -539,7 +582,8 @@ export function BulkEntry({
                     />
                     {e.amount ? <p className="mt-0.5 text-[11px] text-destructive">{e.amount}</p> : null}
                   </td>
-                  <td data-col={3} className="border-r border-border/60 px-1 py-1 align-top">
+                  <td data-col={3} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0 max-lg:col-span-2">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Reason</span>
                     <div className="relative">
                       <Input
                         aria-label={`Row ${index + 1} reason`}
@@ -557,7 +601,8 @@ export function BulkEntry({
                     </div>
                     {e.reason ? <p className="mt-0.5 text-[11px] text-destructive">{e.reason}</p> : null}
                   </td>
-                  <td data-col={4} className="border-r border-border/60 px-1 py-1 align-top">
+                  <td data-col={4} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0 max-lg:col-span-2">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Category</span>
                     {row.transfer ? (
                       <p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>
                     ) : (
@@ -566,12 +611,12 @@ export function BulkEntry({
                           {/* A Debit and a Credit share one list of categories; a keyword in the Reason picks it; a new one can be added here */}
                           <CascadingSelect
                             compact
-                            bare
+                            bare={wide}
                             clearable
                             ariaLabel={`Row ${index + 1} category`}
                             groups={categoryGroups}
                             value={row.categoryId}
-                            onChange={(v) => update(row.key, { categoryId: v, categoryManual: true, categoryAuto: false })}
+                            onChange={(v) => update(row.key, { categoryId: v, categoryManual: true, categoryAuto: false, ...officeDebt(row, v) })}
                             placeholder={row.categoryAuto ? "Category · auto" : "Category"}
                             searchPlaceholder="Search categories…"
                             emptyText="No category found. Add one below."
@@ -581,7 +626,7 @@ export function BulkEntry({
                                 placeholder="Add a category…"
                                 onAdd={async (name) => {
                                   const added = await adders.addCategory(name, type);
-                                  if (added.ok) update(row.key, { categoryId: added.id, categoryManual: true, categoryAuto: false });
+                                  if (added.ok) update(row.key, { categoryId: added.id, categoryManual: true, categoryAuto: false, ...officeDebt(row, added.id) });
                                   return added;
                                 }}
                               />
@@ -593,13 +638,14 @@ export function BulkEntry({
                             label={`Row ${index + 1}: switch to the next category`}
                             className="size-8"
                             disabled={mainCategoryIds.length < 2}
-                            onClick={() => update(row.key, { categoryId: nextSwitch(switches.category, mainCategoryIds, row.categoryId), categoryManual: true, categoryAuto: false })}
+                            onClick={() => { const next = nextSwitch(switches.category, mainCategoryIds, row.categoryId); update(row.key, { categoryId: next, categoryManual: true, categoryAuto: false, ...officeDebt(row, next) }); }}
                           />
                         ) : null}
                       </div>
                     )}
                   </td>
-                  <td data-col={5} className="border-r border-border/60 px-1 py-1 align-top">
+                  <td data-col={5} className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0 max-lg:col-span-2">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">Bank Through</span>
                     {row.transfer ? (
                       <div className="flex h-8 items-center gap-1.5 rounded-md bg-yellow-100 px-2 text-sm text-yellow-900" title="Self transfer, saved with Save All">
                         <SwapArrowsIcon className="size-4 shrink-0" />
@@ -613,7 +659,7 @@ export function BulkEntry({
                     ) : (
                       <div className="flex items-center gap-1">
                         <div className="min-w-0 flex-1">
-                          <CascadingSelect compact bare ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} footer={quickActions.saveTransfer ? <SelfTransferItem onOpen={() => openTransfer(row)} /> : undefined} />
+                          <CascadingSelect compact bare={wide} ariaLabel={`Row ${index + 1} bank`} groups={bankGroups} value={row.accountId} onChange={(v) => update(row.key, { accountId: v })} placeholder="Bank" searchPlaceholder="Search banks…" invalid={bad(row.key, "bank")} footer={quickActions.saveTransfer ? <SelfTransferItem onOpen={() => openTransfer(row)} /> : undefined} />
                         </div>
                         {switches.bank.enabled ? (
                           <CycleButton
@@ -627,7 +673,8 @@ export function BulkEntry({
                     )}
                     {e.bank ? <p className="mt-0.5 text-[11px] text-destructive">{e.bank}</p> : null}
                   </td>
-                  <td className="border-r border-border/60 px-1 py-1 align-top">
+                  <td className="border-r border-border/60 px-1 py-1 align-top max-lg:block max-lg:border-0 max-lg:p-0">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground lg:hidden">More</span>
                     {row.transfer ? (
                       <p className="flex h-8 items-center px-2.5 text-sm text-muted-foreground">—</p>
                     ) : (
@@ -635,7 +682,7 @@ export function BulkEntry({
                     )}
                     {e.split ? <p className="mt-0.5 text-[11px] text-destructive">{e.split}</p> : null}
                   </td>
-                  <td className="px-1 py-1 align-top">{menu(row.key, index)}</td>
+                  <td className="px-1 py-1 align-top max-lg:absolute max-lg:top-2 max-lg:right-2 max-lg:p-0">{menu(row.key, index)}</td>
                 </tr>
               );
             })}
@@ -662,6 +709,46 @@ export function BulkEntry({
           className="h-9 w-16 text-center text-base tabular-nums sm:text-sm"
         />
       </div>
+      {/* Credit History of one row: choose the credit to attach to this Debit */}
+      <Dialog open={historyFor !== null} onOpenChange={(open) => !open && setHistoryFor(null)}>
+        <DialogContent className="sm:max-w-md">
+          {(() => {
+            const row = rows.find((r) => r.key === historyFor);
+            if (!row) return null;
+            const ids = row.creditIds ?? [];
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Credit History · row {rows.indexOf(row) + 1}</DialogTitle>
+                  <DialogDescription>Choose a recent credit to attach to this debit. Choosing it again takes it off.</DialogDescription>
+                </DialogHeader>
+                <CreditsPanel
+                  credits={credits}
+                  loading={loadingCredits}
+                  selected={ids}
+                  onChoose={(creditId, on) => update(row.key, { creditIds: on ? [creditId] : [] })}
+                  canCycle={switches.credit.enabled}
+                  onCycle={() => {
+                    const next = nextSwitch(switches.credit, (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), ids[0] ?? null);
+                    if (next) update(row.key, { creditIds: [next] });
+                  }}
+                  source={options.settings.credits.source}
+                  debitAmount={row.debit}
+                  onTurnOff={() => {
+                    update(row.key, { creditIds: [] });
+                    setHistoryFor(null);
+                  }}
+                />
+                <DialogFooter>
+                  <Button type="button" onClick={() => setHistoryFor(null)}>
+                    Save
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
       {quickActions.saveTransfer ? (
         <SelfTransferDialog
           open={transferFor !== null}

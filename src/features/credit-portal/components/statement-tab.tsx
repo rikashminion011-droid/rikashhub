@@ -19,7 +19,7 @@ import type { CategoryOption } from "@/features/quick-pay/types";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { PortalActions } from "../actions";
-import type { StatementSummary } from "../model";
+import { recipientShare, type StatementSummary } from "../model";
 import type { StatementRow } from "../server/service";
 import { PeriodFilter } from "./period-filter";
 import { RecipientEditor } from "./recipient-editor";
@@ -73,7 +73,7 @@ export function StatementTab({
   actions: Pick<PortalActions, "importStatement" | "updateStatementEntry" | "deleteStatementEntry" | "setCardInfo">;
   addPerson: (name: string) => Promise<{ ok: true; id: string; name: string } | { ok: false; error: string }>;
   today: string;
-  /** The period shown when none is chosen (HDFC: the 16th to the 15th). Without one, the current month. */
+  /** The period shown when none is chosen (HDFC: the 15th of last month to the 15th). Without one, the current month. */
   defaultRange?: { from: string; to: string };
   exportHref: string;
 }) {
@@ -124,7 +124,17 @@ export function StatementTab({
         <p className="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground">No statement lines in this period. Use Import to add the bank statement.</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border bg-card xl:overflow-visible">
-          <table className="w-full min-w-[68rem] text-sm xl:min-w-0">
+          <table className="w-full min-w-[64rem] table-fixed text-sm xl:min-w-0">
+            <colgroup>
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "15%" }} />
+              <col style={{ width: "4%" }} />
+            </colgroup>
             <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
               <tr>
                 <th scope="col" className="px-3 py-2.5 text-left font-medium">Date and Time</th>
@@ -164,12 +174,12 @@ export function StatementTab({
                       <p className="font-medium">{t.date}</p>
                       <p className="text-xs text-muted-foreground">{t.time}</p>
                     </td>
-                    <td className="max-w-60 px-3 py-2 break-words text-muted-foreground">
+                    <td className="px-3 py-2 break-words text-muted-foreground">
                       {r.details}
                       {r.settledUnbilled ? <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">Settled unbilled</span> : null}
                     </td>
                     <td className="px-3 py-1.5">
-                      <Input aria-label={`Reason for ${r.details}`} placeholder="Reason" maxLength={200} defaultValue={r.reason} onBlur={(e) => e.target.value.trim() !== r.reason && void save(r, { reason: e.target.value })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} className="h-8 min-w-36 text-base sm:text-sm" />
+                      <Input aria-label={`Reason for ${r.details}`} placeholder="Reason" maxLength={200} defaultValue={r.reason} onBlur={(e) => e.target.value.trim() !== r.reason && void save(r, { reason: e.target.value })} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} className="h-8 w-full min-w-0 text-base sm:text-sm" />
                     </td>
                     <td className="px-3 py-2.5 text-right font-medium text-red-600 tabular-nums">{r.debitPaise ? formatINR(r.debitPaise) : ""}</td>
                     <td className="px-3 py-2.5 text-right font-medium text-green-600 tabular-nums">{credit ? formatINR(r.creditPaise) : ""}</td>
@@ -177,7 +187,7 @@ export function StatementTab({
                       <RecipientEditor ariaLabel={`Recipients of ${r.details}`} people={people} value={r.recipientIds} onSave={(ids) => save(r, { recipientIds: ids })} onAddPerson={onAddPerson} />
                     </td>
                     <td className="px-3 py-1.5">
-                      <div className="min-w-40">
+                      <div className="w-full min-w-0">
                         <CascadingSelect compact clearable ariaLabel={`Category of ${r.details}`} groups={credit ? creditGroups : debitGroups} value={r.categoryId} onChange={(v) => void save(r, { categoryId: v })} placeholder="Category" searchPlaceholder="Search categories…" />
                       </div>
                     </td>
@@ -193,6 +203,8 @@ export function StatementTab({
           </table>
         </div>
       )}
+
+      <RecipientTotals rows={rows} people={people} recipientPage={recipientPage} />
 
       <ConfirmDialog
         open={deleting !== null}
@@ -385,5 +397,96 @@ function ImportBody({ portalId, actions, onClose, onDone }: { portalId: string; 
         </DialogFooter>
       ) : null}
     </div>
+  );
+}
+
+// ───────────────────────── All recipients ─────────────────────────
+
+/**
+ * "Show all recipient amounts", under the table: every person on the lines above with what they have in this period (a line for
+ * several people is shared evenly, the same way Debt Management shares it). Pressing a name opens that person's page with all
+ * their lines.
+ */
+function RecipientTotals({ rows, people, recipientPage }: { rows: StatementRow[]; people: { id: string; name: string }[]; recipientPage: (id: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const list = useMemo(() => {
+    const byId = new Map<string, { debit: number; credit: number; lines: number }>();
+    for (const r of rows) {
+      for (const id of r.recipientIds) {
+        const t = byId.get(id) ?? { debit: 0, credit: 0, lines: 0 };
+        t.debit += recipientShare(r.debitPaise, r.recipientIds, id);
+        t.credit += recipientShare(r.creditPaise, r.recipientIds, id);
+        t.lines += 1;
+        byId.set(id, t);
+      }
+    }
+    return [...byId.entries()]
+      .map(([id, t]) => ({ id, name: people.find((p) => p.id === id)?.name ?? "Person", ...t }))
+      .sort((a, b) => b.debit - b.credit - (a.debit - a.credit));
+  }, [rows, people]);
+  const none = rows.filter((r) => r.recipientIds.length === 0);
+  const noneDebit = none.reduce((s, r) => s + r.debitPaise, 0);
+  const noneCredit = none.reduce((s, r) => s + r.creditPaise, 0);
+
+  if (rows.length === 0) return null;
+  return (
+    <section className="space-y-2" aria-label="Recipient amounts">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex h-10 items-center gap-1.5 rounded-lg border bg-card px-4 text-sm font-semibold outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} aria-hidden />
+        {open ? "Hide all recipient amounts" : "Show all recipient amounts"}
+      </button>
+      {open ? (
+        <div className="overflow-x-auto rounded-xl border bg-card">
+          <table className="w-full min-w-[26rem] text-sm">
+            <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
+              <tr>
+                <th scope="col" className="px-3 py-2.5 text-left font-medium">Recipient</th>
+                <th scope="col" className="px-3 py-2.5 text-right font-medium">Lines</th>
+                <th scope="col" className="px-3 py-2.5 text-right font-medium">Debit</th>
+                <th scope="col" className="px-3 py-2.5 text-right font-medium">Credit</th>
+                <th scope="col" className="px-3 py-2.5 text-right font-medium">Net</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {list.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">
+                    No recipient is chosen on any line yet.
+                  </td>
+                </tr>
+              ) : (
+                list.map((p) => (
+                  <tr key={p.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2.5">
+                      <Link href={recipientPage(p.id)} className="font-medium underline-offset-4 hover:underline">
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{p.lines}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-red-600">{p.debit ? formatINR(p.debit) : ""}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-green-600">{p.credit ? formatINR(p.credit) : ""}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{formatINR(p.debit - p.credit)}</td>
+                  </tr>
+                ))
+              )}
+              {none.length > 0 ? (
+                <tr className="text-muted-foreground">
+                  <td className="px-3 py-2.5">No recipient chosen</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{none.length}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{noneDebit ? formatINR(noneDebit) : ""}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{noneCredit ? formatINR(noneCredit) : ""}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{formatINR(noneDebit - noneCredit)}</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
   );
 }

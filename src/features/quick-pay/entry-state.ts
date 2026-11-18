@@ -185,3 +185,21 @@ export function toQuickPayInput(form: FormState): QuickPayInput {
     creditedById: debit ? null : form.creditedById,
   };
 }
+
+/**
+ * The person a category puts the Debt on by itself: choosing the category Office means the Debt is to the person called
+ * Office. Null when the category is something else or there is no person called Office.
+ */
+export function officeDebtPerson(categoryId: string | null, options: Pick<QuickPayOptions, "categories" | "persons">): string | null {
+  if (!categoryId) return null;
+  const category = options.categories.find((c) => c.id === categoryId);
+  if (!category || category.mainName.trim().toLowerCase() !== "office") return null;
+  return options.persons.find((p) => p.name.trim().toLowerCase() === "office")?.id ?? null;
+}
+
+/** Choosing the category Office on a Debit that is not shared yet puts the Debt on Office (you can change or clear it). */
+export function withOfficeDebt(form: FormState, options: Pick<QuickPayOptions, "categories" | "persons" | "settings">): FormState {
+  if (form.type !== "DEBIT" || form.splitKind !== null) return form;
+  const person = officeDebtPerson(form.categoryId, options);
+  return person ? withKind(form, "DEBT", options.settings, person) : form;
+}

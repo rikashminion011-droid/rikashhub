@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
 import { rangeToInstants } from "@/features/quick-pay/datetime";
 import { divideEvenly, paiseToDecimalString, toPaise } from "@/lib/finance";
-import { reconcile, recipientShare } from "../model";
+import { isHdfcPortal, reconcile, recipientShare } from "../model";
 
 /**
  * Credit Portal data: portals (cards and pay-later accounts with their limits), unbilled transactions, and imported statement
@@ -450,14 +450,29 @@ export interface PortalShare {
  * What each person owes from credit portals in the period. A statement line with recipients counts; an unbilled transaction with
  * recipients counts only until a statement line settles it, so nothing is counted twice. Several recipients share evenly.
  */
-export async function portalShares(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<PortalShare[]> {
+export async function portalShares(
+  db: PrismaClient,
+  userId: string,
+  range: { from: string | null; to: string | null },
+  /** HDFC's own period (its 15th to 15th cycle). When given, HDFC is read for that period and every other portal for `range`. */
+  hdfcRange: { from: string | null; to: string | null } | null = null,
+): Promise<PortalShare[]> {
   const bounds = rangeToInstants(range.from, range.to);
   const when: Prisma.DateTimeFilter | undefined = bounds.gte || bounds.lt ? bounds : undefined;
-  const [statement, unbilled, portals, categories] = await Promise.all([
-    db.creditStatementEntry.findMany({ where: { userId, deletedAt: null, portal: { deletedAt: null }, recipientIds: { isEmpty: false }, ...(when ? { occurredAt: when } : {}) }, orderBy: { occurredAt: "asc" } }),
-    db.creditPortalEntry.findMany({ where: { userId, deletedAt: null, portal: { deletedAt: null }, reconciledStatementId: null, recipientIds: { isEmpty: false }, ...(when ? { occurredAt: when } : {}) }, orderBy: { occurredAt: "asc" } }),
-    db.creditPortal.findMany({ where: { userId }, select: { id: true, name: true } }),
-    db.transactionCategory.findMany({ where: { userId }, select: { id: true, name: true } }),
+  const hdfcBounds = hdfcRange ? rangeToInstants(hdfcRange.from, hdfcRange.to) : null;
+  const hdfcWhen: Prisma.DateTimeFilter | undefined = hdfcBounds && (hdfcBounds.gte || hdfcBounds.lt) ? hdfcBounds : undefined;
+  const [portals, categories] = await Promise.all([db.creditPortal.findMany({ where: { userId }, select: { id: true, name: true } }), db.transactionCategory.findMany({ where: { userId }, select: { id: true, name: true } })]);
+  const hdfcIds = hdfcRange ? portals.filter((p) => isHdfcPortal(p.name)).map((p) => p.id) : [];
+  // HDFC by its own period, every other portal by the chosen one.
+  const period = (): Prisma.CreditStatementEntryWhereInput =>
+    hdfcIds.length === 0
+      ? when
+        ? { occurredAt: when }
+        : {}
+      : { OR: [{ portalId: { in: hdfcIds }, ...(hdfcWhen ? { occurredAt: hdfcWhen } : {}) }, { portalId: { notIn: hdfcIds }, ...(when ? { occurredAt: when } : {}) }] };
+  const [statement, unbilled] = await Promise.all([
+    db.creditStatementEntry.findMany({ where: { userId, deletedAt: null, portal: { deletedAt: null }, recipientIds: { isEmpty: false }, ...period() }, orderBy: { occurredAt: "asc" } }),
+    db.creditPortalEntry.findMany({ where: { userId, deletedAt: null, portal: { deletedAt: null }, reconciledStatementId: null, recipientIds: { isEmpty: false }, ...(period() as Prisma.CreditPortalEntryWhereInput) }, orderBy: { occurredAt: "asc" } }),
   ]);
   const portalName = new Map(portals.map((p) => [p.id, p.name]));
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));

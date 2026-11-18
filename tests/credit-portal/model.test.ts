@@ -208,10 +208,10 @@ describe("showing", () => {
 });
 
 describe("HDFC billing cycle", () => {
-  it("runs from the 16th of last month to the 15th of this month", async () => {
+  it("runs from the 15th of last month to the 15th of this month", async () => {
     const { hdfcCycle, isHdfcPortal } = await import("@/features/credit-portal/model");
-    expect(hdfcCycle("2026-11-16")).toEqual({ from: "2026-10-16", to: "2026-11-15" });
-    expect(hdfcCycle("2026-01-03")).toEqual({ from: "2025-12-16", to: "2026-01-15" });
+    expect(hdfcCycle("2026-11-16")).toEqual({ from: "2026-10-15", to: "2026-11-15" });
+    expect(hdfcCycle("2026-01-03")).toEqual({ from: "2025-12-15", to: "2026-01-15" });
     expect(isHdfcPortal(" HDFC ")).toBe(true);
     expect(isHdfcPortal("Slice")).toBe(false);
   });

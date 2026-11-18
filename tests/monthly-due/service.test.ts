@@ -164,3 +164,29 @@ describe("Add Bulk", () => {
     expect(await db.creditPortalEntry.count({ where: { userId: ME.id, portalId: portal.id, transactionId: { not: null } } })).toBe(before + 2);
   });
 });
+
+describe("HDFC in Debt Management", () => {
+  it("reads HDFC from the 15th of last month to the 15th of this month and every other portal from the chosen period", async () => {
+    const hdfc = await db.creditPortal.findFirstOrThrow({ where: { userId: ME.id, nameKey: "hdfc" } });
+    const slice = await addPortal(db, ME.id, "Slice");
+    const before = (await getDebtSummary(db, ME.id, { from: "2026-11-01", to: "2026-11-30" })).rows.find((r) => r.partyId === dhanush)?.portalPaise ?? 0;
+    // 20 October: inside HDFC's cycle for November, outside the calendar month.
+    await importStatement(db, ME.id, hdfc.id, [{ key: "oct-h", occurredAt: istInstant("2026-10-20", "11:00"), details: "HDFC OCT", debitPaise: 70000, creditPaise: 0, reason: "", recipientIds: [dhanush], categoryId: null }]);
+    await importStatement(db, ME.id, slice, [{ key: "oct-s", occurredAt: istInstant("2026-10-20", "11:00"), details: "SLICE OCT", debitPaise: 90000, creditPaise: 0, reason: "", recipientIds: [dhanush], categoryId: null }]);
+    const after = (await getDebtSummary(db, ME.id, { from: "2026-11-01", to: "2026-11-30" })).rows.find((r) => r.partyId === dhanush)!.portalPaise;
+    expect(after - before).toBe(70000);
+  });
+});
+
+describe("Add Bulk, Credit History", () => {
+  it("links a Debit row to the credit chosen for it", async () => {
+    const { createBulk } = await import("@/features/quick-pay/server/entries");
+    const bank = await db.account.findFirstOrThrow({ where: { userId: ME.id, name: "HDFC", deletedAt: null } });
+    const at = istInstant("2026-11-11", "10:00");
+    await createBulk(db, ME.id, rid(), [{ key: "cr", type: "CREDIT", amountPaise: 50000, occurredAt: at, reason: "Salary part", accountId: bank.id, categoryId: null, shares: [], transfer: null, creditedById: null }]);
+    const credit = await db.transaction.findFirstOrThrow({ where: { userId: ME.id, description: "Salary part", deletedAt: null } });
+    await createBulk(db, ME.id, rid(), [{ key: "dr", type: "DEBIT", amountPaise: 20000, occurredAt: at, reason: "Paid from it", accountId: bank.id, categoryId: null, shares: [], transfer: null, creditIds: [credit.id] }]);
+    const debit = await db.transaction.findFirstOrThrow({ where: { userId: ME.id, description: "Paid from it", deletedAt: null } });
+    expect(await db.transactionCreditLink.count({ where: { userId: ME.id, debitId: debit.id, creditId: credit.id } })).toBe(1);
+  });
+});

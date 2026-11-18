@@ -75,7 +75,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/qui
     <>
       <PageHeader
         title="GPay Transactions"
-        description={filters.order === "desc" ? "Every Quick Pay entry, newest first." : "Every Quick Pay entry, oldest first."}
+        description={filters.order === "asc" ? "Every Quick Pay entry, oldest first." : "Every Quick Pay entry, newest first."}
         actions={
           <>
             <Link href="/quick-pay/transactions/bulk" className={cn(buttonVariants({ variant: "outline" }))}>

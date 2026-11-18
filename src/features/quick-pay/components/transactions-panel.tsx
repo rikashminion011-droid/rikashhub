@@ -35,7 +35,8 @@ export function TransactionsPanel({ today, options, actions }: { today: string; 
   const { period } = usePeriod(today);
   const [data, setData] = useState<{ rows: TxRow[]; totals: TxTotals; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [oldestFirst, setOldestFirst] = useState(true);
+  // Newest first to begin with; the button beside the list turns it round.
+  const [oldestFirst, setOldestFirst] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<TxRow | null>(null);
   const latest = useRef(0);

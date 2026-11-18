@@ -329,6 +329,10 @@ export async function createBulk(
           }
           await tx.transactionSplit.createMany({ data });
         }
+        // A Debit row with a credit attached from Credit History links to it, as in Quick Entry.
+        for (const { row, id } of rows.map((row, i) => ({ row, id: ids[i]! }))) {
+          if (row.type === "DEBIT" && !row.transfer && row.creditIds && row.creditIds.length > 0) await writeCreditLinks(tx, userId, id, row.creditIds);
+        }
         // A Credit row "Credited By" a person is a payment by that person (Debt Management).
         const credited = rows.map((row, i) => ({ row, id: ids[i]! })).filter((x) => x.row.type === "CREDIT" && !x.row.transfer && x.row.creditedById);
         if (credited.length > 0) {
@@ -536,7 +540,7 @@ export async function listTransactions(
     where,
     include: includeForRows,
     // Oldest first unless newest first was asked for.
-    orderBy: filters.order === "desc" ? [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }] : [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    orderBy: filters.order === "asc" ? [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }] : [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     skip: (page - 1) * size,
     take: size,
   });

@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import { hdfcCycle } from "@/features/credit-portal/model";
 import { portalShares } from "@/features/credit-portal/server/service";
 import { ExpenseError } from "@/features/expenses/server/service";
 import { rangeToInstants } from "@/features/quick-pay/datetime";
@@ -37,6 +38,8 @@ const splitWhere = (userId: string, q: DebtQuery, partyId?: string) => {
 };
 
 const rangeOf = (q: DebtQuery) => ({ from: q.from ?? null, to: q.to ?? null });
+/** HDFC's own period for the month the chosen period ends in: its 15th to 15th cycle. With no end date, HDFC follows the period like the rest. */
+const hdfcOf = (q: DebtQuery) => (q.to ? hdfcCycle(q.to) : null);
 
 export async function getDebtSummary(db: PrismaClient, userId: string, q: DebtQuery = {}): Promise<DebtSummary> {
   const skip = new Set(q.excludePartyIds ?? []);
@@ -46,7 +49,7 @@ export async function getDebtSummary(db: PrismaClient, userId: string, q: DebtQu
     db.transactionSplit.findMany({ where: splitWhere(userId, q), select: { partyId: true, amount: true, transaction: { select: { amount: true, splitKind: true } } } }),
     db.splitPayment.groupBy({ by: ["partyId"], where: { userId, deletedAt: null, ...(when ? { paidAt: when } : {}) }, _sum: { amount: true } }),
     shoppingShares(db, userId, rangeOf(q)),
-    portalShares(db, userId, rangeOf(q)),
+    portalShares(db, userId, rangeOf(q), hdfcOf(q)),
   ]);
 
   const owed = new Map<string, { share: number; whole: number; count: number; direct: number }>();
@@ -106,7 +109,7 @@ export async function getDebtHistory(db: PrismaClient, userId: string, partyId: 
     }),
     db.splitPayment.findMany({ where: { userId, partyId, deletedAt: null, ...(when ? { paidAt: when } : {}) }, orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }] }),
     shoppingShares(db, userId, rangeOf(q)),
-    portalShares(db, userId, rangeOf(q)),
+    portalShares(db, userId, rangeOf(q), hdfcOf(q)),
   ]);
 
   const items: DebtSplitItem[] = splits

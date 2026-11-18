@@ -132,7 +132,7 @@ export function SettingsCenter({
   const shownTree = catKind === "CREDIT" ? creditTree : categories;
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-3xl space-y-5">
       {/* Which page is being customized */}
       <div className="flex flex-wrap items-center gap-3">
         <label htmlFor="settings-page" className="text-sm font-semibold">

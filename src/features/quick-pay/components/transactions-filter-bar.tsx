@@ -97,12 +97,12 @@ export function TransactionsFilterBar({ today, defaultMonth, options }: { today:
           <Label htmlFor="f-order" className="text-xs text-muted-foreground">Order</Label>
           <select
             id="f-order"
-            value={params.get("order") === "desc" ? "desc" : "asc"}
-            onChange={(e) => go({ order: e.target.value === "desc" ? "desc" : "" })}
+            value={params.get("order") === "asc" ? "asc" : "desc"}
+            onChange={(e) => go({ order: e.target.value === "asc" ? "asc" : "" })}
             className="h-9 rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
           >
-            <option value="asc">Oldest to Newest</option>
             <option value="desc">Newest to Oldest</option>
+            <option value="asc">Oldest to Newest</option>
           </select>
         </div>
         <div className="min-w-48 flex-1 space-y-1">

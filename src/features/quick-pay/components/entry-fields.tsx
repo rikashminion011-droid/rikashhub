@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { groupBanks, groupCategories } from "../cascade";
 import { categoriesFor, keywordsFor, visibleBanks } from "../availability";
-import { withCategory, withKind, withReason, type FormState } from "../entry-state";
+import { withCategory, withKind, withOfficeDebt, withReason, type FormState } from "../entry-state";
 import { nextSwitch } from "../switching";
 import type { QuickPayOptions, RecentCredit } from "../types";
 import { MAX_REASON_LENGTH, type EntryType, type QuickPayErrors } from "../validation";
@@ -39,6 +39,15 @@ function AddLink({ href, children }: { href: string; children: React.ReactNode }
 const labelClass = "text-xs font-semibold text-muted-foreground";
 
 /** One tick box in the Explore more list. */
+/** Keeps the people chosen above and folds the options away. (Nothing is lost: Save Entry saves the whole entry.) */
+function SaveChoice({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/50">
+      Save
+    </button>
+  );
+}
+
 function OptionRow({ checked, disabled = false, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange: (on: boolean) => void }) {
   return (
     <label className={cn("flex min-h-9 cursor-pointer items-center gap-2.5 text-sm font-semibold", disabled && "cursor-not-allowed opacity-50")}>
@@ -109,6 +118,12 @@ export function EntryFields({
   // Explore more starts open when the entry already uses one of its options (for example when editing).
   const [moreOpen, setMoreOpen] = useState(() => form.splitKind !== null || form.shoppingPlatformId !== null);
   const [creditsOpen, setCreditsOpen] = useState(false);
+  // When a Split or Debt appears (for example Office picks its Debt), the options open so it can be seen.
+  const [seenKind, setSeenKind] = useState(form.splitKind);
+  if (form.splitKind !== seenKind) {
+    setSeenKind(form.splitKind);
+    if (form.splitKind) setMoreOpen(true);
+  }
   const debitRef = useRef<HTMLButtonElement>(null);
   // A mistake in the people or their shares is shown where it can be fixed.
   const splitProblem = errors.split || errors.splitValue;
@@ -238,7 +253,7 @@ export function EntryFields({
               onBlur={() => setReasonFocus(false)}
               onChange={(e) => {
                 const value = e.target.value;
-                setForm((f) => withReason(f, value, keywordsFor(options, f.type)));
+                setForm((f) => withOfficeDebt(withReason(f, value, keywordsFor(options, f.type)), options));
               }}
               className={cn("h-10 text-base sm:text-sm", onAssignReason && "pr-9")}
             />
@@ -256,7 +271,7 @@ export function EntryFields({
                       // Pressing a suggestion must not blur the box first, or the list would vanish before the tap lands.
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
-                        setForm((f) => withReason(f, r, keywordsFor(options, f.type)));
+                        setForm((f) => withOfficeDebt(withReason(f, r, keywordsFor(options, f.type)), options));
                         setReasonFocus(false);
                       }}
                       className="flex min-h-10 w-full items-center rounded-md px-2.5 py-1.5 text-left text-base hover:bg-accent hover:text-accent-foreground sm:min-h-8 sm:text-sm"
@@ -281,7 +296,7 @@ export function EntryFields({
                 ariaLabel={labels.category}
                 groups={categoryGroups}
                 value={form.categoryId}
-                onChange={(v) => setForm((f) => withCategory(f, v))}
+                onChange={(v) => setForm((f) => withOfficeDebt(withCategory(f, v), options))}
                 placeholder="Optional"
                 searchPlaceholder="Search categories…"
                 emptyText="No category found. Add one below."
@@ -292,7 +307,7 @@ export function EntryFields({
                     placeholder="Add a category…"
                     onAdd={async (name) => {
                       const result = await onAddCategory(name, form.type);
-                      if (result.ok) setForm((f) => withCategory(f, result.id));
+                      if (result.ok) setForm((f) => withOfficeDebt(withCategory(f, result.id), options));
                       return result;
                     }}
                   />
@@ -303,7 +318,7 @@ export function EntryFields({
               <CycleButton
                 label="Switch to the next category"
                 disabled={categoryList.filter((c) => !c.isSub).length < 2}
-                onClick={() => setForm((f) => withCategory(f, nextSwitch(switches.category, categoryList.filter((c) => !c.isSub).map((c) => c.id), f.categoryId)))}
+                onClick={() => setForm((f) => withOfficeDebt(withCategory(f, nextSwitch(switches.category, categoryList.filter((c) => !c.isSub).map((c) => c.id), f.categoryId)), options))}
               />
             ) : null}
           </div>
@@ -373,6 +388,7 @@ export function EntryFields({
             {form.splitKind === "SPLIT" ? (
               <div className="pb-2 pl-7">
                 <SplitControl chips form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} />
+                {form.shares.length > 0 ? <SaveChoice onClick={() => setMoreOpen(false)} /> : null}
               </div>
             ) : null}
 
@@ -382,6 +398,7 @@ export function EntryFields({
                 {form.splitKind === "DEBT" ? (
                   <div className="pb-2 pl-7">
                     <SplitControl chips form={form} setForm={setForm} options={options} errors={errors} clearError={clearError} idPrefix={idPrefix} onAddPerson={onAddPerson} />
+                    {form.shares.length > 0 ? <SaveChoice onClick={() => setMoreOpen(false)} /> : null}
                   </div>
                 ) : null}
               </>
@@ -464,7 +481,7 @@ export function EntryFields({
           onAssign={async (input) => {
             const done = await onAssignReason(form.reason.trim(), form.type, input);
             if (!done.ok) return done.error;
-            setForm((f) => withCategory(f, done.categoryId));
+            setForm((f) => withOfficeDebt(withCategory(f, done.categoryId), options));
             return null;
           }}
         />

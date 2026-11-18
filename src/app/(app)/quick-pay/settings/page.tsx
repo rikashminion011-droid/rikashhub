@@ -60,15 +60,17 @@ export default async function SettingsPage({ searchParams }: PageProps<"/quick-p
 
   return (
     <>
-      <PageHeader
-        title="Customized Settings"
-        description="Choose a page, then set it up section by section. Changes apply across the whole app as soon as you save."
-        actions={
-          <Link href="/quick-pay" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-            <ArrowLeft className="size-3.5" /> Back to Quick Entry
-          </Link>
-        }
-      />
+      <div className="mx-auto w-full max-w-3xl">
+        <PageHeader
+          title="Customized Settings"
+          description="Choose a page, then set it up section by section. Changes apply across the whole app as soon as you save."
+          actions={
+            <Link href="/quick-pay" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              <ArrowLeft className="size-3.5" /> Back to Quick Entry
+            </Link>
+          }
+        />
+      </div>
       <SettingsCenter
         initialTab={tab}
         banks={banks}

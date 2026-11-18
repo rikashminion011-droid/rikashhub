@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
-import { addCategoryAction, assignReasonAction, clearBulkDraftAction, getGpayOptionsAction, loadBulkDraftAction, saveBulkAction, saveBulkDraftAction, saveTransferAction } from "@/features/quick-pay/actions";
+import { addCategoryAction, assignReasonAction, clearBulkDraftAction, getGpayOptionsAction, getRecentCreditsAction, loadBulkDraftAction, saveBulkAction, saveBulkDraftAction, saveTransferAction } from "@/features/quick-pay/actions";
 import { addPersonAction } from "@/features/users/actions";
 import { BulkEntry } from "@/features/quick-pay/components/bulk-entry";
 import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
@@ -37,7 +37,7 @@ export default async function BulkPage() {
       <PageHeader title="Add Bulk" />
       {/* The sheet uses the whole width of the screen (the page has no side space here), so every column can be read in full */}
       <div className="w-full">
-      <BulkEntry options={options} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveBulkAction} draftActions={{ load: loadBulkDraftAction, save: saveBulkDraftAction, clear: clearBulkDraftAction }} quickActions={{ addCategory: addCategoryAction, assignReason: assignReasonAction, addPerson: addPersonAction, getOptions: getGpayOptionsAction, saveTransfer: saveTransferAction }} />
+      <BulkEntry options={options} today={istDateOf(now)} nowTime={istTimeOf(now)} saveBulk={saveBulkAction} draftActions={{ load: loadBulkDraftAction, save: saveBulkDraftAction, clear: clearBulkDraftAction }} quickActions={{ addCategory: addCategoryAction, assignReason: assignReasonAction, addPerson: addPersonAction, getOptions: getGpayOptionsAction, saveTransfer: saveTransferAction, getRecentCredits: getRecentCreditsAction }} />
       </div>
     </>
   );

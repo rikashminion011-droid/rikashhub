@@ -370,6 +370,7 @@ const bulkSchema = z.object({
         shares: z.array(shareSchema).max(30),
         transfer: z.object({ fromId: id, toId: id }).nullable().optional(),
         creditedById: id.nullable().optional(),
+        creditIds: z.array(id).max(50).optional(),
         splitKind: z.enum(["SPLIT", "DEBT"]).nullable().optional(),
       }),
     )

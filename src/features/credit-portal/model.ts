@@ -213,7 +213,7 @@ export function recipientSummary(names: readonly string[]): { first: string; mor
 export const isHdfcPortal = (name: string) => name.normalize("NFKC").trim().toLowerCase() === "hdfc";
 
 /**
- * HDFC's period when nothing else is chosen: the 16th of last month to the 15th of this month. `today` is YYYY-MM-DD.
+ * HDFC's period when nothing else is chosen: the 15th of last month to the 15th of this month. `today` is YYYY-MM-DD.
  */
 export function hdfcCycle(today: string): { from: string; to: string } {
   const y = Number(today.slice(0, 4));
@@ -221,5 +221,5 @@ export function hdfcCycle(today: string): { from: string; to: string } {
   const prevY = m === 1 ? y - 1 : y;
   const prevM = m === 1 ? 12 : m - 1;
   const two = (n: number) => String(n).padStart(2, "0");
-  return { from: `${prevY}-${two(prevM)}-16`, to: `${y}-${two(m)}-15` };
+  return { from: `${prevY}-${two(prevM)}-15`, to: `${y}-${two(m)}-15` };
 }

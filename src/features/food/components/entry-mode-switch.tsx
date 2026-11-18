@@ -157,7 +157,7 @@ export function EntryModeSwitch({
 
   return (
     <PeriodContext.Provider value={{ period, today }}>
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-3xl space-y-5">
       {/* Totals and the period control, above every tab */}
       <PeriodHeader period={period} onPeriod={setPeriod} today={today} food={active === "food"} getTotals={getTotals} getFoodTotal={foodActions.getTotal} />
 
