@@ -6,6 +6,7 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { PeriodFilter } from "@/features/credit-portal/components/period-filter";
+import { ExportDebtButton } from "@/features/debt/components/export-debt-button";
 import { DebtItems } from "@/features/debt/components/debt-table";
 import { getDebtHistory } from "@/features/debt/server/service";
 import type { DebtHistory } from "@/features/debt/types";
@@ -51,6 +52,17 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
   }
 
   const { row } = history;
+  // The export covers the same period and HDFC statement date as this page.
+  const exportParams = new URLSearchParams();
+  if (period.custom) {
+    exportParams.set("from", period.from);
+    exportParams.set("to", period.to);
+  } else exportParams.set("month", period.month);
+  if (hdfc.custom) {
+    exportParams.set("hfrom", hdfc.from);
+    exportParams.set("hto", hdfc.to);
+  }
+  const exportQuery = exportParams.toString();
   const splitOnly = row.totalSplitPaise - row.directPaise;
   // A plain list of the totals: no boxes.
   const totals: { label: string; value: number; strong?: boolean; tone?: "good" | "bad" }[] = [
@@ -90,9 +102,12 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
           ))}
         </dl>
         <section className="space-y-2" aria-labelledby="owed">
-          <h2 id="owed" className="text-sm font-semibold">
-            Transactions ({history.items.length})
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="owed" className="text-sm font-semibold">
+              Transactions ({history.items.length})
+            </h2>
+            <ExportDebtButton partyId={row.partyId} query={exportQuery} />
+          </div>
           <DebtItems items={history.items} flat />
         </section>
       </div>

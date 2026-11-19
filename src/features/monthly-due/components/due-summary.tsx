@@ -19,8 +19,8 @@ const when = (iso: string) => {
 
 /**
  * The figures of Monthly Due. My Due is Food + HDFC statement (your lines) + Shopping Records (your part) + Monthly Expenses;
- * the Debt Amount is the total value of the recipients chosen in Debt Management; My Balance is the total of Update Balance;
- * New Balance is My Balance + Debt Amount - My Due. Each figure can be pressed to see what it is made of.
+ * the Debt Amount is the total value of the recipients chosen in Debt Management; My Balance is Debt Amount - My Due;
+ * New Balance is the total of Update Balance + My Balance. Each figure can be pressed to see what it is made of.
  */
 export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: string }) {
   const [open, setOpen] = useState<Key | null>(null);
@@ -29,8 +29,8 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
   const cards: { key: Key; label: string; value: string; note: string; tone?: string }[] = [
     { key: "myDue", label: "My Due", value: formatINR(o.myDuePaise), note: "Food + HDFC statement + Shopping + Monthly Expenses" },
     { key: "debt", label: "Debt Amount", value: formatINR(o.debtAmountPaise), note: "Recipients chosen in Debt Management" },
-    { key: "myBalance", label: "My Balance", value: signed(o.myBalancePaise), note: "Total of Update Balance" },
-    { key: "new", label: "New Balance", value: signed(o.newBalancePaise), note: "My Balance + Debt Amount − My Due", tone: o.newBalancePaise < 0 ? "text-destructive" : undefined },
+    { key: "myBalance", label: "My Balance", value: signed(o.myBalancePaise), note: "Debt Amount − My Due" },
+    { key: "new", label: "New Balance", value: signed(o.newBalancePaise), note: "Total of Update Balance + My Balance", tone: o.newBalancePaise < 0 ? "text-destructive" : undefined },
   ];
 
   return (
@@ -141,8 +141,27 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
       ) : null}
 
       {open === "myBalance" ? (
-        <div className="space-y-2 rounded-xl border bg-card p-4 text-sm">
+        <div className="space-y-1 rounded-xl border bg-card p-4 text-sm">
           <h2 className="text-sm font-semibold">My Balance</h2>
+          {[
+            ["Debt Amount", formatINR(o.debtAmountPaise)],
+            ["− My Due", formatINR(o.myDuePaise)],
+          ].map(([label, value]) => (
+            <p key={label} className="flex justify-between gap-4 tabular-nums">
+              <span className="text-muted-foreground">{label}</span>
+              <span>{value}</span>
+            </p>
+          ))}
+          <p className="flex justify-between gap-4 border-t pt-1 font-semibold tabular-nums">
+            <span>My Balance</span>
+            <span>{signed(o.myBalancePaise)}</span>
+          </p>
+        </div>
+      ) : null}
+
+      {open === "new" ? (
+        <div className="space-y-2 rounded-xl border bg-card p-4 text-sm">
+          <h2 className="text-sm font-semibold">New Balance</h2>
           <ul className="divide-y rounded-lg border">
             {o.updateBalance.rows.map((r) => (
               <li key={r.id} className="flex items-center justify-between px-3 py-1.5">
@@ -151,26 +170,14 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
               </li>
             ))}
           </ul>
-          <p className="flex justify-between font-semibold tabular-nums">
-            <span>Total</span>
+          <p className="flex justify-between gap-4 font-medium tabular-nums">
+            <span className="text-muted-foreground">Total of Update Balance</span>
+            <span>{signed(o.updateBalance.totalPaise)}</span>
+          </p>
+          <p className="flex justify-between gap-4 tabular-nums">
+            <span className="text-muted-foreground">+ My Balance</span>
             <span>{signed(o.myBalancePaise)}</span>
           </p>
-        </div>
-      ) : null}
-
-      {open === "new" ? (
-        <div className="space-y-1 rounded-xl border bg-card p-4 text-sm">
-          <h2 className="text-sm font-semibold">New Balance</h2>
-          {[
-            ["My Balance", signed(o.myBalancePaise)],
-            ["+ Debt Amount", formatINR(o.debtAmountPaise)],
-            ["− My Due", formatINR(o.myDuePaise)],
-          ].map(([label, value]) => (
-            <p key={label} className="flex justify-between gap-4 tabular-nums">
-              <span className="text-muted-foreground">{label}</span>
-              <span>{value}</span>
-            </p>
-          ))}
           <p className="flex justify-between gap-4 border-t pt-1 font-semibold tabular-nums">
             <span>New Balance</span>
             <span>{signed(o.newBalancePaise)}</span>

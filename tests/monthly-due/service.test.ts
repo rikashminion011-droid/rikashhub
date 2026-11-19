@@ -107,8 +107,8 @@ describe("the overview", () => {
     expect(o.debtAmountPaise).toBe(25000 + 15000 + 20000 + 20000);
     expect(o.debt.people.map((p) => p.name).sort()).toEqual(["Dhanush", "Mukesh"].sort());
     // My Balance is the total of Update Balance; New Balance adds the Debt Amount and takes away My Due.
-    expect(o.myBalancePaise).toBe(o.updateBalance.totalPaise);
-    expect(o.newBalancePaise).toBe(o.myBalancePaise + o.debtAmountPaise - o.myDuePaise);
+    expect(o.myBalancePaise).toBe(o.debtAmountPaise - o.myDuePaise);
+    expect(o.newBalancePaise).toBe(o.updateBalance.totalPaise + o.myBalancePaise);
   });
 
   it("counts a Credited By credit as a payment, and takes it back when removed", async () => {

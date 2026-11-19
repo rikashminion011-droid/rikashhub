@@ -216,6 +216,7 @@ model User {
   monthlyExpenses        MonthlyExpense[]
   monthlyDueSetting      MonthlyDueSetting?
   debtEntries            DebtEntry[]
+  autopayEntries         AutopayEntry[]
   shoppingPurchases      ShoppingPurchase[]
   creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
@@ -987,6 +988,7 @@ model CreditPortal {
   user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   entries          CreditPortalEntry[]
   statementEntries CreditStatementEntry[]
+  autopayEntries   AutopayEntry[]
 
   @@unique([userId, nameKey])
   @@index([userId, deletedAt])
@@ -1173,4 +1175,28 @@ model DebtEntry {
 
   @@index([userId, partyId, deletedAt, occurredAt])
   @@map("debt_entries")
+}
+
+enum AutopayOwner {
+  MY
+  OFFICE
+}
+
+/// A dated Auto Pay amount of a credit portal, kept apart for My Autopay and Office Autopay.
+model AutopayEntry {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  portalId  String       @db.Uuid
+  owner     AutopayOwner
+  payDate   DateTime     @db.Date
+  amount    Decimal      @db.Decimal(14, 2)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portal CreditPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+
+  @@index([userId, portalId, owner, deletedAt, payDate])
+  @@map("autopay_entries")
 }

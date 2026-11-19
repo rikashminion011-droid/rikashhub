@@ -158,9 +158,9 @@ export interface DueOverview {
   debtAmountPaise: number;
   /** What the banks and Cash hold, as typed in Update Balance. */
   updateBalance: { rows: BalanceRow[]; totalPaise: number };
-  /** The total of Update Balance. */
+  /** Debt Amount - My Due. */
   myBalancePaise: number;
-  /** My Balance + Debt Amount - My Due. */
+  /** The total of Update Balance + My Balance. */
   newBalancePaise: number;
 }
 
@@ -193,7 +193,7 @@ export async function getDueOverview(db: PrismaClient, userId: string, range: { 
   // Only the recipients chosen in Debt Management count (everyone when none were chosen).
   const rows = chosen.length > 0 ? debtSummary.rows.filter((r) => chosen.includes(r.partyId)) : debtSummary.rows;
   const debtTotal = rows.reduce((t, r) => t + r.totalDebtPaise, 0);
-  const { newBalancePaise } = computeBalances({ debtPaise: debtTotal, myDuePaise, oldPaise: updateBalance.totalPaise });
+  const { myBalancePaise, newBalancePaise } = computeBalances({ debtPaise: debtTotal, myDuePaise, oldPaise: updateBalance.totalPaise });
 
   return {
     personalPartyId,
@@ -212,7 +212,7 @@ export async function getDueOverview(db: PrismaClient, userId: string, range: { 
     },
     debtAmountPaise: debtTotal,
     updateBalance,
-    myBalancePaise: updateBalance.totalPaise,
+    myBalancePaise,
     newBalancePaise,
   };
 }

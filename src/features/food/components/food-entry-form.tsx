@@ -142,9 +142,9 @@ export function FoodEntryForm({ actions, notesSwitch }: { actions: FoodActions; 
         className="space-y-3"
       >
         <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full space-y-1.5 sm:w-44">
+          <div className="w-full space-y-1.5 sm:max-w-sm">
             <div className="flex items-center gap-3">
-              <label htmlFor="food-meal" className="text-sm font-semibold">Meal</label>
+              <span className="text-sm font-semibold">Meal</span>
               <label className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold" title="No meal was eaten">
                 <Checkbox
                   checked={nil}
@@ -157,20 +157,26 @@ export function FoodEntryForm({ actions, notesSwitch }: { actions: FoodActions; 
                 Nil
               </label>
             </div>
-            <select
-              id="food-meal"
-              value={meal}
-              onChange={(e) => {
-                setMeal(e.target.value as Meal);
-                setError(null);
-              }}
-              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
-            >
+            <div role="radiogroup" aria-label="Meal" id="food-meal" className="grid grid-cols-3 gap-1.5">
               {MEALS.map((m) => (
-                <option key={m} value={m}>{MEAL_LABEL[m]}</option>
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={meal === m}
+                  onClick={() => {
+                    setMeal(m);
+                    setError(null);
+                  }}
+                  className={cn("h-10 rounded-lg border px-3 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50", meal === m ? "border-primary bg-primary text-primary-foreground" : "border-input bg-background hover:bg-muted")}
+                >
+                  {MEAL_LABEL[m]}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
+          {/* Notes, Amount and Save start on the next line */}
+          <div className="basis-full" aria-hidden />
 
           <div className="min-w-0 flex-1 space-y-1.5 basis-48">
             <label htmlFor="food-notes" className="text-sm font-semibold">Notes</label>
@@ -276,7 +282,7 @@ export function FoodEntryForm({ actions, notesSwitch }: { actions: FoodActions; 
           <div className="space-y-1.5" aria-label={`Recent ${MEAL_LABEL[meal]} entries`}>
             <p className="text-xs font-semibold text-muted-foreground">Recent {MEAL_LABEL[meal]} entries</p>
             <ul className="flex flex-wrap gap-2">
-              {recent.map((r) => (
+              {recent.slice(0, 4).map((r) => (
                 <li key={r.id}>
                   <button
                     type="button"

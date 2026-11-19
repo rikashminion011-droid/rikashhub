@@ -422,15 +422,32 @@ function RecipientTotals({ rows, people, recipientPage }: { rows: StatementRow[]
     }
     return [...byId.entries()]
       .map(([id, t]) => ({ id, name: people.find((p) => p.id === id)?.name ?? "Person", ...t }))
+      // A person whose amount comes to 0.00 is not listed.
+      .filter((p) => p.debit - p.credit !== 0)
       .sort((a, b) => b.debit - b.credit - (a.debit - a.credit));
   }, [rows, people]);
   const none = rows.filter((r) => r.recipientIds.length === 0);
   const noneDebit = none.reduce((s, r) => s + r.debitPaise, 0);
   const noneCredit = none.reduce((s, r) => s + r.creditPaise, 0);
 
+  function exportCsv() {
+    const q = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const money = (p: number) => (p / 100).toFixed(2);
+    const lines = [["Recipient", "Lines", "Debit", "Credit", "Net"].map(q).join(",")];
+    for (const p of list) lines.push([q(p.name), p.lines, money(p.debit), money(p.credit), money(p.debit - p.credit)].join(","));
+    if (none.length > 0 && noneDebit - noneCredit !== 0) lines.push([q("No recipient chosen"), none.length, money(noneDebit), money(noneCredit), money(noneDebit - noneCredit)].join(","));
+    const url = URL.createObjectURL(new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "recipient-report.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (rows.length === 0) return null;
   return (
     <section className="space-y-2" aria-label="Recipient amounts">
+      <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
         aria-expanded={open}
@@ -440,6 +457,12 @@ function RecipientTotals({ rows, people, recipientPage }: { rows: StatementRow[]
         <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} aria-hidden />
         {open ? "Hide all recipient amounts" : "Show all recipient amounts"}
       </button>
+      {open ? (
+        <button type="button" onClick={exportCsv} className="inline-flex h-10 items-center gap-1.5 rounded-lg border bg-card px-4 text-sm font-semibold outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50">
+          <Download className="size-4" aria-hidden /> Export
+        </button>
+      ) : null}
+      </div>
       {open ? (
         <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full min-w-[26rem] text-sm">
@@ -474,7 +497,7 @@ function RecipientTotals({ rows, people, recipientPage }: { rows: StatementRow[]
                   </tr>
                 ))
               )}
-              {none.length > 0 ? (
+              {none.length > 0 && noneDebit - noneCredit !== 0 ? (
                 <tr className="text-muted-foreground">
                   <td className="px-3 py-2.5">No recipient chosen</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{none.length}</td>

@@ -3,8 +3,10 @@ import Link from "next/link";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import {
+  addAutopayAction,
   addPortalAction,
   addRecipientAction,
+  deleteAutopayAction,
   deleteStatementEntryAction,
   deleteUnbilledAction,
   importStatementAction,
@@ -15,10 +17,12 @@ import {
   updateStatementEntryAction,
   updateUnbilledAction,
 } from "@/features/credit-portal/actions";
+import { AutopayTab } from "@/features/credit-portal/components/autopay-tab";
+import { listAutopay, type AutopayData } from "@/features/credit-portal/server/autopay";
 import { PortalHeader } from "@/features/credit-portal/components/portal-header";
 import { StatementTab } from "@/features/credit-portal/components/statement-tab";
 import { UnbilledTab } from "@/features/credit-portal/components/unbilled-tab";
-import { hdfcCycle, isHdfcPortal } from "@/features/credit-portal/model";
+import { hdfcCycle, hdfcUnbilledCycle, isHdfcPortal } from "@/features/credit-portal/model";
 import { listPortals, listStatement, listUnbilled } from "@/features/credit-portal/server/service";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { istDateOf, monthBounds } from "@/features/quick-pay/datetime";
@@ -67,11 +71,12 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
     await ensureUserSetup(db, user);
     const [portals, options] = await Promise.all([listPortals(db, user.id), getQuickPayOptions(db, user.id)]);
     const active = portals.find((p) => p.id === one(params.portal)) ?? portals[0] ?? null;
-    if (!explicit && active && isHdfcPortal(active.name)) range = hdfcCycle(today);
+    if (!explicit && active && isHdfcPortal(active.name)) range = tab === "unbilled" ? hdfcUnbilledCycle(today) : hdfcCycle(today);
     const [unbilled, statement] = active
       ? await Promise.all([tab === "unbilled" ? listUnbilled(db, user.id, active.id, range) : Promise.resolve([]), tab === "statement" ? listStatement(db, user.id, active.id, range) : Promise.resolve(null)])
       : [[], null];
-    data = { portals, options, active, unbilled, statement };
+    const autopay: AutopayData | null = active && tab === "autopay" ? await listAutopay(db, user.id, active.id) : null;
+    data = { portals, options, active, unbilled, statement, autopay };
   } catch (error) {
     console.error("[credit-portal] could not load", error);
     return (
@@ -82,8 +87,8 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
     );
   }
 
-  const { portals, options, active, unbilled, statement } = data;
-  const defaultRange = active && isHdfcPortal(active.name) ? hdfcCycle(today) : undefined;
+  const { portals, options, active, unbilled, statement, autopay } = data;
+  const defaultRange = active && isHdfcPortal(active.name) ? (tab === "unbilled" ? hdfcUnbilledCycle(today) : hdfcCycle(today)) : undefined;
   const q = new URLSearchParams();
   if (active) q.set("portal", active.id);
   if (isDate(rawFrom)) q.set("from", rawFrom);
@@ -149,10 +154,9 @@ export default async function CreditPortalPage({ searchParams }: PageProps<"/cre
                 exportHref={exportHref("statement")}
               />
             ) : null}
-            {tab === "autopay" || tab === "emi" ? (
-              <p className="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground">
-                {tab === "autopay" ? "Auto Pay" : "EMI"} will be added once its details are decided.
-              </p>
+            {tab === "autopay" && autopay ? <AutopayTab portalId={active.id} data={autopay} owner={one(params.owner) === "OFFICE" ? "OFFICE" : "MY"} baseHref={tabHref("autopay")} today={today} actions={{ add: addAutopayAction, remove: deleteAutopayAction }} /> : null}
+            {tab === "emi" ? (
+              <p className="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground">EMI will be added once its details are decided.</p>
             ) : null}
           </>
         ) : null}

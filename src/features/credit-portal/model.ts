@@ -215,6 +215,16 @@ export const isHdfcPortal = (name: string) => name.normalize("NFKC").trim().toLo
 /**
  * HDFC's period when nothing else is chosen: the 15th of last month to the 15th of this month. `today` is YYYY-MM-DD.
  */
+/** HDFC's Unbilled period to open on: the 16th of this month to the 15th of next month. */
+export function hdfcUnbilledCycle(today: string): { from: string; to: string } {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return { from: `${y}-${two(m)}-16`, to: `${nextY}-${two(nextM)}-15` };
+}
+
 export function hdfcCycle(today: string): { from: string; to: string } {
   const y = Number(today.slice(0, 4));
   const m = Number(today.slice(5, 7));

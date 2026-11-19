@@ -7,13 +7,14 @@ import { CascadingSelect } from "@/components/shared/cascading-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { groupBanks, groupCategories } from "../cascade";
+import { flattenGroups, groupBanks, groupCategories } from "../cascade";
 import { categoriesFor, keywordsFor, visibleBanks } from "../availability";
 import { withCategory, withKind, withOfficeDebt, withReason, type FormState } from "../entry-state";
 import { nextSwitch } from "../switching";
 import type { QuickPayOptions, RecentCredit } from "../types";
 import { MAX_REASON_LENGTH, type EntryType, type QuickPayErrors } from "../validation";
 import { CreditsPanel } from "./credits-panel";
+import { RecentChips } from "./recent-chips";
 import { CycleButton } from "./cycle-button";
 import { InlineAdd, type AddResult } from "./inline-add";
 import { PersonChips } from "./person-chips";
@@ -300,6 +301,7 @@ export function EntryFields({
               />
             ) : null}
           </div>
+          <RecentChips field="category" options={flattenGroups(categoryGroups)} selected={form.categoryId} onPick={(v) => setForm((f) => withOfficeDebt(withCategory(f, v), options))} />
         </div>
       </div>
 
@@ -341,6 +343,15 @@ export function EntryFields({
             />
           ) : null}
         </div>
+        <RecentChips
+          field="bank"
+          options={flattenGroups(bankGroups)}
+          selected={form.accountId}
+          onPick={(v) => {
+            setForm((f) => ({ ...f, accountId: v }));
+            clearError("bank");
+          }}
+        />
       </div>
       {errors.bank ? (
         <p role="alert" className="-mt-2 text-xs text-destructive">

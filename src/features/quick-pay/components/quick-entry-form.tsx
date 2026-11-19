@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shared/option-dialogs";
 import { Button } from "@/components/ui/button";
 import { formatINR } from "@/lib/finance";
+import { rememberChoice } from "../recent-choices";
 import type { QuickAddActions, QuickPayActions } from "../actions";
 import { formatTransactionWhen, istDateOf, istTimeOf } from "../datetime";
 import { defaultCreditSelection, emptyState, fromEntry, toQuickPayInput, type FormState } from "../entry-state";
@@ -146,6 +147,8 @@ export function QuickEntryForm({
     }
 
     notifyDataChanged();
+    rememberChoice("category", input.categoryId);
+    rememberChoice("bank", form.accountId);
     if (result.updated) {
       toast.success("Entry updated.");
       setCurrent({

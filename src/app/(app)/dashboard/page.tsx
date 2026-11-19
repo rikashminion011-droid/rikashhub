@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
+import { AnalysisView } from "@/features/dashboard/components/analysis-view";
+import { debtAnalysis, foodAnalysis, isView, portalAnalysis, shoppingAnalysis, transactionsAnalysis, type Analysis, type ViewKey } from "@/features/dashboard/analysis";
+import { HdfcPeriodFilter } from "@/features/debt/components/hdfc-period-filter";
 import { PeriodFilter } from "@/features/credit-portal/components/period-filter";
 import { listPortals } from "@/features/credit-portal/server/service";
 import { ensureUserSetup } from "@/features/expenses/server/service";
@@ -24,6 +27,7 @@ interface DashboardData {
   shoppingCount: number;
   pendingShopping: number;
   portals: { id: string; name: string; totalPaise: number; usedPaise: number; cardInfoSaved: boolean }[];
+  analysis: Analysis;
 }
 
 const signed = (paise: number) => (paise < 0 ? `−${formatINR(-paise)}` : formatINR(paise));
@@ -35,6 +39,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const sp = await searchParams;
   const period = periodFromParams(sp, today);
   const hdfc = hdfcFromParams(sp, today);
+  const rawView = Array.isArray(sp.view) ? sp.view[0] : sp.view;
+  const view: ViewKey = rawView && isView(rawView) ? rawView : "transactions";
 
   let d: DashboardData;
   try {
@@ -49,7 +55,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       db.shoppingPurchase.findMany({ where: { userId: user.id, deletedAt: null, platform: { deletedAt: null }, ...when }, select: { amount: true, detailsSaved: true, imageType: true, recipientIds: true } }),
       listPortals(db, user.id),
     ]);
+    const range = { from: period.from, to: period.to };
+    const query = `?${new URLSearchParams(period.custom ? { from: period.from, to: period.to } : { month: period.month }).toString()}`;
+    const analysis =
+      view === "transactions" ? await transactionsAnalysis(db, user.id, range)
+      : view === "food" ? await foodAnalysis(db, user.id, range)
+      : view === "shopping" ? await shoppingAnalysis(db, user.id, range)
+      : view === "debt" ? debtAnalysis(overview.debt.people, query)
+      : portalAnalysis(portals);
     d = {
+      analysis,
       overview,
       debitPaise: expense._sum.amount ? toPaise(expense._sum.amount.toString()) : 0,
       creditPaise: income._sum.amount ? toPaise(income._sum.amount.toString()) : 0,
@@ -88,6 +103,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       <PageHeader title="Dashboard" description="The whole picture for the period, from the same records as every other page. It changes the moment anything is added, edited, deleted or settled." />
       <div className="space-y-6">
         <PeriodFilter today={today} />
+        <HdfcPeriodFilter today={today} cycle={hdfcFromParams({}, today)} />
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           {tiles.map((t) => (
@@ -98,6 +114,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             </Link>
           ))}
         </div>
+
+        <AnalysisView
+          view={view}
+          analysis={d.analysis}
+          hrefFor={(v) => {
+            const next = new URLSearchParams();
+            for (const [k, val] of Object.entries(sp)) if (typeof val === "string" && k !== "view") next.set(k, val);
+            next.set("view", v);
+            return `/dashboard?${next.toString()}`;
+          }}
+        />
 
         <section className="space-y-3" aria-labelledby="util">
           <h2 id="util" className="text-sm font-semibold">

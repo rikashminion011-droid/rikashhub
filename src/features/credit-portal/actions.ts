@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { parseAmountInput } from "@/lib/finance";
 import { RateLimiter } from "@/lib/security/rate-limit";
+import { addAutopay, deleteAutopay } from "./server/autopay";
 import {
   addPortal,
   deleteStatementEntry,
@@ -252,4 +253,34 @@ export interface PortalActions {
   importStatement: typeof importStatementAction;
   updateStatementEntry: typeof updateStatementEntryAction;
   deleteStatementEntry: typeof deleteStatementEntryAction;
+}
+
+// ───────────────────────── Auto Pay ─────────────────────────
+
+export async function addAutopayAction(raw: unknown): Promise<CpResult> {
+  try {
+    const p = z.object({ portalId: id, owner: z.enum(["MY", "OFFICE"]), date: z.string().max(10), amount: z.string().max(20) }).safeParse(raw);
+    if (!p.success) return { ok: false, error: "That autopay could not be read." };
+    const amountPaise = parseAmountInput(p.data.amount);
+    if (amountPaise === null || amountPaise <= 0) return { ok: false, error: "Enter the autopay amount like 1500 or 250.50." };
+    const { user, db } = await context();
+    await addAutopay(db, user.id, { portalId: p.data.portalId, owner: p.data.owner, date: p.data.date, amountPaise });
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "add autopay");
+  }
+}
+
+export async function deleteAutopayAction(raw: unknown): Promise<CpResult> {
+  try {
+    const p = z.object({ id }).safeParse(raw);
+    if (!p.success) return { ok: false, error: "That autopay could not be found." };
+    const { user, db } = await context();
+    await deleteAutopay(db, user.id, p.data.id);
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "delete autopay");
+  }
 }
