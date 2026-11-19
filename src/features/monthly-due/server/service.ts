@@ -31,9 +31,13 @@ export interface ExpenseRow {
 
 export async function getPersonalPartyId(db: PrismaClient, userId: string): Promise<string | null> {
   const row = await db.monthlyDueSetting.findUnique({ where: { userId } });
-  if (!row?.personalPartyId) return null;
-  const party = await db.expenseParty.findFirst({ where: { id: row.personalPartyId, userId, deletedAt: null }, select: { id: true } });
-  return party?.id ?? null;
+  if (row?.personalPartyId) {
+    const party = await db.expenseParty.findFirst({ where: { id: row.personalPartyId, userId, deletedAt: null }, select: { id: true } });
+    if (party) return party.id;
+  }
+  // Nobody chosen yet: the recipient named Rikash is "me".
+  const rikash = await db.expenseParty.findFirst({ where: { userId, deletedAt: null, nameKey: "rikash" }, select: { id: true } });
+  return rikash?.id ?? null;
 }
 
 export async function setPersonalParty(db: PrismaClient, userId: string, partyId: string | null): Promise<void> {
@@ -102,7 +106,10 @@ export interface BalanceRow {
   amountPaise: number;
 }
 
-/** The money you hold now, one line for each bank and for Cash (credit lines such as Slice are not money you hold). */
+/** The six lines of Update Balance, in this order. */
+export const UPDATE_BALANCE_LINES = ["Canara", "IDFC", "HDFC", "TMB", "DBS", "Cash"] as const;
+
+/** The money you hold now: Canara, IDFC, HDFC, TMB, DBS and Cash, one line each (credit lines such as Slice are not money you hold). */
 export async function getUpdateBalances(db: PrismaClient, userId: string): Promise<{ rows: BalanceRow[]; totalPaise: number }> {
   const [data, accounts] = await Promise.all([getBalances(db, userId), db.account.findMany({ where: { userId, deletedAt: null, kind: "ASSET" }, select: { id: true } })]);
   const held = new Set(accounts.map((a) => a.id));
@@ -112,7 +119,13 @@ export async function getUpdateBalances(db: PrismaClient, userId: string): Promi
       if (held.has(l.id)) rows.push({ id: l.id, name: l.name, main: g.name, amountPaise: l.currentPaise });
     }
   }
-  return { rows, totalPaise: rows.reduce((s, r) => s + r.amountPaise, 0) };
+  const six: BalanceRow[] = [];
+  for (const key of UPDATE_BALANCE_LINES) {
+    const k = key.toLowerCase();
+    const hit = rows.find((r) => r.name.toLowerCase() === k) ?? rows.find((r) => r.name.toLowerCase().includes(k) || r.main.toLowerCase() === k);
+    if (hit && !six.includes(hit)) six.push({ ...hit, name: key });
+  }
+  return { rows: six, totalPaise: six.reduce((s, r) => s + r.amountPaise, 0) };
 }
 
 // ───────────────────────── The overview
@@ -151,15 +164,16 @@ export interface DueOverview {
   newBalancePaise: number;
 }
 
-export async function getDueOverview(db: PrismaClient, userId: string, range: { from: string; to: string }): Promise<DueOverview> {
+/** `hdfcRange` is the Credit Portal > HDFC > Statement date; it is used only for the HDFC statement lines, and the general `range` for everything else. */
+export async function getDueOverview(db: PrismaClient, userId: string, range: { from: string; to: string }, hdfcPeriod?: { from: string; to: string }): Promise<DueOverview> {
   const personalPartyId = await getPersonalPartyId(db, userId);
   const months = monthsOfRange(range.from, range.to);
-  const hdfcRange = hdfcCycle(range.to);
+  const hdfcRange = hdfcPeriod ?? hdfcCycle(range.to);
   const chosen = await getDebtRecipients(db, userId);
 
   const [foodData, debtSummary, updateBalance, monthRows, personName, hdfcShares, shopShares] = await Promise.all([
     listFoodEntriesRange(db, userId, range.from, range.to),
-    getDebtSummary(db, userId, { from: range.from, to: range.to, excludePartyIds: personalPartyId ? [personalPartyId] : [] }),
+    getDebtSummary(db, userId, { from: range.from, to: range.to, hdfc: hdfcRange, excludePartyIds: personalPartyId ? [personalPartyId] : [] }),
     getUpdateBalances(db, userId),
     Promise.all(months.map(async (month) => ({ month, rows: await getMonthlyExpenses(db, userId, month) }))),
     personalPartyId ? db.expenseParty.findFirst({ where: { id: personalPartyId, userId }, select: { name: true } }) : Promise.resolve(null),

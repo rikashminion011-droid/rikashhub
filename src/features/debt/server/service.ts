@@ -39,17 +39,18 @@ const splitWhere = (userId: string, q: DebtQuery, partyId?: string) => {
 
 const rangeOf = (q: DebtQuery) => ({ from: q.from ?? null, to: q.to ?? null });
 /** HDFC's own period for the month the chosen period ends in: its 15th to 15th cycle. With no end date, HDFC follows the period like the rest. */
-const hdfcOf = (q: DebtQuery) => (q.to ? hdfcCycle(q.to) : null);
+const hdfcOf = (q: DebtQuery) => q.hdfc ?? (q.to ? hdfcCycle(q.to) : null);
 
 export async function getDebtSummary(db: PrismaClient, userId: string, q: DebtQuery = {}): Promise<DebtSummary> {
   const skip = new Set(q.excludePartyIds ?? []);
   const when = periodOf(q);
-  const [people, splits, payments, shopping, portal] = await Promise.all([
+  const [people, splits, payments, shopping, portal, manualRows] = await Promise.all([
     db.expenseParty.findMany({ where: { userId, nameKey: { not: SELF_KEY } }, orderBy: { createdAt: "asc" } }),
     db.transactionSplit.findMany({ where: splitWhere(userId, q), select: { partyId: true, amount: true, transaction: { select: { amount: true, splitKind: true } } } }),
     db.splitPayment.groupBy({ by: ["partyId"], where: { userId, deletedAt: null, ...(when ? { paidAt: when } : {}) }, _sum: { amount: true } }),
     shoppingShares(db, userId, rangeOf(q)),
     portalShares(db, userId, rangeOf(q), hdfcOf(q)),
+    db.debtEntry.groupBy({ by: ["partyId"], where: { userId, deletedAt: null, ...(when ? { occurredAt: when } : {}) }, _sum: { amount: true } }),
   ]);
 
   const owed = new Map<string, { share: number; whole: number; count: number; direct: number }>();
@@ -65,19 +66,21 @@ export async function getDebtSummary(db: PrismaClient, userId: string, q: DebtQu
   const paid = new Map(payments.map((p) => [p.partyId, p._sum.amount ? paiseOf(p._sum.amount) : 0]));
   const shop = new Map<string, number>();
   for (const s of shopping) shop.set(s.partyId, (shop.get(s.partyId) ?? 0) + s.amountPaise);
+  const manual = new Map(manualRows.map((m) => [m.partyId, m._sum.amount ? paiseOf(m._sum.amount) : 0]));
   const port = new Map<string, number>();
   for (const s of portal) port.set(s.partyId, (port.get(s.partyId) ?? 0) + s.amountPaise);
 
   const rows: DebtRow[] = people
     .filter((p) => !skip.has(p.id))
     // Removed people are listed only while they have something on record.
-    .filter((p) => p.deletedAt === null || owed.has(p.id) || shop.has(p.id) || port.has(p.id) || (paid.get(p.id) ?? 0) > 0)
+    .filter((p) => p.deletedAt === null || owed.has(p.id) || shop.has(p.id) || port.has(p.id) || (manual.get(p.id) ?? 0) > 0 || (paid.get(p.id) ?? 0) > 0)
     .map((p) => {
       const o = owed.get(p.id) ?? { share: 0, whole: 0, count: 0, direct: 0 };
       const paidPaise = paid.get(p.id) ?? 0;
       const shoppingPaise = shop.get(p.id) ?? 0;
       const portalPaise = port.get(p.id) ?? 0;
-      const totalDebtPaise = o.share + shoppingPaise + portalPaise;
+      const manualPaise = manual.get(p.id) ?? 0;
+      const totalDebtPaise = o.share + shoppingPaise + portalPaise + manualPaise;
       return {
         partyId: p.id,
         name: p.deletedAt ? `${p.name} (removed)` : p.name,
@@ -89,6 +92,7 @@ export async function getDebtSummary(db: PrismaClient, userId: string, q: DebtQu
         directPaise: o.direct,
         shoppingPaise,
         portalPaise,
+        manualPaise,
         totalDebtPaise,
       };
     });
@@ -102,7 +106,7 @@ export async function getDebtHistory(db: PrismaClient, userId: string, partyId: 
   if (!row) throw new ExpenseError("That person no longer exists.", "NOT_FOUND");
   const when = periodOf(q);
 
-  const [splits, payments, shopping, portal] = await Promise.all([
+  const [splits, payments, shopping, portal, manualEntries] = await Promise.all([
     db.transactionSplit.findMany({
       where: splitWhere(userId, q, partyId),
       include: { transaction: { select: { id: true, amount: true, occurredAt: true, createdAt: true, description: true, details: true, splitKind: true, account: { select: { name: true } }, category: { select: { name: true } } } } },
@@ -110,6 +114,7 @@ export async function getDebtHistory(db: PrismaClient, userId: string, partyId: 
     db.splitPayment.findMany({ where: { userId, partyId, deletedAt: null, ...(when ? { paidAt: when } : {}) }, orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }] }),
     shoppingShares(db, userId, rangeOf(q)),
     portalShares(db, userId, rangeOf(q), hdfcOf(q)),
+    db.debtEntry.findMany({ where: { userId, partyId, deletedAt: null, ...(when ? { occurredAt: when } : {}) } }),
   ]);
 
   const items: DebtSplitItem[] = splits
@@ -147,10 +152,40 @@ export async function getDebtHistory(db: PrismaClient, userId: string, partyId: 
     ...portal
       .filter((s) => s.partyId === partyId)
       .map((s): DebtItem => ({ id: `portal:${s.source}:${s.id}`, source: "CREDIT_PORTAL", occurredAt: s.occurredAt, reason: s.reason, category: s.category, related: `${s.portal} · ${s.source === "STATEMENT" ? "Statement" : "Unbilled"}`, amountPaise: s.amountPaise, href: `/credit-cards?portal=${s.portalId}&tab=${s.source === "STATEMENT" ? "statement" : "unbilled"}` })),
+    ...manualEntries.map((m): DebtItem => ({ id: `manual:${m.id}`, source: "MANUAL", occurredAt: m.occurredAt.toISOString(), reason: m.reason, category: "", related: "Added debt", amountPaise: paiseOf(m.amount), href: null })),
     ...payments.map((p): DebtItem => ({ id: `pay:${p.id}`, source: "PAYMENT", occurredAt: p.paidAt.toISOString(), reason: p.note ?? "Payment", category: "", related: p.transactionId ? "Credited By" : "Paid", amountPaise: paiseOf(p.amount), href: p.transactionId ? `/quick-pay?entry=${p.transactionId}` : null })),
   ].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
 
   return { row, splits: items, payments: pays, items: all };
+}
+
+/** Adds debts by hand for one person: a reason and an amount each. They count in that person's total. */
+export async function addDebtEntries(
+  db: PrismaClient,
+  userId: string,
+  input: { partyId: string; rows: readonly { reason: string; amountPaise: number }[]; occurredAt: Date },
+): Promise<number> {
+  const rows = input.rows.map((r) => ({ reason: r.reason.trim().replace(/\s+/g, " "), amountPaise: r.amountPaise })).filter((r) => r.reason !== "" || r.amountPaise !== 0);
+  if (rows.length === 0) throw new ExpenseError("Add at least one reason and amount.");
+  if (rows.length > 50) throw new ExpenseError("Add at most 50 rows at a time.");
+  for (const r of rows) {
+    if (!r.reason) throw new ExpenseError("Give every debt a reason.");
+    if (r.reason.length > 200) throw new ExpenseError("Keep each reason under 200 characters.");
+    if (!Number.isSafeInteger(r.amountPaise) || r.amountPaise <= 0) throw new ExpenseError(`Enter an amount above zero for ${r.reason}.`);
+    if (r.amountPaise > MAX_PAYMENT_PAISE) throw new ExpenseError("That amount is too large.");
+  }
+  if (Number.isNaN(input.occurredAt.getTime())) throw new ExpenseError("Choose a valid date.");
+  const person = await db.expenseParty.findFirst({ where: { id: input.partyId, userId, deletedAt: null, nameKey: { not: SELF_KEY } } });
+  if (!person) throw new ExpenseError("That person no longer exists.", "NOT_FOUND");
+  await db.debtEntry.createMany({ data: rows.map((r) => ({ userId, partyId: person.id, reason: r.reason, amount: paiseToDecimalString(r.amountPaise), occurredAt: input.occurredAt })) });
+  await db.auditLog.create({ data: { userId, action: "debt.entry", entity: "debt_entry", entityId: person.id, after: { rows: rows.length, totalPaise: rows.reduce((s, r) => s + r.amountPaise, 0) } } });
+  return rows.length;
+}
+
+export async function deleteDebtEntry(db: PrismaClient, userId: string, id: string): Promise<void> {
+  const updated = await db.debtEntry.updateMany({ where: { id, userId, deletedAt: null }, data: { deletedAt: new Date() } });
+  if (updated.count !== 1) throw new ExpenseError("That debt no longer exists.", "NOT_FOUND");
+  await db.auditLog.create({ data: { userId, action: "debt.entry.delete", entity: "debt_entry", entityId: id } });
 }
 
 /** Records money a person has paid back. Allowed to be more than they owe (they have paid ahead). */

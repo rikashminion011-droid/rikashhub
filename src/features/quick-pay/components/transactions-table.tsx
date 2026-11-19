@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import type { deleteEntryAction, patchEntryAction, QuickAddActions, QuickPayActions } from "../actions";
+import type { deleteEntryAction, patchEntryAction, setCreditedByAction, QuickAddActions, QuickPayActions } from "../actions";
 import { keywordsFor } from "../availability";
 import { groupCategories } from "../cascade";
 import { formatTransactionWhen } from "../datetime";
@@ -31,6 +31,7 @@ import { SplitDialog, type SplitChoice } from "./split-dialog";
 
 export interface TableActions {
   patchEntry: typeof patchEntryAction;
+  setCreditedBy: typeof setCreditedByAction;
   deleteEntry: typeof deleteEntryAction;
   saveEntry: QuickPayActions["saveEntry"];
   getEntry: QuickPayActions["getEntry"];
@@ -121,6 +122,17 @@ export function TransactionsTable({
       if (problem) toast.error(problem);
     },
     [patch],
+  );
+
+  const commitCreditedBy = useCallback(
+    async (row: TxRow, personId: string | null) => {
+      const result = await actions.setCreditedBy({ id: row.id, creditedById: personId });
+      if (!result.ok) return toast.error(result.error);
+      const name = personId ? (options.persons.find((p) => p.id === personId)?.name ?? "") : "";
+      setPatched((p) => ({ ...p, [row.id]: { ...row, creditedBy: name, creditedById: personId } }));
+      router.refresh();
+    },
+    [actions, options.persons, router],
   );
 
   const removeSplit = useCallback(
@@ -223,7 +235,7 @@ export function TransactionsTable({
                   <td className="px-3 py-2.5 whitespace-nowrap">{row.bankName || <span className="text-muted-foreground">—</span>}</td>
                   <td className="px-3 py-1.5">{c.category}</td>
                   <td className="px-3 py-2">{c.split}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">{row.type === "CREDIT" && !row.transfer ? (row.creditedBy || <span className="text-muted-foreground">Others</span>) : ""}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap">{row.type === "CREDIT" && !row.transfer ? <CreditedBySelect row={row} persons={options.persons} onChange={commitCreditedBy} /> : ""}</td>
                   <td className="px-2 py-1.5 text-right">{c.menu}</td>
                 </tr>
                 {shownDetails.has(row.id) && row.details ? (
@@ -264,7 +276,7 @@ export function TransactionsTable({
                   {c.menu}
                 </div>
               </div>
-              {row.type === "CREDIT" && !row.transfer ? <p className="text-xs text-muted-foreground">Credited by <span className="font-medium text-foreground">{row.creditedBy || "Others"}</span></p> : null}
+              {row.type === "CREDIT" && !row.transfer ? <div className="flex items-center gap-2 text-xs text-muted-foreground">Credited by <CreditedBySelect row={row} persons={options.persons} onChange={commitCreditedBy} /></div> : null}
               {row.details && shownDetails.has(row.id) ? <p className="text-xs break-words text-muted-foreground">{row.details}</p> : null}
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">{labels.reason}</p>
@@ -418,5 +430,30 @@ function RowMenu({ onEdit, onDelete, details }: { onEdit: (() => void) | null; o
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** The Credited By of a Credit, changed right in the table: Others, or one of your people. */
+function CreditedBySelect({ row, persons, onChange }: { row: TxRow; persons: { id: string; name: string }[]; onChange: (row: TxRow, personId: string | null) => Promise<unknown> }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <select
+      aria-label="Credited by"
+      value={row.creditedById ?? ""}
+      disabled={busy}
+      onChange={async (e) => {
+        setBusy(true);
+        await onChange(row, e.target.value || null);
+        setBusy(false);
+      }}
+      className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-base text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 sm:text-sm"
+    >
+      <option value="">Others</option>
+      {persons.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+    </select>
   );
 }

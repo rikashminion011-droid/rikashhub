@@ -9,6 +9,7 @@ import {
   getRecentCreditsAction,
   importGpayAction,
   patchEntryAction,
+  setCreditedByAction,
   saveEntryAction,
 } from "@/features/quick-pay/actions";
 import { addPersonAction } from "@/features/users/actions";
@@ -109,6 +110,7 @@ export default async function TransactionHistoryPage({ searchParams }: PageProps
           options={options}
           actions={{
             patchEntry: patchEntryAction,
+            setCreditedBy: setCreditedByAction,
             deleteEntry: deleteEntryAction,
             saveEntry: saveEntryAction,
             getEntry: getEntryAction,

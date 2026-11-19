@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { totals, visibleDebtRows } from "@/features/debt/view";
 import type { DebtRow, DebtSummary } from "@/features/debt/types";
 
-const row = (partyId: string, total: number, paid: number): DebtRow => ({ partyId, name: partyId, totalSplitPaise: total, splitPercent: 50, paidPaise: paid, remainingPaise: total - paid, splitCount: 1, directPaise: 0, shoppingPaise: 0, portalPaise: 0, totalDebtPaise: total });
+const row = (partyId: string, total: number, paid: number): DebtRow => ({ partyId, name: partyId, totalSplitPaise: total, splitPercent: 50, paidPaise: paid, remainingPaise: total - paid, splitCount: 1, directPaise: 0, shoppingPaise: 0, portalPaise: 0, manualPaise: 0, totalDebtPaise: total });
 const summary: DebtSummary = totals([row("a", 10000, 0), row("b", 5000, 5000), row("c", 2000, 500)]);
 
 describe("Debt Management view", () => {

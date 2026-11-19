@@ -1,3 +1,4 @@
+import { hdfcCycle } from "@/features/credit-portal/model";
 import { monthBounds } from "@/features/quick-pay/datetime";
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
@@ -29,4 +30,24 @@ export function periodFromParams(params: Record<string, string | string[] | unde
   const month = isMonth(one(params.month)) ? one(params.month) : today.slice(0, 7);
   const bounds = monthBounds(month)!;
   return { from: bounds.from, to: bounds.to, month, custom: false };
+}
+
+export interface HdfcPeriod {
+  from: string;
+  to: string;
+  /** True when From and To were chosen instead of the billing cycle. */
+  custom: boolean;
+}
+
+/** The Credit Portal > HDFC > Statement date filter, kept apart from the general one: ?hfrom=…&hto=…, else the 15th to 15th cycle of today. */
+export function hdfcFromParams(params: Record<string, string | string[] | undefined>, today: string): HdfcPeriod {
+  const rawFrom = one(params.hfrom);
+  const rawTo = one(params.hto);
+  if (isDate(rawFrom) || isDate(rawTo)) {
+    let from = isDate(rawFrom) ? rawFrom : rawTo;
+    let to = isDate(rawTo) ? rawTo : from;
+    if (from > to) [from, to] = [to, from];
+    return { from, to, custom: true };
+  }
+  return { ...hdfcCycle(today), custom: false };
 }

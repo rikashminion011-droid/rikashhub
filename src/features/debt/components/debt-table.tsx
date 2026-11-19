@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { DeleteManualDebt } from "./delete-manual-debt";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,7 @@ function Remaining({ paise }: { paise: number }) {
 }
 
 /** One row for every person: what they owe from splits, what they have paid, and what remains. */
-export function DebtTable({ summary: full, actions, settings, range, query }: { summary: DebtSummary; actions: DebtActions; settings: DebtSettings; range: { from: string | null; to: string | null }; query: string }) {
+export function DebtTable({ summary: full, actions, settings, range, query }: { summary: DebtSummary; actions: DebtActions; settings: DebtSettings; range: { from: string | null; to: string | null; hdfc?: { from: string; to: string } | null }; query: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   // Customized Settings decides who is listed and which columns show.
   const summary = visibleDebtRows(full, settings);
@@ -185,7 +186,7 @@ export function DebtTable({ summary: full, actions, settings, range, query }: { 
   );
 }
 
-function HistoryBody({ partyId, actions, range }: { partyId: string; actions: DebtActions; range: { from: string | null; to: string | null } }) {
+function HistoryBody({ partyId, actions, range }: { partyId: string; actions: DebtActions; range: { from: string | null; to: string | null; hdfc?: { from: string; to: string } | null } }) {
   const router = useRouter();
   const [history, setHistory] = useState<DebtHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -356,7 +357,7 @@ function DeletePayment({ id, partyId, actions, onDone }: { id: string; partyId: 
   );
 }
 
-const SOURCE_LABEL = { SPLIT: "Split", DEBT: "Debt", SHOPPING: "Shopping", CREDIT_PORTAL: "Credit Portal", PAYMENT: "Payment" } as const;
+const SOURCE_LABEL = { SPLIT: "Split", DEBT: "Debt", SHOPPING: "Shopping", CREDIT_PORTAL: "Credit Portal", MANUAL: "Added debt", PAYMENT: "Payment" } as const;
 
 /**
  * Every line behind a person's total: date, type, reason, category, portal or platform, what is owed, and what was paid or
@@ -397,6 +398,7 @@ export function DebtItems({ items, flat = false }: { items: DebtItem[]; flat?: b
                   ) : (
                     i.reason || <span className="text-muted-foreground">—</span>
                   )}
+                  {i.source === "MANUAL" ? <DeleteManualDebt id={i.id.replace("manual:", "")} /> : null}
                 </td>
                 <td className="px-3 py-2">{i.category || <span className="text-muted-foreground">—</span>}</td>
                 <td className="px-3 py-2">{i.related || <span className="text-muted-foreground">—</span>}</td>

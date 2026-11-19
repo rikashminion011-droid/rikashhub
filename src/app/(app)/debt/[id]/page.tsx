@@ -14,7 +14,10 @@ import { istDateOf } from "@/features/quick-pay/datetime";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { formatINR } from "@/lib/finance";
-import { periodFromParams } from "@/lib/period-params";
+import { hdfcFromParams, periodFromParams } from "@/lib/period-params";
+import { addDebtEntriesAction } from "@/features/debt/actions";
+import { AddDebtDialog } from "@/features/debt/components/add-debt-dialog";
+import { HdfcPeriodFilter } from "@/features/debt/components/hdfc-period-filter";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Recipient · Debt" };
@@ -27,13 +30,15 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
   const { id } = await params;
   if (!UUID.test(id)) notFound();
   const today = istDateOf(new Date());
-  const period = periodFromParams(await searchParams, today);
+  const sp = await searchParams;
+  const period = periodFromParams(sp, today);
+  const hdfc = hdfcFromParams(sp, today);
 
   let history: DebtHistory;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    history = await getDebtHistory(db, user.id, id, { from: period.from, to: period.to });
+    history = await getDebtHistory(db, user.id, id, { from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } });
   } catch (error) {
     if (error instanceof Error && error.message === "That person no longer exists.") notFound();
     console.error("[debt] recipient could not load", error);
@@ -53,6 +58,7 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
     { label: "Total direct debt", value: row.directPaise },
     { label: "Total shopping amount", value: row.shoppingPaise },
     { label: "Total credit portal amount", value: row.portalPaise },
+    { label: "Total added debt", value: row.manualPaise },
     { label: "Total debt", value: row.totalDebtPaise, strong: true },
     { label: "Total paid / credited", value: row.paidPaise, tone: "good" },
     { label: row.remainingPaise < 0 ? "Paid ahead" : "Outstanding balance", value: Math.abs(row.remainingPaise), strong: true, tone: row.remainingPaise > 0 ? "bad" : "good" },
@@ -64,13 +70,17 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
         title={row.name}
         description="Everything recorded for this person in the chosen period, and every payment or credit from them, traceable to the original entry."
         actions={
+          <div className="flex gap-2">
+            <AddDebtDialog partyId={row.partyId} name={row.name} add={addDebtEntriesAction} />
           <Link href="/debt" className={cn(buttonVariants({ variant: "outline" }))}>
             <ChevronLeft /> Back
           </Link>
+          </div>
         }
       />
       <div className="space-y-6">
         <PeriodFilter today={today} />
+        <HdfcPeriodFilter today={today} cycle={hdfcFromParams({}, today)} />
         <dl className="max-w-md divide-y border-y text-sm">
           {totals.map((t) => (
             <div key={t.label} className="flex items-center justify-between gap-4 py-2">

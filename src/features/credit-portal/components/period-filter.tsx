@@ -12,7 +12,7 @@ import { monthBounds } from "@/features/quick-pay/datetime";
  * The period of a Credit Portal page: a month (the current month to begin with), or any From and To dates. The address holds
  * the choice, so it can be shared and survives a refresh. Other things in the address (the portal, the tab) are kept.
  */
-export function PeriodFilter({ today, defaultRange, children }: { today: string; /** A period to open on instead of the current month (HDFC: the 16th to the 15th). */ defaultRange?: { from: string; to: string }; children?: React.ReactNode }) {
+export function PeriodFilter({ today, defaultRange, children, afterDates }: { today: string; /** Shown right beside the Dates control (an icon button). */ afterDates?: React.ReactNode; /** A period to open on instead of the current month (HDFC: the 16th to the 15th). */ defaultRange?: { from: string; to: string }; children?: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -49,6 +49,7 @@ export function PeriodFilter({ today, defaultRange, children }: { today: string;
         <Label className="text-xs text-muted-foreground">Dates</Label>
         <DateRangePicker from={from} to={to} max={today} ariaLabel="From and To dates" className="w-60" onChange={(r) => go({ from: r.from, to: r.to, month: "" })} />
       </div>
+      {afterDates}
       {changed ? (
         <Button type="button" variant="outline" size="sm" onClick={() => go({ month: "", from: "", to: "" })}>
           <X /> {defaultRange ? "Billing cycle" : "This month"}

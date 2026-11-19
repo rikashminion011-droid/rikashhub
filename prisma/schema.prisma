@@ -215,6 +215,7 @@ model User {
   shoppingPlatforms      ShoppingPlatform[]
   monthlyExpenses        MonthlyExpense[]
   monthlyDueSetting      MonthlyDueSetting?
+  debtEntries            DebtEntry[]
   shoppingPurchases      ShoppingPurchase[]
   creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
@@ -794,9 +795,10 @@ model ExpenseParty {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  splits   TransactionSplit[]
-  payments SplitPayment[]
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  splits      TransactionSplit[]
+  payments    SplitPayment[]
+  debtEntries DebtEntry[]
 
   @@unique([userId, nameKey])
   @@map("expense_parties")
@@ -1152,4 +1154,23 @@ model MonthlyDueSetting {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("monthly_due_settings")
+}
+
+/// A debt added by hand in Debt Management: a reason and an amount for one recipient. It counts in that person's total value.
+model DebtEntry {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  partyId    String    @db.Uuid
+  reason     String
+  amount     Decimal   @db.Decimal(14, 2)
+  occurredAt DateTime  @db.Timestamptz(3)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  party ExpenseParty @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@index([userId, partyId, deletedAt, occurredAt])
+  @@map("debt_entries")
 }

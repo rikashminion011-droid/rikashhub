@@ -10,7 +10,7 @@ import { istDateOf, rangeToInstants } from "@/features/quick-pay/datetime";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { formatINR, toPaise } from "@/lib/finance";
-import { periodFromParams } from "@/lib/period-params";
+import { hdfcFromParams, periodFromParams } from "@/lib/period-params";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -32,7 +32,9 @@ const signed = (paise: number) => (paise < 0 ? `−${formatINR(-paise)}` : forma
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireUser();
   const today = istDateOf(new Date());
-  const period = periodFromParams(await searchParams, today);
+  const sp = await searchParams;
+  const period = periodFromParams(sp, today);
+  const hdfc = hdfcFromParams(sp, today);
 
   let d: DashboardData;
   try {
@@ -41,7 +43,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     const bounds = rangeToInstants(period.from, period.to);
     const when = bounds.gte || bounds.lt ? { occurredAt: bounds } : {};
     const [overview, expense, income, purchases, portals] = await Promise.all([
-      getDueOverview(db, user.id, { from: period.from, to: period.to }),
+      getDueOverview(db, user.id, { from: period.from, to: period.to }, { from: hdfc.from, to: hdfc.to }),
       db.transaction.aggregate({ where: { userId: user.id, quickPay: true, deletedAt: null, type: "EXPENSE", ...when }, _sum: { amount: true }, _count: { _all: true } }),
       db.transaction.aggregate({ where: { userId: user.id, quickPay: true, deletedAt: null, type: "INCOME", ...when }, _sum: { amount: true }, _count: { _all: true } }),
       db.shoppingPurchase.findMany({ where: { userId: user.id, deletedAt: null, platform: { deletedAt: null }, ...when }, select: { amount: true, detailsSaved: true, imageType: true, recipientIds: true } }),

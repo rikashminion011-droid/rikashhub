@@ -6,7 +6,9 @@ import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PeriodFilter } from "@/features/credit-portal/components/period-filter";
-import { addPaymentAction, deletePaymentAction, getDebtHistoryAction } from "@/features/debt/actions";
+import { addDebtEntriesAction, addPaymentAction, deletePaymentAction, getDebtHistoryAction } from "@/features/debt/actions";
+import { AddDebtDialog } from "@/features/debt/components/add-debt-dialog";
+import { HdfcPeriodFilter } from "@/features/debt/components/hdfc-period-filter";
 import { DebtTable } from "@/features/debt/components/debt-table";
 import { RecipientFilter } from "@/features/debt/components/recipient-filter";
 import { getDebtSummary } from "@/features/debt/server/service";
@@ -21,7 +23,7 @@ import type { DebtSettings } from "@/features/quick-pay/settings-model";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { formatINR } from "@/lib/finance";
-import { periodFromParams } from "@/lib/period-params";
+import { hdfcFromParams, periodFromParams } from "@/lib/period-params";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Debt Management" };
@@ -31,8 +33,9 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
   const user = await requireUser();
   const params = await searchParams;
-  const period = periodFromParams(params, istDateOf(new Date()));
   const today = istDateOf(new Date());
+  const period = periodFromParams(params, today);
+  const hdfc = hdfcFromParams(params, today);
   // An address can still name recipients; otherwise the ones chosen last time are used.
   const fromAddress = one(params.people).split(",").filter((id) => /^[0-9a-f-]{36}$/i.test(id));
 
@@ -45,7 +48,7 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
     await ensureUserSetup(db, user);
     const personal = await getPersonalPartyId(db, user.id);
     if (fromAddress.length === 0) picked = await getDebtRecipients(db, user.id);
-    const [full, s] = await Promise.all([getDebtSummary(db, user.id, { from: period.from, to: period.to, excludePartyIds: personal ? [personal] : [] }), getSettings(db, user.id).then((x) => x.debt)]);
+    const [full, s] = await Promise.all([getDebtSummary(db, user.id, { from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to }, excludePartyIds: personal ? [personal] : [] }), getSettings(db, user.id).then((x) => x.debt)]);
     settings = s;
     everyone = full.rows.map((r) => ({ id: r.partyId, name: r.name }));
     summary = picked.length > 0 ? totals(full.rows.filter((r) => picked.includes(r.partyId))) : full;
@@ -59,12 +62,19 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
     );
   }
 
+  // One recipient chosen: Add Debt appears at the top for that person.
+  const chosenOne = picked.length === 1 ? (everyone.find((p) => p.id === picked[0]) ?? null) : null;
+
   // The same period and recipients are carried into a person's page.
   const carry = new URLSearchParams();
   if (period.custom) {
     carry.set("from", period.from);
     carry.set("to", period.to);
   } else if (one(params.month)) carry.set("month", period.month);
+  if (hdfc.custom) {
+    carry.set("hfrom", hdfc.from);
+    carry.set("hto", hdfc.to);
+  }
   const query = carry.toString() ? `?${carry.toString()}` : "";
 
   return (
@@ -79,9 +89,11 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
         }
       />
       <div className="space-y-5">
+        {chosenOne ? <AddDebtDialog partyId={chosenOne.id} name={chosenOne.name} add={addDebtEntriesAction} /> : null}
         <PeriodFilter today={today}>
           <RecipientFilter key={picked.join(",")} people={everyone} selected={picked} save={setDebtRecipientsAction} />
         </PeriodFilter>
+        <HdfcPeriodFilter today={today} cycle={hdfcFromParams({}, today)} />
 
         {settings.showTotals ? (
           <div className="grid gap-3 sm:grid-cols-3">
@@ -105,7 +117,7 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
             </Card>
           </div>
         ) : null}
-        <DebtTable settings={settings} summary={summary} range={{ from: period.from, to: period.to }} query={query} actions={{ getHistory: getDebtHistoryAction, addPayment: addPaymentAction, deletePayment: deletePaymentAction }} />
+        <DebtTable settings={settings} summary={summary} range={{ from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } }} query={query} actions={{ getHistory: getDebtHistoryAction, addPayment: addPaymentAction, deletePayment: deletePaymentAction }} />
       </div>
     </>
   );

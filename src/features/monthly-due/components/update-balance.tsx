@@ -1,10 +1,11 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Landmark, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { setOpeningBalanceAction } from "@/features/quick-pay/actions";
 import { formatINR, parseAmountInput } from "@/lib/finance";
@@ -28,6 +29,7 @@ function parseSigned(text: string): number | null {
 export function UpdateBalance({ rows, today, nowTime, setOpeningBalance }: { rows: BalanceRow[]; today: string; nowTime: string; setOpeningBalance: typeof setOpeningBalanceAction }) {
   const router = useRouter();
   const [text, setText] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.id, show(r.amountPaise)])));
+  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,22 +52,26 @@ export function UpdateBalance({ rows, today, nowTime, setOpeningBalance }: { row
     setSaving(false);
     if (failed) return setError(failed);
     toast.success("Balances updated.");
+    setOpen(false);
     router.refresh();
   }
 
   return (
-    <section className="space-y-3" aria-labelledby="update-balance">
-      <h2 id="update-balance" className="text-sm font-semibold">
-        Update Balance
-      </h2>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No banks yet. Add them in Customize, Through.</p>
-      ) : (
-        <div className="max-w-md overflow-x-auto">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<button type="button" title="Update Balance" aria-label="Update Balance" className="flex size-10 items-center justify-center rounded-lg border border-input bg-background text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50" />}>
+        <Landmark className="size-5" aria-hidden />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Update Balance</DialogTitle>
+        </DialogHeader>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No banks yet. Add them in Customize, Through.</p>
+        ) : (
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-b">
-                <th scope="col" className="py-2 pr-3 text-left font-medium">Bank / Cash</th>
+                <th scope="col" className="py-2 pr-3 text-left font-medium">Bank or Cash</th>
                 <th scope="col" className="py-2 pl-3 text-right font-medium">Amount</th>
               </tr>
             </thead>
@@ -95,12 +101,12 @@ export function UpdateBalance({ rows, today, nowTime, setOpeningBalance }: { row
               </tr>
             </tfoot>
           </table>
-        </div>
-      )}
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      <Button type="button" size="sm" onClick={save} disabled={saving || changed.length === 0}>
-        {saving ? <Loader2 className="animate-spin" /> : null} Save
-      </Button>
-    </section>
+        )}
+        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        <Button type="button" onClick={save} disabled={saving || changed.length === 0}>
+          {saving ? <Loader2 className="animate-spin" /> : null} Save
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }

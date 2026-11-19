@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { syncCreditedBy } from "@/features/debt/server/service";
+import { addDebtEntries, deleteDebtEntry, getDebtHistory, syncCreditedBy } from "@/features/debt/server/service";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { DEFAULT_EXPENSE_NAME, computeBalances, monthsOfRange } from "@/features/monthly-due/model";
-import { getDueOverview, getMonthlyExpenses, saveMonthlyExpenses, setPersonalParty } from "@/features/monthly-due/server/service";
+import { getDueOverview, getMonthlyExpenses, getUpdateBalances, saveMonthlyExpenses, setPersonalParty } from "@/features/monthly-due/server/service";
 import { createFromQuickEntry, createPurchase, listPlatforms, saveItems } from "@/features/shopping/server/service";
 import { addPortal, importStatement, saveUnbilledBulk, syncQuickEntryUnbilled } from "@/features/credit-portal/server/service";
 import { createFoodEntry } from "@/features/food/server/service";
@@ -254,5 +254,52 @@ describe("recipients chosen in Debt Management", () => {
     const { rows, totalPaise } = await getUpdateBalances(db, ME.id);
     expect(rows.some((r) => r.id === credit.id)).toBe(false);
     expect(totalPaise).toBe(rows.reduce((t, r) => t + r.amountPaise, 0));
+  });
+});
+
+describe("two date filters, Add Debt and Update Balance", () => {
+  const range = { from: "2026-11-01", to: "2026-11-30" };
+
+  it("follows the HDFC statement date only for HDFC lines, and the general date for the rest", async () => {
+    const wide = await getDueOverview(db, ME.id, range, { from: "2026-10-15", to: "2026-11-15" });
+    const narrow = await getDueOverview(db, ME.id, range, { from: "2026-11-07", to: "2026-11-09" });
+    // Only the 8 November dinner (my half, 200) falls in the narrow HDFC period.
+    expect(narrow.hdfc.totalPaise).toBe(20000);
+    expect(narrow.hdfc.range).toEqual({ from: "2026-11-07", to: "2026-11-09" });
+    expect(narrow.food.totalPaise).toBe(wide.food.totalPaise);
+    expect(narrow.shopping.totalPaise).toBe(wide.shopping.totalPaise);
+    // Changing the general date does not move the HDFC lines.
+    const otherMonth = await getDueOverview(db, ME.id, { from: "2026-09-01", to: "2026-09-30" }, { from: "2026-11-07", to: "2026-11-09" });
+    expect(otherMonth.hdfc.totalPaise).toBe(20000);
+    expect(otherMonth.food.totalPaise).toBe(0);
+  });
+
+  it("adds a debt by hand to a person's total, lists it, and takes it away again", async () => {
+    const before = (await getDebtSummary(db, ME.id, range)).rows.find((r) => r.partyId === dhanush)!;
+    await addDebtEntries(db, ME.id, { partyId: dhanush, occurredAt: istInstant("2026-11-10", "12:00"), rows: [{ reason: "Phone repair", amountPaise: 150000 }, { reason: " Ticket ", amountPaise: 25050 }] });
+    const after = (await getDebtSummary(db, ME.id, range)).rows.find((r) => r.partyId === dhanush)!;
+    expect(after.manualPaise).toBe(175050);
+    expect(after.totalDebtPaise).toBe(before.totalDebtPaise + 175050);
+    expect(after.remainingPaise).toBe(before.remainingPaise + 175050);
+    const history = await getDebtHistory(db, ME.id, dhanush, range);
+    const added = history.items.filter((i) => i.source === "MANUAL");
+    expect(added.map((i) => i.reason).sort()).toEqual(["Phone repair", "Ticket"]);
+    // Outside the period it does not count.
+    expect((await getDebtSummary(db, ME.id, { from: "2026-09-01", to: "2026-09-30" })).rows.find((r) => r.partyId === dhanush)?.manualPaise ?? 0).toBe(0);
+    await deleteDebtEntry(db, ME.id, added[0]!.id.replace("manual:", ""));
+    expect((await getDebtSummary(db, ME.id, range)).rows.find((r) => r.partyId === dhanush)!.manualPaise).toBeLessThan(175050);
+  });
+
+  it("refuses a debt with no reason or no amount", async () => {
+    await expect(addDebtEntries(db, ME.id, { partyId: dhanush, occurredAt: new Date(), rows: [{ reason: "", amountPaise: 100 }] })).rejects.toThrow(/reason/);
+    await expect(addDebtEntries(db, ME.id, { partyId: dhanush, occurredAt: new Date(), rows: [{ reason: "X", amountPaise: 0 }] })).rejects.toThrow(/Add at least|above zero/);
+    await expect(addDebtEntries(db, ME.id, { partyId: dhanush, occurredAt: new Date(), rows: [] })).rejects.toThrow(/at least one/);
+  });
+
+  it("lists only Canara, IDFC, HDFC, TMB, DBS and Cash in Update Balance", async () => {
+    const { rows } = await getUpdateBalances(db, ME.id);
+    const order = ["Canara", "IDFC", "HDFC", "TMB", "DBS", "Cash"];
+    expect(rows.map((r) => r.name).every((n) => order.includes(n))).toBe(true);
+    expect(rows.map((r) => order.indexOf(r.name))).toEqual([...rows.map((r) => order.indexOf(r.name))].sort((a, b) => a - b));
   });
 });

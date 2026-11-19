@@ -16,7 +16,9 @@ export interface DebtRow {
   shoppingPaise: number;
   /** What they owe from Credit Portal statements and unbilled transactions, in paise (refunds count as less). */
   portalPaise: number;
-  /** Everything they owe: splits and debts, shopping and credit portals. */
+  /** What was added by hand with Add Debt, in paise. */
+  manualPaise: number;
+  /** Everything they owe: splits and debts, shopping, credit portals and debts added by hand. */
   totalDebtPaise: number;
 }
 
@@ -31,7 +33,7 @@ export interface DebtSummary {
 }
 
 /** What a debt line came from. */
-export type DebtSource = "SPLIT" | "DEBT" | "SHOPPING" | "CREDIT_PORTAL" | "PAYMENT";
+export type DebtSource = "SPLIT" | "DEBT" | "SHOPPING" | "CREDIT_PORTAL" | "MANUAL" | "PAYMENT";
 
 /** One thing a person owes (or one payment they made), traceable to where it was entered. */
 export interface DebtItem {
@@ -53,6 +55,8 @@ export interface DebtItem {
 export interface DebtQuery {
   from?: string | null;
   to?: string | null;
+  /** The HDFC statement period (its own date filter). HDFC rows follow only this; the rest follow from/to. Without it, the cycle of the month `to` falls in. */
+  hdfc?: { from: string; to: string } | null;
   /** People left out of the totals (for example you yourself). */
   excludePartyIds?: readonly string[];
 }

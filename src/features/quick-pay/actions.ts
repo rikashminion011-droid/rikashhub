@@ -6,6 +6,7 @@ import { ExpenseError, ensureUserSetup } from "@/features/expenses/server/servic
 import { METHOD_KINDS, type MethodKind } from "@/features/expenses/types";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
+import { toPaise } from "@/lib/finance";
 import { RateLimiter } from "@/lib/security/rate-limit";
 import { istInstant } from "./datetime";
 import { parseTxFilters } from "./filters";
@@ -256,6 +257,24 @@ export async function patchEntryAction(raw: unknown): Promise<QuickPayResult<{ r
     return { ok: true, row };
   } catch (error) {
     return failure(error, "patch entry");
+  }
+}
+
+/** Changes who credited a Credit entry (null is Others), right in the Transaction History table. */
+export async function setCreditedByAction(raw: unknown): Promise<QuickPayResult> {
+  try {
+    const parsed = z.object({ id, creditedById: id.nullable() }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That change could not be read." };
+    const { user, db } = await context();
+    const tx = await db.transaction.findFirst({ where: { id: parsed.data.id, userId: user.id, deletedAt: null, quickPay: true, type: "INCOME" }, select: { occurredAt: true, amount: true, description: true, details: true } });
+    if (!tx?.occurredAt) return { ok: false, error: "Only a Credit can have a Credited By." };
+    await syncCreditedBy(db, user.id, parsed.data.id, parsed.data.creditedById, { occurredAt: tx.occurredAt, amountPaise: toPaise(tx.amount.toString()), reason: tx.description ?? tx.details ?? "" });
+    refresh();
+    revalidatePath("/debt", "layout");
+    revalidatePath("/monthly-due", "layout");
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "set credited by");
   }
 }
 

@@ -8,7 +8,7 @@ import { parseAmountInput } from "@/lib/finance";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { RateLimiter } from "@/lib/security/rate-limit";
-import { addSplitPayment, deleteSplitPayment, getDebtHistory, getDebtSummary } from "./server/service";
+import { addDebtEntries, addSplitPayment, deleteDebtEntry, deleteSplitPayment, getDebtHistory, getDebtSummary } from "./server/service";
 import type { DebtHistory, DebtResult, DebtSummary } from "./types";
 
 const GENERIC_ERROR = "Something went wrong. Nothing was changed. Please try again.";
@@ -34,10 +34,10 @@ const id = z.uuid();
 
 export async function getDebtHistoryAction(raw: unknown): Promise<DebtResult<{ history: DebtHistory }>> {
   try {
-    const parsed = z.object({ partyId: id, from: z.string().max(10).nullable().optional(), to: z.string().max(10).nullable().optional() }).safeParse(raw);
+    const parsed = z.object({ partyId: id, from: z.string().max(10).nullable().optional(), to: z.string().max(10).nullable().optional(), hdfc: z.object({ from: z.string().max(10), to: z.string().max(10) }).nullable().optional() }).safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That person could not be found." };
     const user = await requireUser();
-    return { ok: true, history: await getDebtHistory(getPrisma(), user.id, parsed.data.partyId, { from: parsed.data.from ?? null, to: parsed.data.to ?? null }) };
+    return { ok: true, history: await getDebtHistory(getPrisma(), user.id, parsed.data.partyId, { from: parsed.data.from ?? null, to: parsed.data.to ?? null, hdfc: parsed.data.hdfc ?? null }) };
   } catch (error) {
     return failure(error, "history");
   }
@@ -86,6 +86,54 @@ export async function deletePaymentAction(raw: unknown): Promise<DebtResult<{ hi
     return { ok: true, history: await getDebtHistory(db, user.id, parsed.data.partyId) };
   } catch (error) {
     return failure(error, "delete payment");
+  }
+}
+
+const debtSchema = z.object({ partyId: id, date: z.string().max(10).optional(), rows: z.array(z.object({ reason: z.string().max(400), amount: z.string().max(20) })).max(60) });
+
+/** Adds debts by hand (a reason and an amount per row) to one person's total. */
+export async function addDebtEntriesAction(raw: unknown): Promise<DebtResult> {
+  try {
+    const parsed = debtSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "The debts could not be read." };
+    const rows: { reason: string; amountPaise: number }[] = [];
+    for (const r of parsed.data.rows) {
+      if (r.reason.trim() === "" && r.amount.trim() === "") continue;
+      const amountPaise = parseAmountInput(r.amount);
+      if (amountPaise === null || amountPaise <= 0) return { ok: false, error: `Enter the amount for ${r.reason.trim() || "each row"} like 500 or 250.50.` };
+      rows.push({ reason: r.reason, amountPaise });
+    }
+    let occurredAt = new Date();
+    if (parsed.data.date) {
+      try {
+        occurredAt = istInstant(parsed.data.date, "12:00");
+      } catch {
+        return { ok: false, error: "Choose a valid date." };
+      }
+    }
+    const { user, db } = await context();
+    await addDebtEntries(db, user.id, { partyId: parsed.data.partyId, rows, occurredAt });
+    revalidatePath("/debt", "layout");
+    revalidatePath("/monthly-due", "layout");
+    revalidatePath("/dashboard", "layout");
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "add debt");
+  }
+}
+
+export async function deleteDebtEntryAction(raw: unknown): Promise<DebtResult> {
+  try {
+    const parsed = z.object({ id }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That debt could not be found." };
+    const { user, db } = await context();
+    await deleteDebtEntry(db, user.id, parsed.data.id);
+    revalidatePath("/debt", "layout");
+    revalidatePath("/monthly-due", "layout");
+    revalidatePath("/dashboard", "layout");
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "delete debt");
   }
 }
 
