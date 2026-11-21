@@ -4,11 +4,11 @@ import { rangeToInstants } from "@/features/quick-pay/datetime";
 import { divideEvenly, paiseToDecimalString, toPaise } from "@/lib/finance";
 
 /**
- * Shopping Records: platforms (D Mart, AB Supermarket...), the purchases made on them, and each purchase's item table.
+ * Shopping Records: platforms (D Mart, AP Supermarket...), the purchases made on them, and each purchase's item table.
  * Every read and write is scoped to `userId`. A purchase is Pending until it has an image, recipients and a saved item table.
  */
 
-export const DEFAULT_PLATFORMS = ["D Mart", "AB Supermarket"] as const;
+export const DEFAULT_PLATFORMS = ["D Mart", "AP Supermarket"] as const;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_PAISE = 99_999_999_99;
 

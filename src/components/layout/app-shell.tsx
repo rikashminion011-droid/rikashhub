@@ -23,12 +23,15 @@ export function AppShell({
   user,
   navLayout,
   navActions,
+  headerExtra,
   children,
 }: {
   user: { name: string | null; email: string };
   /** The side navigator as this user arranged it. */
   navLayout: NavLayout;
   navActions: NavActions;
+  /** Shown in the header just before the user menu (Update Balance). */
+  headerExtra?: ReactNode;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -125,12 +128,13 @@ export function AppShell({
           </Button>
           <p className="truncate text-sm font-medium">{current ? titleOf(layout, current.href) : "Rikash Hub"}</p>
           <div className="ml-auto flex items-center gap-1">
+            {headerExtra}
             <UserMenu name={user.name} email={user.email} />
           </div>
         </header>
 
         {/* Quick Pay (Quick Entry, Transaction History, Add Bulk…) uses the full width: only a hair of space is left at the edges so boxes never touch the screen. */}
-        <main className={cn("w-full flex-1", pathname.startsWith("/quick-pay") ? "px-1 py-3 lg:py-5" : "mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-8")}>{children}</main>
+        <main className={cn("w-full flex-1", (pathname.startsWith("/quick-pay") || pathname.startsWith("/bank-statement")) ? "px-1 py-3 lg:py-5" : "mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-8")}>{children}</main>
       </div>
     </div>
   );

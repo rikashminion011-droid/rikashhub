@@ -44,13 +44,13 @@ beforeAll(async () => {
   b = parties[1]!.id;
   const platforms = await listPlatforms(db, ME.id);
   dmart = platforms.find((p) => p.name === "D Mart")!.id;
-  ab = platforms.find((p) => p.name === "AB Supermarket")!.id;
+  ab = platforms.find((p) => p.name === "AP Supermarket")!.id;
 }, 60_000);
 afterAll(async () => database?.close());
 
 describe("platforms", () => {
-  it("starts with D Mart and AB Supermarket, and refuses a duplicate name", async () => {
-    expect((await listPlatforms(db, ME.id)).map((p) => p.name)).toEqual(["D Mart", "AB Supermarket"]);
+  it("starts with D Mart and AP Supermarket, and refuses a duplicate name", async () => {
+    expect((await listPlatforms(db, ME.id)).map((p) => p.name)).toEqual(["D Mart", "AP Supermarket"]);
     await expect(addPlatform(db, ME.id, " d  mart ")).rejects.toThrow(/already exists/);
   });
   it("adds, renames and hides a platform; other users are unaffected", async () => {
@@ -59,7 +59,7 @@ describe("platforms", () => {
     expect((await listPlatforms(db, ME.id)).map((p) => p.name)).toContain("Reliance Fresh");
     await removePlatform(db, ME.id, id);
     expect((await listPlatforms(db, ME.id)).map((p) => p.name)).not.toContain("Reliance Fresh");
-    expect((await listPlatforms(db, OTHER.id)).map((p) => p.name)).toEqual(["D Mart", "AB Supermarket"]);
+    expect((await listPlatforms(db, OTHER.id)).map((p) => p.name)).toEqual(["D Mart", "AP Supermarket"]);
     await expect(removePlatform(db, OTHER.id, dmart)).rejects.toThrow(/no longer exists/);
   });
 });
@@ -184,7 +184,7 @@ describe("keeping a Quick Entry in step", () => {
     await setImage(db, ME.id, first.id, png, "image/png");
     await syncQuickEntryPurchase(db, ME.id, tx, ab, { occurredAt: at, reason: "Veg and fruit", amountPaise: 15000 });
     const moved = (await getPurchase(db, ME.id, first.id))!;
-    expect([moved.platformName, moved.reason, moved.amountPaise, moved.hasImage]).toEqual(["AB Supermarket", "Veg and fruit", 15000, true]);
+    expect([moved.platformName, moved.reason, moved.amountPaise, moved.hasImage]).toEqual(["AP Supermarket", "Veg and fruit", 15000, true]);
     await syncQuickEntryPurchase(db, ME.id, tx, null, { occurredAt: at, reason: "Veg", amountPaise: 15000 });
     expect(await getPurchase(db, ME.id, first.id)).toBeNull();
     expect(await platformOfEntry(db, ME.id, tx)).toBeNull();

@@ -4,20 +4,22 @@ export const DEFAULT_EXPENSE_NAME = "Room Rent";
 export const MAX_EXPENSE_ROWS = 40;
 
 export interface Balances {
-  /** What the debts add up to for the period. */
+  /** What the chosen recipients still owe (their remaining amount) for the period. */
   debtPaise: number;
-  /** Everything that is yours for the period: food, your shopping, your credit portal share, and the monthly expenses. */
+  /** My monthly bills for the months of the period. */
+  billsPaise: number;
+  /** Everything that is yours for the period: food, your shopping, your credit portal share, and my other expenses (those ticked). */
   myDuePaise: number;
-  /** The money in all your banks now (View Balances). */
+  /** The money in all your banks now (Update Balance). */
   oldPaise: number;
 }
 
 /**
- * My Balance = Debt Amount - My Due.
- * New Balance = Old Balance + My Balance.
+ * My Balance = Debt Amount - My monthly bills - My Due.
+ * New Balance = Update Balance total + My Balance.
  */
-export function computeBalances({ debtPaise, myDuePaise, oldPaise }: Balances): { myBalancePaise: number; newBalancePaise: number } {
-  const myBalancePaise = debtPaise - myDuePaise;
+export function computeBalances({ debtPaise, billsPaise, myDuePaise, oldPaise }: Balances): { myBalancePaise: number; newBalancePaise: number } {
+  const myBalancePaise = debtPaise - billsPaise - myDuePaise;
   return { myBalancePaise, newBalancePaise: oldPaise + myBalancePaise };
 }
 

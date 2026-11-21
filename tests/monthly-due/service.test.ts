@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addDebtEntries, deleteDebtEntry, getDebtHistory, syncCreditedBy } from "@/features/debt/server/service";
 import { ensureUserSetup } from "@/features/expenses/server/service";
-import { DEFAULT_EXPENSE_NAME, computeBalances, monthsOfRange } from "@/features/monthly-due/model";
-import { getDueOverview, getMonthlyExpenses, getUpdateBalances, saveMonthlyExpenses, setPersonalParty } from "@/features/monthly-due/server/service";
+import { computeBalances, monthsOfRange } from "@/features/monthly-due/model";
+import { getDueOverview, getUpdateBalances, listMonthlyItems, saveMonthlyItems, setPersonalParty } from "@/features/monthly-due/server/service";
 import { createFromQuickEntry, createPurchase, listPlatforms, saveItems } from "@/features/shopping/server/service";
 import { addPortal, importStatement, saveUnbilledBulk, syncQuickEntryUnbilled } from "@/features/credit-portal/server/service";
 import { createFoodEntry } from "@/features/food/server/service";
@@ -34,26 +34,37 @@ afterAll(async () => database?.close());
 
 describe("monthly due maths", () => {
   it("works My Balance and New Balance out", () => {
-    expect(computeBalances({ debtPaise: 100000, myDuePaise: 30000, oldPaise: 500000 })).toEqual({ myBalancePaise: 70000, newBalancePaise: 570000 });
-    expect(computeBalances({ debtPaise: 10000, myDuePaise: 30000, oldPaise: 0 })).toEqual({ myBalancePaise: -20000, newBalancePaise: -20000 });
+    // My Balance = Debt Amount - My monthly bills - My Due; New Balance = Update Balance total + My Balance.
+    expect(computeBalances({ debtPaise: 100000, billsPaise: 20000, myDuePaise: 30000, oldPaise: 500000 })).toEqual({ myBalancePaise: 50000, newBalancePaise: 550000 });
+    expect(computeBalances({ debtPaise: 10000, billsPaise: 0, myDuePaise: 30000, oldPaise: 0 })).toEqual({ myBalancePaise: -20000, newBalancePaise: -20000 });
   });
   it("lists the months a period touches", () => {
     expect(monthsOfRange("2026-10-20", "2026-12-02")).toEqual(["2026-10", "2026-11", "2026-12"]);
   });
 });
 
-describe("monthly expenses", () => {
-  it("starts with Room Rent, saves what was typed, and keeps each month on its own", async () => {
-    expect(await getMonthlyExpenses(db, ME.id, "2026-11")).toEqual([{ id: null, name: DEFAULT_EXPENSE_NAME, amountPaise: 0 }]);
-    const saved = await saveMonthlyExpenses(db, ME.id, "2026-11", [{ name: "Room Rent", amountPaise: 600000 }, { name: "  Internet ", amountPaise: 49900 }, { name: "", amountPaise: 0 }]);
-    expect(saved.map((r) => [r.name, r.amountPaise])).toEqual([["Room Rent", 600000], ["Internet", 49900]]);
-    expect((await getMonthlyExpenses(db, ME.id, "2026-10"))[0]!.id).toBeNull();
-    await saveMonthlyExpenses(db, ME.id, "2026-11", [{ name: "Room Rent", amountPaise: 650000 }]);
-    expect((await getMonthlyExpenses(db, ME.id, "2026-11")).map((r) => r.amountPaise)).toEqual([650000]);
+describe("my other expenses and my monthly bills", () => {
+  const nov = ["2026-11"];
+  it("keeps each list apart, each row with its own month, and shows only the months asked for", async () => {
+    expect(await listMonthlyItems(db, ME.id, "OTHER", nov)).toEqual([]);
+    const saved = await saveMonthlyItems(db, ME.id, "OTHER", nov, [{ name: "Room Rent", amountPaise: 600000, month: "2026-11" }, { name: "  Internet ", amountPaise: 49900, month: "2026-11" }, { name: "", amountPaise: 0, month: "2026-11" }]);
+    expect(saved.map((r) => [r.name, r.amountPaise, r.month])).toEqual([["Room Rent", 600000, "2026-11"], ["Internet", 49900, "2026-11"]]);
+    await saveMonthlyItems(db, ME.id, "BILL", nov, [{ name: "Electricity", amountPaise: 120000, month: "2026-11" }, { name: "Insurance", amountPaise: 250000, month: "2026-12" }]);
+    // The December bill is saved but is not part of a November view.
+    expect((await listMonthlyItems(db, ME.id, "BILL", nov)).map((r) => r.name)).toEqual(["Electricity"]);
+    expect((await listMonthlyItems(db, ME.id, "BILL", ["2026-11", "2026-12"])).map((r) => r.name)).toEqual(["Electricity", "Insurance"]);
+    expect((await listMonthlyItems(db, ME.id, "OTHER", nov)).map((r) => r.name)).toEqual(["Room Rent", "Internet"]);
+    // Saving the November view replaces only November's rows of that list.
+    await saveMonthlyItems(db, ME.id, "BILL", nov, [{ name: "Electricity", amountPaise: 130000, month: "2026-11" }]);
+    expect((await listMonthlyItems(db, ME.id, "BILL", ["2026-11", "2026-12"])).map((r) => r.amountPaise)).toEqual([130000, 250000]);
+    await saveMonthlyItems(db, ME.id, "OTHER", nov, [{ name: "Room Rent", amountPaise: 650000, month: "2026-11" }]);
+    expect((await listMonthlyItems(db, ME.id, "OTHER", nov)).map((r) => r.amountPaise)).toEqual([650000]);
+    await saveMonthlyItems(db, ME.id, "BILL", nov, []);
   });
-  it("refuses a nameless or negative expense", async () => {
-    await expect(saveMonthlyExpenses(db, ME.id, "2026-11", [{ name: "", amountPaise: 100 }])).rejects.toThrow(/name/);
-    await expect(saveMonthlyExpenses(db, ME.id, "2026-11", [{ name: "X", amountPaise: -1 }])).rejects.toThrow(/zero or more/);
+  it("refuses a nameless row, a negative amount and a row with no month", async () => {
+    await expect(saveMonthlyItems(db, ME.id, "OTHER", nov, [{ name: "", amountPaise: 100, month: "2026-11" }])).rejects.toThrow(/name/);
+    await expect(saveMonthlyItems(db, ME.id, "OTHER", nov, [{ name: "X", amountPaise: -1, month: "2026-11" }])).rejects.toThrow(/zero or more/);
+    await expect(saveMonthlyItems(db, ME.id, "OTHER", nov, [{ name: "X", amountPaise: 1, month: "" }])).rejects.toThrow(/month/);
   });
 });
 
@@ -92,7 +103,8 @@ describe("the overview", () => {
     const own = await db.expenseParty.findFirstOrThrow({ where: { userId: ME.id, nameKey: "personal" } });
     await db.transactionSplit.createMany({ data: [{ userId: ME.id, transactionId: tx.id, partyId: mukesh, amount: "250.00", percentage: "25" }, { userId: ME.id, transactionId: tx.id, partyId: own.id, amount: "750.00", percentage: "75" }] });
 
-    await saveMonthlyExpenses(db, ME.id, "2026-11", [{ name: "Room Rent", amountPaise: 650000 }, { name: "Internet", amountPaise: 50000 }]);
+    await saveMonthlyItems(db, ME.id, "OTHER", ["2026-11"], [{ name: "Room Rent", amountPaise: 650000, month: "2026-11" }, { name: "Internet", amountPaise: 50000, month: "2026-11" }]);
+    await saveMonthlyItems(db, ME.id, "BILL", ["2026-11"], [{ name: "Electricity", amountPaise: 120000, month: "2026-11" }]);
 
     const o = await getDueOverview(db, ME.id, range);
     expect(o.food.totalPaise).toBe(10000);
@@ -106,8 +118,10 @@ describe("the overview", () => {
     // Debt Amount (nobody chosen yet, so everyone but me): Mukesh 250 + 150 shopping + 200 dinner, Dhanush 200 Netflix.
     expect(o.debtAmountPaise).toBe(25000 + 15000 + 20000 + 20000);
     expect(o.debt.people.map((p) => p.name).sort()).toEqual(["Dhanush", "Mukesh"].sort());
-    // My Balance is the total of Update Balance; New Balance adds the Debt Amount and takes away My Due.
-    expect(o.myBalancePaise).toBe(o.debtAmountPaise - o.myDuePaise);
+    // My monthly bills are their own total, apart from My Due.
+    expect(o.bills.totalPaise).toBe(120000);
+    // My Balance = Debt Amount (remaining) - My monthly bills - My Due; New Balance = Update Balance total + My Balance.
+    expect(o.myBalancePaise).toBe(o.debtAmountPaise - o.bills.totalPaise - o.myDuePaise);
     expect(o.newBalancePaise).toBe(o.updateBalance.totalPaise + o.myBalancePaise);
   });
 
@@ -239,9 +253,9 @@ describe("recipients chosen in Debt Management", () => {
     const o = await getDueOverview(db, ME.id, { from: "2026-11-01", to: "2026-11-30" });
     expect(o.debt.chosen).toEqual([dhanush]);
     expect(o.debt.people.map((p) => p.name)).toEqual(["Dhanush"]);
-    // The Debt Amount is exactly Dhanush's total value in Debt Management for the same dates (HDFC by its own cycle).
+    // The Debt Amount is exactly Dhanush remaining amount in Debt Management for the same dates (HDFC by its own cycle).
     const theirs = (await getDebtSummary(db, ME.id, { from: "2026-11-01", to: "2026-11-30", excludePartyIds: [me] })).rows.find((r) => r.partyId === dhanush)!;
-    expect(o.debtAmountPaise).toBe(theirs.totalDebtPaise);
+    expect(o.debtAmountPaise).toBe(theirs.remainingPaise);
     expect(o.debtAmountPaise).toBeGreaterThan(0);
     await expect(setDebtRecipients(db, ME.id, ["00000000-0000-4000-8000-0000000000ff"])).rejects.toThrow(/no longer exists/);
     await setDebtRecipients(db, ME.id, []);

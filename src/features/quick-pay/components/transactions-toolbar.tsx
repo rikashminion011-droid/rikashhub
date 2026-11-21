@@ -45,7 +45,7 @@ export function TransactionsToolbar({
   typeCounts: { debit: number; credit: number };
   totals: { debitPaise: number; creditPaise: number };
   /** The icons that need the server (Draft, Export Report, Import, Export). */
-  slots: { draft: ReactNode; report: ReactNode; import: ReactNode; export: ReactNode };
+  slots: { draft: ReactNode; report: ReactNode; import: ReactNode; export: ReactNode; /** Bank statement rows that are not entered yet. */ notEntered?: ReactNode };
 }) {
   const { params, go, pending, refresh } = useTxParams();
   const [search, setSearch] = useState(params.get("q") ?? "");
@@ -106,6 +106,7 @@ export function TransactionsToolbar({
           Showing
           <span className="rounded-md bg-red-50 px-2 py-0.5 tabular-nums text-red-600">{showing}</span>
         </p>
+        {slots.notEntered}
         <button
           type="button"
           aria-expanded={panel}

@@ -3,15 +3,15 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { PeriodFilter } from "@/features/credit-portal/components/period-filter";
 import { ensureUserSetup } from "@/features/expenses/server/service";
-import { formatMonth } from "@/features/food/format";
-import { saveMonthlyExpensesAction, setPersonalPartyAction } from "@/features/monthly-due/actions";
+import { saveMonthlyItemsAction, setPersonalPartyAction } from "@/features/monthly-due/actions";
 import { DueSummary } from "@/features/monthly-due/components/due-summary";
-import { MonthlyExpensesEditor } from "@/features/monthly-due/components/monthly-expenses-editor";
+import { MonthlyItemsEditor } from "@/features/monthly-due/components/monthly-items-editor";
 import { PersonalPicker } from "@/features/monthly-due/components/personal-picker";
 import { UpdateBalance } from "@/features/monthly-due/components/update-balance";
 import { setOpeningBalanceAction } from "@/features/quick-pay/actions";
+import { monthsOfRange } from "@/features/monthly-due/model";
 import { getDueOverview, type DueOverview } from "@/features/monthly-due/server/service";
-import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
+import { istDateOf } from "@/features/quick-pay/datetime";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { HdfcPeriodFilter } from "@/features/debt/components/hdfc-period-filter";
@@ -57,17 +57,22 @@ export default async function MonthlyDuePage({ searchParams }: PageProps<"/month
   }
   const periodQuery = `?${carry.toString()}`;
 
-  const editing = overview.expenses.months.find((m) => m.month === period.month) ?? overview.expenses.months[0];
+  // The months the date filter covers: only rows of these months show, and each row names its own month.
+  const scope = monthsOfRange(period.from, period.to);
+  const rowKey = (rows: { id: string; amountPaise: number; month: string }[]) => rows.map((r) => `${r.id}:${r.amountPaise}:${r.month}`).join(",");
 
   return (
     <>
       <PageHeader title="Monthly Due" description="Update your balances, your monthly expenses, what is yours (My Due), what the chosen recipients owe (Debt Amount) and the balances that follow. Press any figure to see what it is made of." />
       <div className="space-y-5">
-        <PeriodFilter today={today} afterDates={<UpdateBalance key={overview.updateBalance.rows.map((r) => `${r.id}:${r.amountPaise}`).join(",")} rows={overview.updateBalance.rows} today={today} nowTime={istTimeOf(now)} setOpeningBalance={setOpeningBalanceAction} />}>
+        <PeriodFilter today={today} afterDates={<UpdateBalance key={overview.updateBalance.rows.map((r) => `${r.id}:${r.amountPaise}`).join(",")} rows={overview.updateBalance.rows} setOpeningBalance={setOpeningBalanceAction} />}>
           <PersonalPicker people={people} value={overview.personalPartyId} setPersonal={setPersonalPartyAction} />
         </PeriodFilter>
         <HdfcPeriodFilter today={today} cycle={hdfcFromParams({}, today)} />
-        {editing ? <MonthlyExpensesEditor key={`${editing.month}-${editing.rows.map((r) => `${r.id}:${r.amountPaise}`).join(",")}`} month={editing.month} monthLabel={formatMonth(editing.month)} rows={editing.rows} saveExpenses={saveMonthlyExpensesAction} /> : null}
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <MonthlyItemsEditor key={`other-${rowKey(overview.expenses.rows)}`} kind="OTHER" title="My other expenses" rows={overview.expenses.rows} scope={scope} defaultMonth={period.month} saveItems={saveMonthlyItemsAction} />
+          <MonthlyItemsEditor key={`bill-${rowKey(overview.bills.rows)}`} kind="BILL" title="My monthly bills" rows={overview.bills.rows} scope={scope} defaultMonth={period.month} saveItems={saveMonthlyItemsAction} />
+        </div>
         <DueSummary o={overview} periodQuery={periodQuery} />
       </div>
     </>

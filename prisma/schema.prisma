@@ -217,6 +217,7 @@ model User {
   monthlyDueSetting      MonthlyDueSetting?
   debtEntries            DebtEntry[]
   autopayEntries         AutopayEntry[]
+  bankStatementEntries   BankStatementEntry[]
   shoppingPurchases      ShoppingPurchase[]
   creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
@@ -286,12 +287,13 @@ model Account {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  parent            Account?           @relation("AccountChildren", fields: [parentId], references: [id], onDelete: Restrict)
-  children          Account[]          @relation("AccountChildren")
-  txFrom            Transaction[]      @relation("TxFromAccount")
-  txTo              Transaction[]      @relation("TxToAccount")
-  recurringPayments RecurringPayment[]
-  monthlyDues       MonthlyDue[]
+  parent               Account?             @relation("AccountChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children             Account[]            @relation("AccountChildren")
+  txFrom               Transaction[]        @relation("TxFromAccount")
+  txTo                 Transaction[]        @relation("TxToAccount")
+  recurringPayments    RecurringPayment[]
+  monthlyDues          MonthlyDue[]
+  bankStatementEntries BankStatementEntry[]
 
   @@index([userId, deletedAt])
   @@index([userId, type])
@@ -378,10 +380,11 @@ model TransactionCategory {
   updatedAt DateTime     @updatedAt
   deletedAt DateTime?
 
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent       TransactionCategory?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: Restrict)
-  children     TransactionCategory[] @relation("CategoryChildren")
-  transactions Transaction[]
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent               TransactionCategory?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children             TransactionCategory[] @relation("CategoryChildren")
+  transactions         Transaction[]
+  bankStatementEntries BankStatementEntry[]
 
   @@unique([userId, type, parentId, name])
   @@index([userId, parentId])
@@ -1054,7 +1057,7 @@ model CreditStatementEntry {
 
 // ───────────────────────── Shopping Records ─────────────────────────
 
-/// A shop or platform purchases are grouped under ("D Mart", "AB Supermarket").
+/// A shop or platform purchases are grouped under ("D Mart", "AP Supermarket").
 model ShoppingPlatform {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @db.Uuid
@@ -1125,21 +1128,28 @@ model ShoppingPurchaseItem {
 // ───────────────────────── Monthly Due ─────────────────────────
 
 /// A fixed cost of a month that is typed by hand: Room Rent, and anything else added with the + button.
+enum MonthlyExpenseKind {
+  OTHER
+  BILL
+}
+
 model MonthlyExpense {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @db.Uuid
   /// "2026-11"
   month     String
+  /// OTHER is "My other expenses"; BILL is "My monthly bills".
+  kind      MonthlyExpenseKind @default(OTHER)
   name      String
-  amount    Decimal   @default(0) @db.Decimal(14, 2)
-  position  Int       @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  amount    Decimal            @default(0) @db.Decimal(14, 2)
+  position  Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
   deletedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, month, deletedAt])
+  @@index([userId, kind, month, deletedAt])
   @@map("monthly_expenses")
 }
 
@@ -1199,4 +1209,35 @@ model AutopayEntry {
 
   @@index([userId, portalId, owner, deletedAt, payDate])
   @@map("autopay_entries")
+}
+
+/// One row of an imported bank statement. Rows of every bank sit in one list, in date order.
+model BankStatementEntry {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  accountId  String    @db.Uuid
+  txDate     DateTime  @db.Date
+  /// "HH:mm" in India time; "00:00" when the statement has no time.
+  txTime     String    @default("00:00")
+  /// The row's place in its statement, to keep rows of one day in the statement's order.
+  seq        Int       @default(0)
+  details    String
+  reason     String?
+  categoryId String?   @db.Uuid
+  debit      Decimal   @default(0) @db.Decimal(14, 2)
+  credit     Decimal   @default(0) @db.Decimal(14, 2)
+  balance    Decimal?  @db.Decimal(14, 2)
+  /// Makes importing the same statement again add nothing.
+  dedupeKey  String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, deletedAt, txDate, txTime, seq])
+  @@map("bank_statement_entries")
 }

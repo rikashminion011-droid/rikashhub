@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   PiggyBank,
   ShoppingBag,
+  Landmark,
   ReceiptText,
   UserRound,
   UtensilsCrossed,
@@ -106,6 +107,13 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
     href: "/quick-pay/transactions",
     icon: ReceiptText,
     description: "Every Quick Pay entry, with filters, balances and export.",
+    planned: [],
+  },
+  {
+    title: "Bank Statement",
+    href: "/bank-statement",
+    icon: Landmark,
+    description: "Import your bank statements and see every bank's rows together, in date order.",
     planned: [],
   },
   {

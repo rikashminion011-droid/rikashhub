@@ -62,6 +62,9 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
     );
   }
 
+  // A recipient whose total debt is 0.00 is not listed in the table, even when chosen in the Recipients list.
+  const listed = totals(summary.rows.filter((r) => r.totalDebtPaise !== 0));
+
   // One recipient chosen: Add Debt appears at the top for that person.
   const chosenOne = picked.length === 1 ? (everyone.find((p) => p.id === picked[0]) ?? null) : null;
 
@@ -117,7 +120,7 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
             </Card>
           </div>
         ) : null}
-        <DebtTable settings={settings} summary={summary} range={{ from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } }} query={query} actions={{ getHistory: getDebtHistoryAction, addPayment: addPaymentAction, deletePayment: deletePaymentAction }} />
+        <DebtTable settings={settings} summary={listed} range={{ from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } }} query={query} actions={{ getHistory: getDebtHistoryAction, addPayment: addPaymentAction, deletePayment: deletePaymentAction }} />
       </div>
     </>
   );

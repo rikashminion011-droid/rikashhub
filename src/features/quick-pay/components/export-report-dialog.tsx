@@ -19,11 +19,11 @@ const cleanName = (name: string) =>
  * Export Report: asks for a file name, lists the filters that are applied, and downloads exactly those transactions (every
  * page of them, not only the page on screen) as a PDF or an Excel file. The filters are printed in the file's heading.
  */
-export function ExportReportDialog({ query, filters, count, defaultName }: { query: string; filters: string[]; count: number; defaultName: string }) {
+export function ExportReportDialog({ query, filters, count, defaultName, basePath = "/quick-pay/transactions/export" }: { query: string; filters: string[]; count: number; defaultName: string; /** The export address the files come from. */ basePath?: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(defaultName);
   const file = cleanName(name);
-  const href = (format: "xlsx" | "pdf") => `/quick-pay/transactions/export?format=${format}&name=${encodeURIComponent(file)}${query ? `&${query}` : ""}`;
+  const href = (format: "xlsx" | "pdf") => `${basePath}?format=${format}&name=${encodeURIComponent(file)}${query ? `&${query}` : ""}`;
   const link = "flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
   return (

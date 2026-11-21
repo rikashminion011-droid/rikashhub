@@ -325,7 +325,7 @@ export function TransactionsTable({
 }
 
 /** The Reason: click to edit in place. Enter or leaving the box saves; Escape cancels. */
-function ReasonCell({ value, onCommit }: { value: string; onCommit: (text: string) => Promise<string | null> }) {
+export function ReasonCell({ value, onCommit }: { value: string; onCommit: (text: string) => Promise<string | null> }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -408,7 +408,7 @@ function SplitCell({ row, label, onOpen, onRemove }: { row: TxRow; label: string
 }
 
 /** ⋮ menu: Edit (opens the pop-up) and Delete. */
-function RowMenu({ onEdit, onDelete, details }: { onEdit: (() => void) | null; onDelete: () => void; details: { shown: boolean; toggle: () => void } | null }) {
+export function RowMenu({ onEdit, onDelete, details }: { onEdit: (() => void) | null; onDelete: () => void; details: { shown: boolean; toggle: () => void } | null }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Row actions" />}>

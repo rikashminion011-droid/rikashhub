@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { parseAmountInput } from "@/lib/finance";
 import { RateLimiter } from "@/lib/security/rate-limit";
-import { saveMonthlyExpenses, setDebtRecipients, setPersonalParty, type ExpenseRow } from "./server/service";
+import { saveMonthlyItems, setDebtRecipients, setPersonalParty, type ExpenseRow } from "./server/service";
 
 /** Server actions for Monthly Due. Each one confirms who is signed in and checks its input again on the server. */
 
@@ -36,24 +36,26 @@ const refresh = () => {
   revalidatePath("/dashboard", "layout");
 };
 
-/** Saves the month's typed expenses (Room Rent and the others). Amounts are typed like 12000 or 450.50. */
-export async function saveMonthlyExpensesAction(raw: unknown): Promise<DueResult<{ rows: ExpenseRow[] }>> {
+const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+
+/** Saves "My other expenses" or "My monthly bills" for the months on screen. Every row names its own month; amounts are typed like 12000 or 450.50. */
+export async function saveMonthlyItemsAction(raw: unknown): Promise<DueResult<{ rows: ExpenseRow[] }>> {
   try {
     const p = z
-      .object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), rows: z.array(z.object({ name: z.string().max(100), amount: z.string().max(20) })).max(60) })
+      .object({ kind: z.enum(["OTHER", "BILL"]), scope: z.array(month).max(120), rows: z.array(z.object({ name: z.string().max(100), amount: z.string().max(20), month })).max(60) })
       .safeParse(raw);
-    if (!p.success) return { ok: false, error: "The expenses could not be read. Reload the page and try again." };
+    if (!p.success) return { ok: false, error: "The rows could not be read. Check that each one has a month, then try again." };
     const rows = p.data.rows.map((r) => {
       const amountPaise = parseAmountInput(r.amount.trim() === "" ? "0" : r.amount);
-      if (amountPaise === null) throw new ExpenseError(`Enter the amount for ${r.name.trim() || "each expense"} like 12000 or 450.50.`);
-      return { name: r.name, amountPaise };
+      if (amountPaise === null) throw new ExpenseError(`Enter the amount for ${r.name.trim() || "each row"} like 12000 or 450.50.`);
+      return { name: r.name, amountPaise, month: r.month };
     });
     const { user, db } = await context();
-    const saved = await saveMonthlyExpenses(db, user.id, p.data.month, rows);
+    const saved = await saveMonthlyItems(db, user.id, p.data.kind, p.data.scope, rows);
     refresh();
     return { ok: true, rows: saved };
   } catch (error) {
-    return failure(error, "save expenses");
+    return failure(error, "save monthly items");
   }
 }
 
@@ -91,6 +93,6 @@ export async function setDebtRecipientsAction(raw: unknown): Promise<DueResult> 
 }
 
 export interface DueActions {
-  saveExpenses: typeof saveMonthlyExpensesAction;
+  saveItems: typeof saveMonthlyItemsAction;
   setPersonal: typeof setPersonalPartyAction;
 }
