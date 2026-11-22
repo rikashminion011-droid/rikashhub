@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { ensureUserSetup } from "@/features/expenses/server/service";
-import { saveFoodBulkAction } from "@/features/food/actions";
+import { getFoodMonthAction, saveFoodBulkAction } from "@/features/food/actions";
 import { FoodMonthSheet } from "@/features/food/components/food-month-sheet";
-import { getFoodPricing } from "@/features/food/server/service";
-import type { FoodPricing } from "@/features/food/types";
-import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
+import { getFoodPricing, listFoodEntriesRange } from "@/features/food/server/service";
+import type { FoodEntryRow, FoodPricing } from "@/features/food/types";
+import { istDateOf, istTimeOf, monthBounds } from "@/features/quick-pay/datetime";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 
@@ -18,11 +18,16 @@ export default async function FoodBulkPage({ searchParams }: PageProps<"/food/bu
   const user = await requireUser();
   const params = await searchParams;
 
+  const now = new Date();
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(one(params.month)) ? one(params.month) : istDateOf(now).slice(0, 7);
   let pricing: FoodPricing;
+  let entries: FoodEntryRow[] = [];
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
     pricing = await getFoodPricing(db, user.id);
+    const bounds = monthBounds(month)!;
+    entries = (await listFoodEntriesRange(db, user.id, bounds.from, bounds.to)).rows;
   } catch (error) {
     console.error("[food] could not load prices for bulk entry", error);
     return (
@@ -33,13 +38,11 @@ export default async function FoodBulkPage({ searchParams }: PageProps<"/food/bu
     );
   }
 
-  const now = new Date();
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(one(params.month)) ? one(params.month) : istDateOf(now).slice(0, 7);
   const back = "food" as const;
   return (
     <>
-      <PageHeader title="Add Bulk Meals" description="Pick a month and fill in its days. The total of each day is worked out for you. Nothing is saved until you press Save." />
-      <FoodMonthSheet pricing={pricing} today={istDateOf(now)} nowTime={istTimeOf(now)} initialMonth={month} back={back} saveBulk={saveFoodBulkAction} />
+      <PageHeader title="Add Bulk Meals" description="Pick a month and fill in its days; the meals already saved are shown. The total of each day is worked out for you. Nothing is saved until you press Save." />
+      <FoodMonthSheet pricing={pricing} today={istDateOf(now)} nowTime={istTimeOf(now)} initialMonth={month} initialEntries={entries} back={back} saveBulk={saveFoodBulkAction} loadMonth={getFoodMonthAction} />
     </>
   );
 }

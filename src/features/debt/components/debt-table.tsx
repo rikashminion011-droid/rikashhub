@@ -1,10 +1,12 @@
 "use client";
 
-import { Loader2, ReceiptText, Trash2, UsersRound } from "lucide-react";
+import { Loader2, ReceiptText, Search, Trash2, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DateRangePicker } from "@/components/shared/date-picker";
+import { ColumnFilter } from "@/features/quick-pay/components/column-filter";
 import { DeleteManualDebt } from "./delete-manual-debt";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -365,61 +367,140 @@ const SOURCE_LABEL = { SPLIT: "Split", DEBT: "Debt", SHOPPING: "Shopping", CREDI
  * it (the person's page); otherwise it is a small scrolling box (the pop-up).
  */
 export function DebtItems({ items, flat = false }: { items: DebtItem[]; flat?: boolean }) {
+  // On the person's page: a search over every column and a filter on each column header. They only narrow what is shown.
+  const [q, setQ] = useState("");
+  const [range, setRange] = useState({ from: "", to: "" });
+  const [types, setTypes] = useState<string[]>([]);
+  const [cats, setCats] = useState<string[]>([]);
+  const [places, setPlaces] = useState<string[]>([]);
+  const today = istDateOf(new Date());
+
+  const typeOptions = useMemo(() => [...new Set(items.map((i) => i.source))].map((s) => ({ value: s, label: SOURCE_LABEL[s] })), [items]);
+  const catOptions = useMemo(() => [...new Set(items.map((i) => i.category).filter(Boolean))].sort().map((v) => ({ value: v, label: v })), [items]);
+  const placeOptions = useMemo(() => [...new Set(items.map((i) => i.related).filter(Boolean))].sort().map((v) => ({ value: v, label: v })), [items]);
+  const shownItems = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return items.filter((i) => {
+      const day = istDateOf(new Date(i.occurredAt));
+      if (range.from && day < range.from) return false;
+      if (range.to && day > range.to) return false;
+      if (types.length > 0 && !types.includes(i.source)) return false;
+      if (cats.length > 0 && !cats.includes(i.category)) return false;
+      if (places.length > 0 && !places.includes(i.related)) return false;
+      return !needle || [when.format(new Date(i.occurredAt)), SOURCE_LABEL[i.source], i.reason, i.category, i.related, formatINR(i.amountPaise)].join(" ").toLowerCase().includes(needle);
+    });
+  }, [items, q, range, types, cats, places]);
+  const narrowed = q.trim() !== "" || range.from !== "" || range.to !== "" || types.length > 0 || cats.length > 0 || places.length > 0;
+
   if (items.length === 0) return <p className="text-sm text-muted-foreground">Nothing is recorded in this period.</p>;
-  const owed = items.filter((i) => i.source !== "PAYMENT").reduce((s, i) => s + i.amountPaise, 0);
-  const paid = items.filter((i) => i.source === "PAYMENT").reduce((s, i) => s + i.amountPaise, 0);
+  const owed = shownItems.filter((i) => i.source !== "PAYMENT").reduce((s, i) => s + i.amountPaise, 0);
+  const paid = shownItems.filter((i) => i.source === "PAYMENT").reduce((s, i) => s + i.amountPaise, 0);
   const showPaid = items.some((i) => i.source === "PAYMENT") || flat;
   return (
-    <div className={flat ? "overflow-x-auto" : "max-h-80 overflow-auto rounded-xl border"}>
-      <table className="w-full min-w-[44rem] text-sm">
-        <thead className={cn("text-xs text-muted-foreground", flat ? "border-b" : "sticky top-0 bg-muted")}>
-          <tr>
-            <th scope="col" className="px-3 py-2 text-left font-medium">Date and time</th>
-            <th scope="col" className="px-3 py-2 text-left font-medium">Type</th>
-            <th scope="col" className="px-3 py-2 text-left font-medium">Reason</th>
-            <th scope="col" className="px-3 py-2 text-left font-medium">Category</th>
-            <th scope="col" className="px-3 py-2 text-left font-medium">Portal / platform</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Debt</th>
-            {showPaid ? <th scope="col" className="px-3 py-2 text-right font-medium">Paid / Credited</th> : null}
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {items.map((i) => {
-            const payment = i.source === "PAYMENT";
-            return (
-              <tr key={i.id} className={payment ? "bg-green-50/60" : undefined}>
-                <td className="px-3 py-2 whitespace-nowrap">{when.format(new Date(i.occurredAt))}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{SOURCE_LABEL[i.source]}</td>
-                <td className="max-w-52 px-3 py-2 break-words">
-                  {i.href ? (
-                    <Link href={i.href} className="underline-offset-4 hover:underline">
-                      {i.reason || "Open"}
-                    </Link>
-                  ) : (
-                    i.reason || <span className="text-muted-foreground">—</span>
-                  )}
-                  {i.source === "MANUAL" ? <DeleteManualDebt id={i.id.replace("manual:", "")} /> : null}
-                </td>
-                <td className="px-3 py-2">{i.category || <span className="text-muted-foreground">—</span>}</td>
-                <td className="px-3 py-2">{i.related || <span className="text-muted-foreground">—</span>}</td>
-                <td className={cn("px-3 py-2 text-right font-medium tabular-nums", i.amountPaise < 0 && "text-success")}>{payment ? "" : formatINR(i.amountPaise)}</td>
-                {showPaid ? <td className="px-3 py-2 text-right font-medium text-success tabular-nums">{payment ? formatINR(i.amountPaise) : ""}</td> : null}
-              </tr>
-            );
-          })}
-        </tbody>
-        {flat ? (
-          <tfoot>
-            <tr className="border-t font-semibold">
-              <td className="px-3 py-2.5" colSpan={5}>
-                Total
-              </td>
-              <td className="px-3 py-2.5 text-right tabular-nums">{formatINR(owed)}</td>
-              {showPaid ? <td className="px-3 py-2.5 text-right text-success tabular-nums">{formatINR(paid)}</td> : null}
+    <div className="space-y-3">
+      {flat ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-52 flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search transactions" aria-label="Search all transactions" className="h-10 w-full rounded-lg border border-input bg-background pr-3 pl-9 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm" />
+          </div>
+          {narrowed ? (
+            <>
+              <p className="text-sm text-muted-foreground tabular-nums">
+                Showing {shownItems.length} of {items.length}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQ("");
+                  setRange({ from: "", to: "" });
+                  setTypes([]);
+                  setCats([]);
+                  setPlaces([]);
+                }}
+              >
+                <X /> Clear filters
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      <div className={flat ? "overflow-x-auto" : "max-h-80 overflow-auto rounded-xl border"}>
+        <table className="w-full min-w-[44rem] text-sm">
+          <thead className={cn("text-xs text-muted-foreground", flat ? "border-b" : "sticky top-0 bg-muted")}>
+            <tr>
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Date and time {flat ? <DateRangePicker iconOnly from={range.from} to={range.to} max={today} ariaLabel="Filter dates" className="size-6 rounded border-0 bg-transparent [&_svg]:size-3.5" onChange={(r) => setRange({ from: r.from, to: r.to })} /> : null}
+                </span>
+              </th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Type {flat ? <ColumnFilter label="Type" options={typeOptions} selected={types} searchable={false} onApply={setTypes} /> : null}
+                </span>
+              </th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">Reason</th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Category {flat ? <ColumnFilter label="Category" options={catOptions} selected={cats} onApply={setCats} /> : null}
+                </span>
+              </th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Portal / platform {flat ? <ColumnFilter label="Portal / platform" options={placeOptions} selected={places} onApply={setPlaces} /> : null}
+                </span>
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">Debt</th>
+              {showPaid ? <th scope="col" className="px-3 py-2 text-right font-medium">Paid / Credited</th> : null}
             </tr>
-          </tfoot>
-        ) : null}
-      </table>
+          </thead>
+          <tbody className="divide-y">
+            {shownItems.length === 0 ? (
+              <tr>
+                <td colSpan={showPaid ? 7 : 6} className="px-3 py-8 text-center text-muted-foreground">
+                  Nothing matches the search and filters.
+                </td>
+              </tr>
+            ) : null}
+            {shownItems.map((i) => {
+              const payment = i.source === "PAYMENT";
+              return (
+                <tr key={i.id} className={payment ? "bg-green-50/60" : undefined}>
+                  <td className="px-3 py-2 whitespace-nowrap">{when.format(new Date(i.occurredAt))}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{SOURCE_LABEL[i.source]}</td>
+                  <td className="max-w-52 px-3 py-2 break-words">
+                    {i.href ? (
+                      <Link href={i.href} className="underline-offset-4 hover:underline">
+                        {i.reason || "Open"}
+                      </Link>
+                    ) : (
+                      i.reason || <span className="text-muted-foreground">—</span>
+                    )}
+                    {i.source === "MANUAL" ? <DeleteManualDebt id={i.id.replace("manual:", "")} /> : null}
+                  </td>
+                  <td className="px-3 py-2">{i.category || <span className="text-muted-foreground">—</span>}</td>
+                  <td className="px-3 py-2">{i.related || <span className="text-muted-foreground">—</span>}</td>
+                  <td className={cn("px-3 py-2 text-right font-medium tabular-nums", i.amountPaise < 0 && "text-success")}>{payment ? "" : formatINR(i.amountPaise)}</td>
+                  {showPaid ? <td className="px-3 py-2 text-right font-medium text-success tabular-nums">{payment ? formatINR(i.amountPaise) : ""}</td> : null}
+                </tr>
+              );
+            })}
+          </tbody>
+          {flat ? (
+            <tfoot>
+              <tr className="border-t font-semibold">
+                <td className="px-3 py-2.5" colSpan={5}>
+                  Total{narrowed ? " (shown)" : ""}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{formatINR(owed)}</td>
+                {showPaid ? <td className="px-3 py-2.5 text-right text-success tabular-nums">{formatINR(paid)}</td> : null}
+              </tr>
+            </tfoot>
+          ) : null}
+        </table>
+      </div>
     </div>
   );
 }

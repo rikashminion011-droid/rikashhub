@@ -3,10 +3,14 @@ import Link from "next/link";
 import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { AnalysisView } from "@/features/dashboard/components/analysis-view";
-import { debtAnalysis, foodAnalysis, isView, portalAnalysis, shoppingAnalysis, transactionsAnalysis, type Analysis, type ViewKey } from "@/features/dashboard/analysis";
+import { AnalysisFilters, type FilterOptions } from "@/features/dashboard/components/analysis-filters";
+import { filtersFromParams, debtAnalysis, foodAnalysis, isView, portalAnalysis, shoppingAnalysis, transactionsAnalysis, type Analysis, type ViewKey } from "@/features/dashboard/analysis";
 import { HdfcPeriodFilter } from "@/features/debt/components/hdfc-period-filter";
 import { PeriodFilter } from "@/features/credit-portal/components/period-filter";
 import { listPortals } from "@/features/credit-portal/server/service";
+import { listPlatforms } from "@/features/shopping/server/service";
+import { sharedCategories } from "@/features/quick-pay/availability";
+import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { getDueOverview, type DueOverview } from "@/features/monthly-due/server/service";
 import { istDateOf, rangeToInstants } from "@/features/quick-pay/datetime";
@@ -28,6 +32,7 @@ interface DashboardData {
   pendingShopping: number;
   portals: { id: string; name: string; totalPaise: number; usedPaise: number; cardInfoSaved: boolean }[];
   analysis: Analysis;
+  filterOptions: FilterOptions;
 }
 
 const signed = (paise: number) => (paise < 0 ? `−${formatINR(-paise)}` : formatINR(paise));
@@ -56,15 +61,26 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       listPortals(db, user.id),
     ]);
     const range = { from: period.from, to: period.to };
+    const filters = filtersFromParams(sp);
     const query = `?${new URLSearchParams(period.custom ? { from: period.from, to: period.to } : { month: period.month }).toString()}`;
     const analysis =
-      view === "transactions" ? await transactionsAnalysis(db, user.id, range)
-      : view === "food" ? await foodAnalysis(db, user.id, range)
-      : view === "shopping" ? await shoppingAnalysis(db, user.id, range)
-      : view === "debt" ? debtAnalysis(overview.debt.people, query)
-      : portalAnalysis(portals);
+      view === "transactions" ? await transactionsAnalysis(db, user.id, range, filters)
+      : view === "food" ? await foodAnalysis(db, user.id, range, filters)
+      : view === "shopping" ? await shoppingAnalysis(db, user.id, range, filters)
+      : view === "debt" ? debtAnalysis(overview.debt.people, query, filters)
+      : portalAnalysis(portals, filters);
+    const [options, platformList] = await Promise.all([getQuickPayOptions(db, user.id, "gpay"), listPlatforms(db, user.id)]);
+    const filterOptions: FilterOptions = {
+      banks: options.banks.map((b) => ({ value: b.id, label: b.label })),
+      categories: sharedCategories(options.categories, options.creditCategories).map((c) => ({ value: c.id, label: c.label })),
+      meals: [{ value: "TIFFIN", label: "Tiffin" }, { value: "LUNCH", label: "Lunch" }, { value: "DINNER", label: "Dinner" }],
+      platforms: platformList.map((p) => ({ value: p.id, label: p.name })),
+      recipients: overview.debt.people.map((p) => ({ value: p.partyId, label: p.name })),
+      portals: portals.map((p) => ({ value: p.id, label: p.name })),
+    };
     d = {
       analysis,
+      filterOptions,
       overview,
       debitPaise: expense._sum.amount ? toPaise(expense._sum.amount.toString()) : 0,
       creditPaise: income._sum.amount ? toPaise(income._sum.amount.toString()) : 0,
@@ -115,6 +131,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           ))}
         </div>
 
+        <AnalysisFilters view={view} options={d.filterOptions} />
         <AnalysisView
           view={view}
           analysis={d.analysis}

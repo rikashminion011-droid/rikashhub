@@ -257,8 +257,8 @@ export async function updateFoodEntry(db: PrismaClient, userId: string, input: {
   return toRow(saved);
 }
 
-/** The latest saved entries of one meal (newest first), so Food Entry can show what was had for Tiffin, Lunch or Dinner. */
+/** The latest saved entries of one meal (newest first), without Nil, so Food Entry can show what was had for Tiffin, Lunch or Dinner. */
 export async function listRecentFood(db: PrismaClient, userId: string, meal: Meal, limit = 6): Promise<FoodEntryRow[]> {
-  const rows = await db.foodEntry.findMany({ where: { userId, deletedAt: null, meal }, orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }], take: limit });
+  const rows = await db.foodEntry.findMany({ where: { userId, deletedAt: null, meal, NOT: { notes: { equals: "Nil", mode: "insensitive" } } }, orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }], take: limit });
   return rows.map(toRow);
 }

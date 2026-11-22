@@ -282,7 +282,7 @@ export function FoodEntryForm({ actions, notesSwitch }: { actions: FoodActions; 
           <div className="space-y-1.5" aria-label={`Recent ${MEAL_LABEL[meal]} entries`}>
             <p className="text-xs font-semibold text-muted-foreground">Recent {MEAL_LABEL[meal]} entries</p>
             <ul className="flex flex-wrap gap-2">
-              {recent.slice(0, 4).map((r) => (
+              {recent.filter((r) => foodKey(r.notes) !== "nil").slice(0, 4).map((r) => (
                 <li key={r.id}>
                   <button
                     type="button"

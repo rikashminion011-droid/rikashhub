@@ -21,6 +21,15 @@ const subscribe = (notify: () => void) => {
 /** True on a wide screen. The server (and the first paint) assume a phone. */
 const useIsDesktop = () => useSyncExternalStore(subscribe, () => window.matchMedia(DESKTOP).matches, () => false);
 
+/** A very wide screen (a desktop monitor): the empty space beside Payment Entry is used, Transactions on the left and Food Entry on the right. */
+const WIDE = "(min-width: 1536px)";
+const subscribeWide = (notify: () => void) => {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", notify);
+  return () => query.removeEventListener("change", notify);
+};
+const useIsWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE).matches, () => false);
+
 type Panel = "transactions" | "payment" | "food";
 
 /** Left to right, as you swipe: Transactions, Payment Entry, Food Entry. Self Transfer is the button beside Amount, not a page. */
@@ -57,6 +66,7 @@ export function EntryModeSwitch({
   // One period for the whole page: the totals above the tabs and the Transactions list both follow it.
   const [period, setPeriod] = useState<Period>(() => periodFor("day", today));
   const desktop = useIsDesktop();
+  const wide = useIsWide();
   const [active, setActive] = useState<Panel>("payment");
   // These pages are only created the first time they are opened (so Payment Entry's page load does no extra work).
   const [opened, setOpened] = useState<ReadonlySet<Panel>>(new Set(["payment"]));
@@ -154,6 +164,33 @@ export function EntryModeSwitch({
     payment,
     food: opened.has("food") ? <FoodEntryForm actions={foodActions} notesSwitch={foodNotesSwitch} /> : null,
   };
+
+  // A very wide screen: Transactions fill the empty space on the left and Food Entry the space on the right, with Payment Entry
+  // staying in the middle. Everything is on screen at once, so there is no tab bar.
+  if (wide) {
+    return (
+      <PeriodContext.Provider value={{ period, today }}>
+        <div className="mx-auto grid w-full max-w-[112rem] grid-cols-[minmax(0,1fr)_minmax(0,48rem)_minmax(0,1fr)] items-start gap-6">
+          <aside aria-label="Transactions" className="min-w-0 space-y-3">
+            <h2 className="flex items-center gap-2 rounded-lg bg-header/70 px-3 py-2 text-sm font-semibold text-accent-foreground">
+              <Receipt className="size-4" aria-hidden /> Transactions
+            </h2>
+            {transactions}
+          </aside>
+          <div className="min-w-0 space-y-5">
+            <PeriodHeader period={period} onPeriod={setPeriod} today={today} food={false} getTotals={getTotals} getFoodTotal={foodActions.getTotal} />
+            {payment}
+          </div>
+          <aside aria-label="Food Entry" className="min-w-0 space-y-3">
+            <h2 className="flex items-center gap-2 rounded-lg bg-header/70 px-3 py-2 text-sm font-semibold text-accent-foreground">
+              <Soup className="size-4" aria-hidden /> Food Entry
+            </h2>
+            <FoodEntryForm actions={foodActions} notesSwitch={foodNotesSwitch} />
+          </aside>
+        </div>
+      </PeriodContext.Provider>
+    );
+  }
 
   return (
     <PeriodContext.Provider value={{ period, today }}>

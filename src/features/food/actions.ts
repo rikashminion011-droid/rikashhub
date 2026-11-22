@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ExpenseError, ensureUserSetup } from "@/features/expenses/server/service";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
+import { monthBounds } from "@/features/quick-pay/datetime";
 import { parseOpeningBalance } from "@/features/quick-pay/validation";
 import { RateLimiter } from "@/lib/security/rate-limit";
 import { MAX_FOOD_BULK_ROWS, validateFoodBulk, type FoodBulkRowErrors, type FoodBulkRowInput } from "./bulk";
@@ -18,6 +19,7 @@ import {
   getFoodPricing,
   getFoodTotal,
   listFoodEntries,
+  listFoodEntriesRange,
   listRecentFood,
   setMealPrice,
   updateFoodEntry,
@@ -95,6 +97,10 @@ const bulkSchema = z.object({
   rows: z
     .array(z.object({ key: z.string().max(64), date: z.string().max(10), time: z.string().max(5), meal: z.string().max(10), notes: z.string().max(2000) }))
     .max(MAX_FOOD_BULK_ROWS * 2),
+  /** Saved meals whose text was changed in the sheet. */
+  updates: z.array(z.object({ id, meal: z.string().max(10), notes: z.string().max(2000) })).max(MAX_FOOD_BULK_ROWS * 2).default([]),
+  /** Saved meals whose box was cleared. */
+  deletes: z.array(id).max(MAX_FOOD_BULK_ROWS * 2).default([]),
 });
 
 export async function saveFoodBulkAction(
@@ -103,15 +109,39 @@ export async function saveFoodBulkAction(
   try {
     const parsed = bulkSchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That sheet could not be read. Reload the page and try again." };
-    const checked = validateFoodBulk(parsed.data.rows as FoodBulkRowInput[], new Date());
-    if (!checked.ok) return { ok: false, error: checked.message, rowErrors: checked.errors };
+    const { updates, deletes } = parsed.data;
+    const creates = parsed.data.rows.length > 0 ? validateFoodBulk(parsed.data.rows as FoodBulkRowInput[], new Date()) : ({ ok: true, rows: [] } as const);
+    if (!creates.ok) return { ok: false, error: creates.message, rowErrors: creates.errors };
+    for (const u of updates) {
+      const checked = validateFoodEntry({ meal: u.meal, notes: u.notes });
+      if (!checked.ok) return { ok: false, error: Object.values(checked.errors)[0] ?? "Check the entry.", rowErrors: {} };
+    }
+    if (creates.rows.length + updates.length + deletes.length === 0) return { ok: false, error: "Nothing was changed.", rowErrors: {} };
 
     const { user, db } = await context();
-    const saved = await createFoodBulk(db, user.id, parsed.data.requestId, checked.rows);
+    const saved = creates.rows.length > 0 ? await createFoodBulk(db, user.id, parsed.data.requestId, creates.rows) : { count: 0, duplicate: false, totalPaise: 0 };
+    // Changes to meals that were already saved: the text is changed, or the meal is removed when its box was cleared.
+    for (const u of updates) await updateFoodEntry(db, user.id, { id: u.id, meal: u.meal as Meal, notes: u.notes.trim() });
+    for (const d of deletes) await deleteFoodEntry(db, user.id, d);
     refresh();
-    return { ok: true, ...saved };
+    return { ok: true, ...saved, count: saved.count + updates.length + deletes.length };
   } catch (error) {
     return failure(error, "save bulk");
+  }
+}
+
+/** The saved meals of one month, for Add Bulk to show what is already there. */
+export async function getFoodMonthAction(raw: unknown): Promise<FoodResult<{ entries: FoodEntryRow[] }>> {
+  try {
+    const parsed = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Choose a month." };
+    const user = await requireUser();
+    const bounds = monthBounds(parsed.data.month);
+    if (!bounds) return { ok: false, error: "Choose a month." };
+    const data = await listFoodEntriesRange(getPrisma(), user.id, bounds.from, bounds.to);
+    return { ok: true, entries: data.rows };
+  } catch (error) {
+    return failure(error, "month entries");
   }
 }
 

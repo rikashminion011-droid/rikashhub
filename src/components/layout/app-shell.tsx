@@ -119,7 +119,7 @@ export function AppShell({
       <NavCustomizer open={customizing} onOpenChange={setCustomizing} layout={layout} actions={navActions} onSaved={setLayout} />
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-header/90 px-4 backdrop-blur sm:px-6">
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}>
             <Menu />
           </Button>

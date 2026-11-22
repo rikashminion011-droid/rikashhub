@@ -19,6 +19,43 @@ export type ViewKey = (typeof VIEWS)[number]["key"];
 
 export const isView = (v: string): v is ViewKey => VIEWS.some((x) => x.key === v);
 
+/** What narrows the analysis: a search over everything, and the choices that belong to the open view. */
+export interface AnalysisFilters {
+  q: string;
+  /** Transactions: through these banks, in these categories, and only debits or only credits. */
+  banks: string[];
+  categories: string[];
+  kind: "DEBIT" | "CREDIT";
+  /** Food: these meals. */
+  meals: string[];
+  /** Shopping: these platforms. */
+  platforms: string[];
+  /** Debt: these recipients. */
+  recipients: string[];
+  /** Credit Portal: these portals. */
+  portals: string[];
+}
+
+export const NO_FILTERS: AnalysisFilters = { q: "", banks: [], categories: [], kind: "DEBIT", meals: [], platforms: [], recipients: [], portals: [] };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const list = (v: string | string[] | undefined, ok: (s: string) => boolean = () => true) => [...new Set((Array.isArray(v) ? v[0] : v)?.split(",").map((s) => s.trim()).filter((s) => s && ok(s)) ?? [])].slice(0, 100);
+
+/** The filters from the page address (bad values are dropped). */
+export function filtersFromParams(params: Record<string, string | string[] | undefined>): AnalysisFilters {
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+  return {
+    q: first(params.aq).trim().slice(0, 100),
+    banks: list(params.abank, (s) => UUID.test(s)),
+    categories: list(params.acat, (s) => UUID.test(s)),
+    kind: first(params.akind) === "CREDIT" ? "CREDIT" : "DEBIT",
+    meals: list(params.ameal, (s) => s === "TIFFIN" || s === "LUNCH" || s === "DINNER"),
+    platforms: list(params.aplat, (s) => UUID.test(s)),
+    recipients: list(params.arec, (s) => UUID.test(s)),
+    portals: list(params.aportal, (s) => UUID.test(s)),
+  };
+}
+
 export interface Bar {
   label: string;
   valuePaise: number;
@@ -40,14 +77,25 @@ type Range = { from: string; to: string };
 const paiseOf = (d: { toString(): string } | null | undefined) => (d ? toPaise(d.toString()) : 0);
 const rank = (bars: Bar[]) => bars.filter((b) => b.valuePaise !== 0).sort((a, b) => b.valuePaise - a.valuePaise);
 
-export async function transactionsAnalysis(db: PrismaClient, userId: string, range: Range): Promise<Analysis> {
+export async function transactionsAnalysis(db: PrismaClient, userId: string, range: Range, filters: AnalysisFilters = NO_FILTERS): Promise<Analysis> {
   const bounds = rangeToInstants(range.from, range.to);
   const when = bounds.gte || bounds.lt ? { occurredAt: bounds } : {};
-  const base = { userId, quickPay: true, deletedAt: null, ...when };
+  const credit = filters.kind === "CREDIT";
+  const q = filters.q;
+  const base = {
+    userId,
+    quickPay: true,
+    deletedAt: null,
+    ...when,
+    ...(filters.banks.length ? (credit ? { toAccountId: { in: filters.banks } } : { accountId: { in: filters.banks } }) : {}),
+    ...(filters.categories.length ? { categoryId: { in: filters.categories } } : {}),
+    ...(q ? { OR: [{ description: { contains: q, mode: "insensitive" as const } }, { details: { contains: q, mode: "insensitive" as const } }, { category: { is: { name: { contains: q, mode: "insensitive" as const } } } }] } : {}),
+  };
+  const type = credit ? ("INCOME" as const) : ("EXPENSE" as const);
   const [byCategory, categories, rows] = await Promise.all([
-    db.transaction.groupBy({ by: ["categoryId"], where: { ...base, type: "EXPENSE" }, _sum: { amount: true } }),
+    db.transaction.groupBy({ by: ["categoryId"], where: { ...base, type }, _sum: { amount: true } }),
     db.transactionCategory.findMany({ where: { userId }, select: { id: true, name: true } }),
-    db.transaction.findMany({ where: { ...base, type: "EXPENSE" }, select: { amount: true, occurredAt: true } }),
+    db.transaction.findMany({ where: { ...base, type }, select: { amount: true, occurredAt: true } }),
   ]);
   const name = new Map(categories.map((c) => [c.id, c.name]));
   const perDay = new Map<string, number>();
@@ -58,7 +106,7 @@ export async function transactionsAnalysis(db: PrismaClient, userId: string, ran
   }
   return {
     title: "Transactions",
-    caption: "Money spent (debits) in this period, by category and by day.",
+    caption: credit ? "Money received (credits) in this period, by category and by day." : "Money spent (debits) in this period, by category and by day.",
     groups: [
       { heading: "By category", bars: rank(byCategory.map((c) => ({ label: c.categoryId ? (name.get(c.categoryId) ?? "Category") : "No category", valuePaise: paiseOf(c._sum.amount), href: c.categoryId ? `/quick-pay/transactions?categories=${c.categoryId}&from=${range.from}&to=${range.to}` : undefined }))).slice(0, 12) },
       { heading: "By day", ordered: true, bars: [...perDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, valuePaise]) => ({ label: day.slice(8) + "/" + day.slice(5, 7), valuePaise })) },
@@ -66,10 +114,10 @@ export async function transactionsAnalysis(db: PrismaClient, userId: string, ran
   };
 }
 
-export async function foodAnalysis(db: PrismaClient, userId: string, range: Range): Promise<Analysis> {
+export async function foodAnalysis(db: PrismaClient, userId: string, range: Range, filters: AnalysisFilters = NO_FILTERS): Promise<Analysis> {
   const bounds = rangeToInstants(range.from, range.to);
   const when = bounds.gte || bounds.lt ? { occurredAt: bounds } : {};
-  const rows = await db.foodEntry.findMany({ where: { userId, deletedAt: null, ...when }, select: { meal: true, amount: true, occurredAt: true } });
+  const rows = await db.foodEntry.findMany({ where: { userId, deletedAt: null, ...when, ...(filters.meals.length ? { meal: { in: filters.meals as ("TIFFIN" | "LUNCH" | "DINNER")[] } } : {}), ...(filters.q ? { notes: { contains: filters.q, mode: "insensitive" as const } } : {}) }, select: { meal: true, amount: true, occurredAt: true } });
   const perMeal = new Map<string, number>();
   const perDay = new Map<string, number>();
   for (const r of rows) {
@@ -88,10 +136,10 @@ export async function foodAnalysis(db: PrismaClient, userId: string, range: Rang
   };
 }
 
-export async function shoppingAnalysis(db: PrismaClient, userId: string, range: Range): Promise<Analysis> {
+export async function shoppingAnalysis(db: PrismaClient, userId: string, range: Range, filters: AnalysisFilters = NO_FILTERS): Promise<Analysis> {
   const bounds = rangeToInstants(range.from, range.to);
   const when = bounds.gte || bounds.lt ? { occurredAt: bounds } : {};
-  const rows = await db.shoppingPurchase.findMany({ where: { userId, deletedAt: null, platform: { deletedAt: null }, ...when }, select: { amount: true, platform: { select: { name: true } } } });
+  const rows = await db.shoppingPurchase.findMany({ where: { userId, deletedAt: null, platform: { deletedAt: null }, ...when, ...(filters.platforms.length ? { platformId: { in: filters.platforms } } : {}), ...(filters.q ? { OR: [{ reason: { contains: filters.q, mode: "insensitive" as const } }, { platform: { name: { contains: filters.q, mode: "insensitive" as const } } }] } : {}) }, select: { amount: true, platform: { select: { name: true } } } });
   const perPlatform = new Map<string, number>();
   for (const r of rows) perPlatform.set(r.platform.name, (perPlatform.get(r.platform.name) ?? 0) + paiseOf(r.amount));
   return {
@@ -101,7 +149,9 @@ export async function shoppingAnalysis(db: PrismaClient, userId: string, range: 
   };
 }
 
-export function debtAnalysis(people: { partyId: string; name: string; totalDebtPaise: number; paidPaise: number; remainingPaise: number }[], query: string): Analysis {
+export function debtAnalysis(everyone: { partyId: string; name: string; totalDebtPaise: number; paidPaise: number; remainingPaise: number }[], query: string, filters: AnalysisFilters = NO_FILTERS): Analysis {
+  const needle = filters.q.toLowerCase();
+  const people = everyone.filter((p) => (filters.recipients.length === 0 || filters.recipients.includes(p.partyId)) && (!needle || p.name.toLowerCase().includes(needle)));
   return {
     title: "Debt",
     caption: "What each chosen recipient owes (the full bar) and what they have paid (the darker part).",
@@ -114,7 +164,9 @@ export function debtAnalysis(people: { partyId: string; name: string; totalDebtP
   };
 }
 
-export function portalAnalysis(portals: { id: string; name: string; totalPaise: number; usedPaise: number; cardInfoSaved: boolean }[]): Analysis {
+export function portalAnalysis(all: { id: string; name: string; totalPaise: number; usedPaise: number; cardInfoSaved: boolean }[], filters: AnalysisFilters = NO_FILTERS): Analysis {
+  const needle = filters.q.toLowerCase();
+  const portals = all.filter((p) => (filters.portals.length === 0 || filters.portals.includes(p.id)) && (!needle || p.name.toLowerCase().includes(needle)));
   return {
     title: "Credit Portal",
     caption: "How much of each credit limit is used (the darker part).",

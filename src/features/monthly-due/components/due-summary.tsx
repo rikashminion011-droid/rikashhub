@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatClock, formatLongDate } from "@/features/quick-pay/date-format";
 import { istDateOf, istTimeOf } from "@/features/quick-pay/datetime";
@@ -13,6 +13,52 @@ import type { DueItem, DueOverview } from "../server/service";
 
 type Key = "myDue" | "bills" | "debt" | "myBalance" | "new";
 type Part = "food" | "hdfc" | "shopping" | "expenses";
+
+const COUNTED_KEY = "rikash.myDue.counted";
+const ALL_COUNTED = { food: true, hdfc: true, shopping: true, expenses: true };
+const COUNTED_EVENT = "rikash-my-due-counted";
+
+/** Which parts of My Due are ticked, kept in this browser so a refresh does not change them. Storage can be blocked: then all stay ticked. */
+function readCounted(): string {
+  try {
+    return window.localStorage.getItem(COUNTED_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+function subscribeCounted(onChange: () => void) {
+  window.addEventListener(COUNTED_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(COUNTED_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+function useCounted(): [Record<Part, boolean>, (part: Part, on: boolean) => void] {
+  const raw = useSyncExternalStore(subscribeCounted, readCounted, () => "");
+  let counted: Record<Part, boolean> = ALL_COUNTED;
+  try {
+    if (raw) counted = { ...ALL_COUNTED, ...(JSON.parse(raw) as Partial<Record<Part, boolean>>) };
+  } catch {
+    counted = ALL_COUNTED;
+  }
+  const set = useCallback((part: Part, on: boolean) => {
+    try {
+      let current = ALL_COUNTED as Record<Part, boolean>;
+      try {
+        const stored = window.localStorage.getItem(COUNTED_KEY);
+        if (stored) current = { ...ALL_COUNTED, ...(JSON.parse(stored) as Partial<Record<Part, boolean>>) };
+      } catch {
+        /* start from all ticked */
+      }
+      window.localStorage.setItem(COUNTED_KEY, JSON.stringify({ ...current, [part]: on }));
+      window.dispatchEvent(new Event(COUNTED_EVENT));
+    } catch {
+      /* storage is not available: the tick simply is not remembered */
+    }
+  }, []);
+  return [counted, set];
+}
 
 const signed = (paise: number) => (paise < 0 ? `−${formatINR(-paise)}` : formatINR(paise));
 const when = (iso: string) => {
@@ -30,7 +76,7 @@ const monthLabel = (month: string) => monthName.format(new Date(`${month}-01T00:
  */
 export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: string }) {
   const [open, setOpen] = useState<Key | null>("myDue");
-  const [counted, setCounted] = useState<Record<Part, boolean>>({ food: true, hdfc: true, shopping: true, expenses: true });
+  const [counted, setCounted] = useCounted();
   const [shown, setShown] = useState<Record<Part, boolean>>({ food: false, hdfc: false, shopping: false, expenses: false });
   const toggle = (k: Key) => setOpen((cur) => (cur === k ? null : k));
 
@@ -77,7 +123,7 @@ export function DueSummary({ o, periodQuery }: { o: DueOverview; periodQuery: st
             {parts.map((p) => (
               <li key={p.key} className="px-3 py-2">
                 <div className="flex items-center gap-3">
-                  <Checkbox checked={counted[p.key]} onCheckedChange={(on) => setCounted((c) => ({ ...c, [p.key]: on === true }))} aria-label={`Count ${p.title} in My Due`} />
+                  <Checkbox checked={counted[p.key]} onCheckedChange={(on) => setCounted(p.key, on === true)} aria-label={`Count ${p.title} in My Due`} />
                   <button type="button" aria-expanded={shown[p.key]} onClick={() => setShown((s) => ({ ...s, [p.key]: !s[p.key] }))} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left text-sm font-semibold outline-none focus-visible:underline">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <ChevronDown className={cn("size-4 shrink-0 transition-transform", !shown[p.key] && "-rotate-90")} aria-hidden />
