@@ -16,6 +16,12 @@ import {
 import { getFoodPricingAction, getFoodTotalAction,
   getRecentFoodAction, saveFoodEntryAction } from "@/features/food/actions";
 import { EntryModeSwitch } from "@/features/food/components/entry-mode-switch";
+import { addCartItemAction, updateCartItemAction } from "@/features/shopping-cart/actions";
+import { CartPanel } from "@/features/shopping-cart/components/cart-panel";
+import { listCartCategories, listCartItems, type CartCategory, type CartItem } from "@/features/shopping-cart/server/service";
+import { startSleepAction, wakeUpAction } from "@/features/sleep/actions";
+import { SleepWidget } from "@/features/sleep/components/sleep-widget";
+import { getSleepNow, type SleepNow } from "@/features/sleep/server/service";
 import { QuickEntryForm } from "@/features/quick-pay/components/quick-entry-form";
 import { TransactionsPanel } from "@/features/quick-pay/components/transactions-panel";
 import { istDateOf } from "@/features/quick-pay/datetime";
@@ -38,10 +44,16 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
 
   let options: QuickPayOptions;
   let entry: EntryDetails | null = null;
+  let cartItems: CartItem[] = [];
+  let sleepNow: SleepNow = { active: null, last: null };
+  let cartCategories: CartCategory[] = [];
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
     [options, entry] = await Promise.all([getQuickPayOptions(db, user.id), entryId ? getEntry(db, user.id, entryId) : Promise.resolve(null)]);
+    sleepNow = await getSleepNow(db, user.id).catch(() => sleepNow);
+    // The cart is a side panel: if it cannot be read, Quick Entry still opens.
+    [cartItems, cartCategories] = await Promise.all([listCartItems(db, user.id, { month: today.slice(0, 7), categoryId: null }), listCartCategories(db, user.id)]).catch(() => [[], []] as [CartItem[], CartCategory[]]);
   } catch (error) {
     console.error("[quick-pay] could not load from the database", error);
     return <DatabaseUnavailable />;
@@ -52,6 +64,8 @@ export default async function QuickPayPage({ searchParams }: PageProps<"/quick-p
   return (
     <EntryModeSwitch
       today={today}
+      sleep={<SleepWidget initial={sleepNow} actions={{ start: startSleepAction, wake: wakeUpAction }} />}
+      cart={<CartPanel items={cartItems} categories={cartCategories} currentMonth={today.slice(0, 7)} actions={{ add: addCartItemAction, update: updateCartItemAction }} />}
       getTotals={getPeriodTotalsAction}
       foodActions={{ getPricing: getFoodPricingAction, saveEntry: saveFoodEntryAction, getTotal: getFoodTotalAction, getRecent: getRecentFoodAction }}
       foodNotesSwitch={options.settings.switch.foodNotes}

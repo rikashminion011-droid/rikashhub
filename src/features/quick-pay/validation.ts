@@ -26,6 +26,8 @@ export interface QuickPayInput {
   };
   /** Credits added to this debit (ids of saved credit entries). */
   creditIds?: readonly string[];
+  /** A new debit with no credit chosen goes to the default or latest credit by itself (Credit History). False once chosen by hand. */
+  creditAuto?: boolean;
   /** The Shopping Records platform this Debit is a purchase on (Shopping Portals), or null. */
   shoppingPlatformId?: string | null;
   /** For a Credit: the person who gave the money. Left out or null means Others. */

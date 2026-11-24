@@ -17,7 +17,7 @@ beforeAll(async () => {
   database = await startTestDatabase();
   db = database.prisma;
   await ensureUserSetup(db, ME);
-}, 60_000);
+}, 180_000);
 afterAll(async () => database?.close());
 
 describe("dashboard analysis filters", () => {

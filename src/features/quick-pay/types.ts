@@ -134,6 +134,12 @@ export interface RecentCredit {
   amountPaise: number;
   reason: string;
   occurredAt: string;
+  /** Credit History: what is left of a credit (credit - debits linked to it). Only for credits. */
+  remainingPaise?: number;
+  /** The default credit source. */
+  isDefault?: boolean;
+  /** The latest credit. */
+  isLatest?: boolean;
 }
 
 export interface BalancesData {

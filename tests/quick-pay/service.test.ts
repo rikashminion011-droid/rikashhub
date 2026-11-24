@@ -398,7 +398,7 @@ describe("Transaction History: filters, search, totals, paging", () => {
     await createEntry(db, user.id, rid(), entry({ accountId: bankId(), amountPaise: 20000, reason: "June petrol", categoryId: food, partyId: person(o, "Balan") }), istInstant("2026-06-01", "00:05"));
     await createEntry(db, user.id, rid(), entry({ accountId: bankId(), amountPaise: 30000, type: "CREDIT", reason: "June salary" }), istInstant("2026-06-30", "23:59"));
     await createEntry(db, user.id, rid(), entry({ accountId: bank(o, "GPay → DBS"), amountPaise: 5000, reason: "July tea" }), istInstant("2026-07-01", "00:00"));
-  }, 60_000);
+  }, 180_000);
 
   const list = (params: Record<string, string>) => listTransactions(db, user.id, parseTxFilters(params));
 

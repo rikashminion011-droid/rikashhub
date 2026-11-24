@@ -9,11 +9,13 @@ import { DatePicker } from "@/components/shared/date-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { formatLongDate } from "@/features/quick-pay/date-format";
 import { formatINR } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import type { addAutopayAction, deleteAutopayAction } from "../actions";
 import type { AutopayData, AutopayOwner } from "../server/autopay";
+
+/** "2026-11-15" as "15, 2026": the day of the month and the year, without the month. The full date is kept underneath. */
+const dayAndYear = (date: string) => `${Number(date.slice(8, 10))}, ${date.slice(0, 4)}`;
 
 const PAGES: { owner: AutopayOwner; key: "my" | "office"; label: string }[] = [
   { owner: "MY", key: "my", label: "My Autopay" },
@@ -80,7 +82,7 @@ function Row({ row, remove }: { row: { id: string; date: string; amountPaise: nu
   const [busy, setBusy] = useState(false);
   return (
     <tr>
-      <td className="px-3 py-2.5 whitespace-nowrap">{formatLongDate(row.date)}</td>
+      <td className="px-3 py-2.5 whitespace-nowrap">{dayAndYear(row.date)}</td>
       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatINR(row.amountPaise)}</td>
       <td className="px-2 py-1.5 text-right">
         <button

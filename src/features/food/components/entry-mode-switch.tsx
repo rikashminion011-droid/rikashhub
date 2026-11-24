@@ -1,6 +1,6 @@
 "use client";
 
-import { Receipt, Soup, Wallet } from "lucide-react";
+import { Moon, Receipt, ShoppingCart, Soup, Wallet } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodActions } from "../actions";
@@ -30,13 +30,17 @@ const subscribeWide = (notify: () => void) => {
 };
 const useIsWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE).matches, () => false);
 
-type Panel = "transactions" | "payment" | "food";
+type Panel = "cart" | "transactions" | "payment" | "food" | "sleep";
 
 /** Left to right, as you swipe: Transactions, Payment Entry, Food Entry. Self Transfer is the button beside Amount, not a page. */
+/** Left to right: Shopping Cart, Transactions, Payment Entry, Food Entry. */
 const ORDER: readonly { id: Panel; label: string; icon: ReactNode }[] = [
+  { id: "cart", label: "Shopping Cart", icon: <ShoppingCart className="size-4" aria-hidden /> },
   { id: "transactions", label: "Transactions", icon: <Receipt className="size-4" aria-hidden /> },
   { id: "payment", label: "Payment Entry", icon: <Wallet className="size-4" aria-hidden /> },
   { id: "food", label: "Food Entry", icon: <Soup className="size-4" aria-hidden /> },
+  // The Sleep Tracker widget is for phones; a wide screen has the Sleep Tracker page.
+  { id: "sleep", label: "Sleep", icon: <Moon className="size-4" aria-hidden /> },
 ];
 
 /**
@@ -49,6 +53,8 @@ const ORDER: readonly { id: Panel; label: string; icon: ReactNode }[] = [
 export function EntryModeSwitch({
   transactions,
   payment,
+  cart,
+  sleep,
   foodActions,
   foodNotesSwitch,
   today,
@@ -56,6 +62,10 @@ export function EntryModeSwitch({
 }: {
   transactions: ReactNode;
   payment: ReactNode;
+  /** The Shopping Cart panel: a page of its own on a phone, and below Food Entry on a wide screen. */
+  cart: ReactNode;
+  /** The Sleep Tracker widget, shown beside Food Entry on a phone only. */
+  sleep: ReactNode;
   foodActions: FoodActions;
   /** The switch beside Notes in Food Entry (Customize, Switch). */
   foodNotesSwitch: SwitchSettings;
@@ -150,7 +160,7 @@ export function EntryModeSwitch({
       aria-selected={selected}
       onClick={onClick}
       className={cn(
-        "flex h-10 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap transition-colors sm:flex-none sm:px-5",
+        "flex h-10 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold whitespace-nowrap transition-colors max-sm:h-9 max-sm:px-3 max-sm:text-[13px] sm:flex-none sm:px-5",
         selected ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground",
       )}
     >
@@ -160,6 +170,8 @@ export function EntryModeSwitch({
   );
 
   const pages: Record<Panel, ReactNode> = {
+    cart: opened.has("cart") ? cart : null,
+    sleep: opened.has("sleep") ? sleep : null,
     transactions: opened.has("transactions") ? transactions : null,
     payment,
     food: opened.has("food") ? <FoodEntryForm actions={foodActions} notesSwitch={foodNotesSwitch} /> : null,
@@ -186,6 +198,7 @@ export function EntryModeSwitch({
               <Soup className="size-4" aria-hidden /> Food Entry
             </h2>
             <FoodEntryForm actions={foodActions} notesSwitch={foodNotesSwitch} />
+            {cart}
           </aside>
         </div>
       </PeriodContext.Provider>
@@ -194,7 +207,7 @@ export function EntryModeSwitch({
 
   return (
     <PeriodContext.Provider value={{ period, today }}>
-    <div className="mx-auto w-full max-w-3xl space-y-5">
+    <div className="mx-auto w-full max-w-3xl space-y-5 max-sm:space-y-2">
       {/* Totals and the period control, above every tab */}
       <PeriodHeader period={period} onPeriod={setPeriod} today={today} food={active === "food"} getTotals={getTotals} getFoodTotal={foodActions.getTotal} />
 
@@ -206,7 +219,7 @@ export function EntryModeSwitch({
         className="flex w-full gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] before:w-[20%] before:shrink-0 after:w-[20%] after:shrink-0 sm:w-fit sm:overflow-visible sm:before:hidden sm:after:hidden [&::-webkit-scrollbar]:hidden"
       >
         {ORDER.map((p) => (
-          <Fragment key={p.id}>{tab(active === p.id, () => show(p.id), p.label, p.icon, p.id)}</Fragment>
+          <Fragment key={p.id}>{p.id === "sleep" ? <span className="contents lg:hidden">{tab(active === p.id, () => show(p.id), p.label, p.icon, p.id)}</span> : tab(active === p.id, () => show(p.id), p.label, p.icon, p.id)}</Fragment>
         ))}
       </div>
 
@@ -226,7 +239,7 @@ export function EntryModeSwitch({
               aria-label={p.label}
               inert={!desktop && active !== p.id}
               data-active={active === p.id}
-              className="w-full shrink-0 lg:max-w-3xl lg:data-[active=false]:hidden"
+              className={cn("w-full shrink-0 lg:max-w-3xl lg:data-[active=false]:hidden", p.id === "sleep" && "lg:hidden")}
             >
               {pages[p.id]}
             </section>

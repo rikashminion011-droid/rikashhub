@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ACCOUNT_ITEM, ALL_NAV_ITEMS, FOOD_ITEMS, NAV_ITEMS, QUICK_PAY_ITEMS } from "@/config/navigation";
+import { ACCOUNT_ITEM, ALL_NAV_ITEMS, FOOD_ITEMS, NAV_ITEMS, QUICK_PAY_ITEMS, SLEEP_ITEMS } from "@/config/navigation";
 
 /**
  * How the side navigator is laid out for a user: headings (sections), which page is in which, what each page is called,
@@ -35,7 +35,7 @@ export const DEFAULT_LAYOUT: NavLayout = {
   sections: [
     { id: "main", title: "", itemIds: NAV_ITEMS.map((i) => i.href) },
     { id: "quick-pay", title: "Quick Pay", itemIds: QUICK_PAY_ITEMS.map((i) => i.href) },
-    { id: "food", title: "Food", itemIds: FOOD_ITEMS.map((i) => i.href) },
+    { id: "food", title: "Food", itemIds: [...FOOD_ITEMS, ...SLEEP_ITEMS].map((i) => i.href) },
     { id: "account", title: "Account", itemIds: [ACCOUNT_ITEM.href] },
   ],
   titles: {},

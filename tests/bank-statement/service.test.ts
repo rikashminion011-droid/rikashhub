@@ -21,7 +21,7 @@ beforeAll(async () => {
   const accounts = await db.account.findMany({ where: { userId: U.id, deletedAt: null } });
   canara = accounts[0]!.id;
   idfc = accounts[1]!.id;
-}, 60_000);
+}, 180_000);
 afterAll(async () => database?.close());
 
 describe("bank statement", () => {

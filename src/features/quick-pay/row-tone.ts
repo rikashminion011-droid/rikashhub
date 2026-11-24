@@ -1,13 +1,13 @@
 /**
- * The background of a transaction row, the same everywhere (Transaction History and Add Bulk): a debit is light red, a credit
- * light green, and a self transfer light yellow.
+ * The background of a transaction row, the same everywhere (Transaction History and Add Bulk): every kind of row is the plain
+ * neutral background with a quiet hover. The kind shows in the colour of the amount alone (red for a debit, green for a credit).
  */
 export type RowKind = "DEBIT" | "CREDIT" | "TRANSFER";
 
 const TONE: Record<RowKind, string> = {
-  DEBIT: "bg-red-50 hover:bg-red-100/70",
-  CREDIT: "bg-green-50 hover:bg-green-100/70",
-  TRANSFER: "bg-yellow-50 hover:bg-yellow-100/70",
+  DEBIT: "hover:bg-muted/40",
+  CREDIT: "hover:bg-muted/40",
+  TRANSFER: "hover:bg-muted/40",
 };
 
 export const rowKindOf = (row: { type: "DEBIT" | "CREDIT"; transfer?: unknown }): RowKind => (row.transfer ? "TRANSFER" : row.type);

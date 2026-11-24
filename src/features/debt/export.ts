@@ -2,78 +2,83 @@ import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import { formatINR } from "@/lib/finance";
-import type { DebtHistory, DebtItem } from "./types";
+import { COLUMNS, SOURCE_LABEL, totalsOf, whenOf, type ColumnId } from "./recipient-view";
+import type { DebtItem } from "./types";
 
-/** The Excel and PDF versions of one recipient's transactions. Pure functions: the route loads the data. */
+/**
+ * The Excel and PDF versions of one recipient's transactions. They hold exactly what the page shows for the chosen filters and
+ * date range, in the columns and order chosen for that recipient. Pure: the route loads and filters the rows.
+ */
 
-const LABEL: Record<DebtItem["source"], string> = { SPLIT: "Split", DEBT: "Debt", SHOPPING: "Shopping", CREDIT_PORTAL: "Credit Portal", MANUAL: "Added debt", PAYMENT: "Payment" };
-const at = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+export interface DebtExportMeta {
+  /** The recipient. */
+  name: string;
+  period: string;
+  hdfcPeriod: string;
+  /** The filters in words ("Search: tea"), printed under the heading. */
+  filters: string[];
+  generatedAt: Date;
+}
+
+const LABEL = Object.fromEntries(COLUMNS.map((c) => [c.id, c.label])) as Record<ColumnId, string>;
 const rupees = (paise: number) => paise / 100;
 /** The standard PDF fonts have no rupee sign, so the PDF writes "Rs." */
 const pdfMoney = (paise: number) => formatINR(paise).replace("₹", "Rs. ");
 
-export interface DebtExportMeta {
-  period: string;
-  hdfcPeriod: string;
-  generatedAt: Date;
-}
+const isPayment = (i: DebtItem) => i.source === "PAYMENT";
+const textOf = (i: DebtItem, c: ColumnId): string => (c === "date" ? whenOf(i.occurredAt) : c === "type" ? SOURCE_LABEL[i.source] : c === "reason" ? i.reason : c === "category" ? i.category : c === "related" ? i.related : "");
 
-function sums(items: readonly DebtItem[]) {
-  const owed = items.filter((i) => i.source !== "PAYMENT").reduce((s, i) => s + i.amountPaise, 0);
-  const paid = items.filter((i) => i.source === "PAYMENT").reduce((s, i) => s + i.amountPaise, 0);
-  return { owed, paid };
-}
-
-export async function buildDebtXlsx(history: DebtHistory, meta: DebtExportMeta): Promise<Buffer> {
+export async function buildDebtXlsx(items: readonly DebtItem[], columns: readonly ColumnId[], meta: DebtExportMeta): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Rikash Hub";
   workbook.created = meta.generatedAt;
   const sheet = workbook.addWorksheet("Debt");
-  sheet.addRow([`${history.row.name} - Debt report`]).font = { bold: true, size: 14 };
+  sheet.addRow([`${meta.name} - Debt report`]).font = { bold: true, size: 14 };
   sheet.addRow(["Period", meta.period]);
   sheet.addRow(["HDFC statement date", meta.hdfcPeriod]);
+  sheet.addRow(["Filters", meta.filters.join("; ") || "None"]);
   sheet.addRow([]);
-  const head = sheet.addRow(["Date and time", "Type", "Reason", "Category", "Portal / platform", "Debt", "Paid / Credited"]);
-  head.font = { bold: true };
-  for (const i of history.items) {
-    const payment = i.source === "PAYMENT";
-    sheet.addRow([at.format(new Date(i.occurredAt)), LABEL[i.source], i.reason, i.category, i.related, payment ? null : rupees(i.amountPaise), payment ? rupees(i.amountPaise) : null]);
-  }
-  const { owed, paid } = sums(history.items);
-  sheet.addRow(["Total", "", "", "", "", rupees(owed), rupees(paid)]).font = { bold: true };
-  const outstanding = sheet.addRow(["Outstanding balance", "", "", "", "", rupees(history.row.remainingPaise), ""]);
-  outstanding.font = { bold: true };
-  sheet.columns = [{ width: 24 }, { width: 16 }, { width: 36 }, { width: 20 }, { width: 24 }, { width: 16 }, { width: 16 }];
-  for (const col of [6, 7]) sheet.getColumn(col).numFmt = '"₹"#,##0.00';
+  sheet.addRow(columns.map((c) => LABEL[c])).font = { bold: true };
+  for (const i of items) sheet.addRow(columns.map((c) => (c === "debt" ? (isPayment(i) ? null : rupees(i.amountPaise)) : c === "paid" ? (isPayment(i) ? rupees(i.amountPaise) : null) : textOf(i, c))));
+  const t = totalsOf(items);
+  sheet.addRow(columns.map((c, n) => (n === 0 ? "Total" : c === "debt" ? rupees(t.debitPaise) : c === "paid" ? rupees(t.creditPaise) : ""))).font = { bold: true };
+  sheet.addRow(["Outstanding balance", rupees(t.remainingPaise)]).font = { bold: true };
+  columns.forEach((c, n) => {
+    const col = sheet.getColumn(n + 1);
+    col.width = c === "reason" ? 36 : c === "date" ? 24 : 18;
+    if (c === "debt" || c === "paid") col.numFmt = '"₹"#,##0.00';
+  });
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-export function buildDebtPdf(history: DebtHistory, meta: DebtExportMeta): Uint8Array {
+export function buildDebtPdf(items: readonly DebtItem[], columns: readonly ColumnId[], meta: DebtExportMeta): Uint8Array {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const { owed, paid } = sums(history.items);
+  const t = totalsOf(items);
 
-  doc.setFont("helvetica", "bold").setFontSize(18).text(`${history.row.name} - Debt report`, 40, 44);
+  doc.setFont("helvetica", "bold").setFontSize(18).text(`${meta.name} - Debt report`, 40, 44);
   doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(90);
   doc.text(`Period: ${meta.period}   |   HDFC statement date: ${meta.hdfcPeriod}`, 40, 64);
+  if (meta.filters.length > 0) doc.text(`Filters: ${meta.filters.join("; ")}`, 40, 78);
   doc.setTextColor(0).setFont("helvetica", "bold").setFontSize(11);
-  doc.text(`Total debt: ${pdfMoney(owed)}`, pageWidth - 40, 44, { align: "right" });
-  doc.text(`Paid / credited: ${pdfMoney(paid)}`, pageWidth - 40, 60, { align: "right" });
-  doc.text(`${history.row.remainingPaise < 0 ? "Paid ahead" : "Outstanding"}: ${pdfMoney(Math.abs(history.row.remainingPaise))}`, pageWidth - 40, 76, { align: "right" });
+  doc.text(`Debit: ${pdfMoney(t.debitPaise)}`, pageWidth - 40, 44, { align: "right" });
+  doc.text(`Credit: ${pdfMoney(t.creditPaise)}`, pageWidth - 40, 60, { align: "right" });
+  doc.text(`${t.remainingPaise < 0 ? "Paid ahead" : "Remaining"}: ${pdfMoney(Math.abs(t.remainingPaise))}`, pageWidth - 40, 76, { align: "right" });
 
+  const right: Record<string, { halign: "right" }> = {};
+  columns.forEach((c, n) => {
+    if (c === "debt" || c === "paid") right[n] = { halign: "right" };
+  });
   autoTable(doc, {
     startY: 92,
-    head: [["Date and time", "Type", "Reason", "Category", "Portal / platform", "Debt", "Paid / Credited"]],
-    body: history.items.map((i) => {
-      const payment = i.source === "PAYMENT";
-      return [at.format(new Date(i.occurredAt)), LABEL[i.source], i.reason, i.category, i.related, payment ? "" : pdfMoney(i.amountPaise), payment ? pdfMoney(i.amountPaise) : ""];
-    }),
-    foot: [["Total", "", "", "", "", pdfMoney(owed), pdfMoney(paid)]],
+    head: [columns.map((c) => LABEL[c])],
+    body: items.map((i) => columns.map((c) => (c === "debt" ? (isPayment(i) ? "" : pdfMoney(i.amountPaise)) : c === "paid" ? (isPayment(i) ? pdfMoney(i.amountPaise) : "") : textOf(i, c)))),
+    foot: [columns.map((c, n) => (n === 0 ? "Total" : c === "debt" ? pdfMoney(t.debitPaise) : c === "paid" ? pdfMoney(t.creditPaise) : ""))],
     showFoot: "lastPage",
     styles: { font: "helvetica", fontSize: 8.5, cellPadding: 4, overflow: "linebreak", valign: "middle" },
     headStyles: { fillColor: [31, 41, 55], textColor: 255 },
     footStyles: { fillColor: [243, 244, 246], textColor: 20, fontStyle: "bold" },
-    columnStyles: { 5: { halign: "right", cellWidth: 80 }, 6: { halign: "right", cellWidth: 90 } },
+    columnStyles: right,
     margin: { left: 40, right: 40, bottom: 40 },
     rowPageBreak: "avoid",
     showHead: "everyPage",

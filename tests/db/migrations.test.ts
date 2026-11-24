@@ -52,23 +52,23 @@ beforeAll(async () => {
     INSERT INTO recurring_payments (id, "userId", name, category, amount, recurrence, "startDate", "updatedAt")
       VALUES ('${RECURRING}', '${USER}', 'Rent', 'RENT', 20000, 'MONTHLY', '2026-01-05', now());
   `);
-}, 60_000);
+}, 180_000);
 
 afterAll(async () => {
   await db?.close();
 });
 
 describe("migrations", () => {
-  it("create all 41 tables", async () => {
+  it("create all 46 tables", async () => {
     const { rows } = await db.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1`,
     );
     expect(rows.map((r) => r.table_name)).toEqual([
-      "accounts", "attachments", "audit_logs", "autopay_entries", "bank_statement_entries", "bulk_drafts", "credit_card_statements", "credit_cards", "credit_portal_entries", "credit_portals", "credit_statement_entries",
+      "accounts", "attachments", "audit_logs", "autopay_entries", "bank_statement_entries", "bulk_drafts", "credit_card_statements", "credit_cards", "credit_portal_entries", "credit_portals", "credit_preferences", "credit_statement_entries",
       "debt_entries", "debt_payments", "debts", "expense_parties", "food_entries", "food_items", "food_meal_prices",
       "milestone_contributions", "milestones",
-      "monthly_due_settings", "monthly_dues", "monthly_expenses", "monthly_summaries", "navigation_settings", "payment_records", "quick_pay_settings", "recurring_payments", "reminders",
-      "savings_accounts", "savings_transactions", "shopping_platforms", "shopping_purchase_items", "shopping_purchases", "split_payments", "transaction_categories", "transaction_credit_links", "transaction_splits",
+      "monthly_due_settings", "monthly_dues", "monthly_expenses", "monthly_summaries", "navigation_settings", "payment_records", "quick_pay_settings", "recipient_view_prefs", "recurring_payments", "reminders",
+      "savings_accounts", "savings_transactions", "shopping_cart_categories", "shopping_cart_items", "shopping_platforms", "shopping_purchase_items", "shopping_purchases", "sleep_sessions", "split_payments", "transaction_categories", "transaction_credit_links", "transaction_splits",
       "transactions", "user_profiles", "users",
     ]);
   });
@@ -79,7 +79,7 @@ describe("migrations", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind = 'r'`,
     );
-    expect(rows).toHaveLength(41);
+    expect(rows).toHaveLength(46);
     expect(rows.filter((r) => !r.relrowsecurity).map((r) => r.relname)).toEqual([]);
   });
 

@@ -29,6 +29,7 @@ import {
   updateEntry,
 } from "./server/entries";
 import { syncQuickEntryUnbilled } from "@/features/credit-portal/server/service";
+import { autoAllocateDebit } from "@/features/credit-history/server/service";
 import { syncCreditedBy } from "@/features/debt/server/service";
 import { syncQuickEntryPurchase } from "@/features/shopping/server/service";
 import { clearBulkDraft, getBulkDraft, saveBulkDraft } from "./server/bulk-draft";
@@ -107,6 +108,8 @@ const entrySchema = z.object({
   split: z.object({ enabled: z.boolean(), kind: z.enum(["SPLIT", "DEBT"]).optional(), shares: z.array(shareSchema).max(30).optional() }),
   /** Credits added to this debit. */
   creditIds: z.array(id).max(50).optional(),
+  /** True unless the credit was chosen by hand: a new debit then goes to the default or latest credit (Credit History). */
+  creditAuto: z.boolean().optional(),
   /** The Shopping Records platform of this Debit (Shopping Portals). */
   shoppingPlatformId: id.nullable().optional(),
   /** For a Credit: the person who credited it (null or left out is Others). */
@@ -141,7 +144,7 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
   try {
     const parsed = entrySchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: "That form could not be read. Reload the page and try again." };
-    const { requestId, entryId, date, time, ...input } = parsed.data;
+    const { requestId, entryId, date, time, creditAuto, ...input } = parsed.data;
 
     const checked = validateQuickPayInput(input);
     if (!checked.ok) {
@@ -185,6 +188,11 @@ export async function saveEntryAction(raw: unknown): Promise<QuickPayResult<{ id
     }
     const saved = await createEntry(db, user.id, requestId, checked.value, when);
     await syncShopping(db, user.id, saved.id, checked.value);
+    // A new debit with no credit chosen goes to the default (or latest) credit source. A failure here never loses the entry.
+    if (!saved.duplicate && checked.value.type === "DEBIT" && checked.value.creditIds.length === 0 && creditAuto !== false) {
+      await autoAllocateDebit(db, user.id, saved.id).catch((error) => console.error("[credit-history] could not allocate the debit", error));
+      revalidatePath("/credit-history", "layout");
+    }
     refresh();
     return { ok: true, id: saved.id, updated: false, duplicate: saved.duplicate, amountPaise: checked.value.amountPaise };
   } catch (error) {

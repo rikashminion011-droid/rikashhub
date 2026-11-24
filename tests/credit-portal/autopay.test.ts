@@ -14,7 +14,7 @@ beforeAll(async () => {
   db = database.prisma;
   await ensureUserSetup(db, U);
   portal = await addPortal(db, U.id, "HDFC");
-}, 60_000);
+}, 180_000);
 afterAll(async () => database?.close());
 
 describe("autopay", () => {

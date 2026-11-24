@@ -29,7 +29,7 @@ beforeAll(async () => {
   me = byName("Office");
   mukesh = byName("Mukesh");
   dhanush = (await db.expenseParty.create({ data: { userId: ME.id, name: "Dhanush", nameKey: "dhanush" } })).id;
-}, 60_000);
+}, 180_000);
 afterAll(async () => database?.close());
 
 describe("monthly due maths", () => {

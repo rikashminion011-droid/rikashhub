@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
-import { istDateOf, rangeToInstants } from "@/features/quick-pay/datetime";
 import { effectiveRange, type TxFilters } from "@/features/quick-pay/filters";
 import { paiseToDecimalString, toPaise } from "@/lib/finance";
+import { reconcileBankStatement } from "./sync";
 import type { BsPage, BsPreviewRow, BsRow, BsTotals } from "../types";
 
 /**
@@ -67,6 +67,8 @@ const toRow = (e: EntryWithNames): BsRow => ({
   debitPaise: paiseOf(e.debit),
   creditPaise: paiseOf(e.credit),
   balancePaise: e.balance === null ? null : paiseOf(e.balance),
+  linked: e.transactionId !== null,
+  needsReview: e.needsReview,
 });
 
 const orderOf = (f: TxFilters): Prisma.BankStatementEntryOrderByWithRelationInput[] => {
@@ -103,11 +105,44 @@ export async function listBankStatementForExport(db: PrismaClient, userId: strin
 
 export const countBankStatementRows = (db: PrismaClient, userId: string) => db.bankStatementEntry.count({ where: { userId, deletedAt: null } });
 
+/**
+ * Rows that are already saved for this bank. A row is a duplicate when it has the same key as a saved one (same day, time, details,
+ * amounts and balance) or, for a statement that shows balances, the same day, amounts and running balance: that is how the same
+ * statement from another file (a PDF after a CSV, or two overlapping periods) is recognised even when the wording differs.
+ * Each saved row covers one incoming row. Rows that were deleted still count, so a deleted row is not brought back.
+ */
+async function duplicateRows(db: PrismaClient, userId: string, accountId: string, rows: readonly BsPreviewRow[]): Promise<Set<number>> {
+  const dup = new Set<number>();
+  if (rows.length === 0) return dup;
+  const keys = dedupeKeys(accountId, rows);
+  const saved = await db.bankStatementEntry.findMany({ where: { userId, dedupeKey: { in: keys } }, select: { dedupeKey: true } });
+  const savedKeys = new Set(saved.map((r) => r.dedupeKey));
+  keys.forEach((k, i) => savedKeys.has(k) && dup.add(i));
+
+  const dates = rows.map((r) => r.date).sort();
+  const near = await db.bankStatementEntry.findMany({ where: { userId, accountId, balance: { not: null }, txDate: { gte: day(dates[0]!), lte: day(dates.at(-1)!) } }, select: { txDate: true, debit: true, credit: true, balance: true } });
+  const loose = new Map<string, number>();
+  const looseKey = (date: string, debit: number, credit: number, balance: number) => `${date}|${debit}|${credit}|${balance}`;
+  for (const e of near) {
+    const k = looseKey(e.txDate.toISOString().slice(0, 10), paiseOf(e.debit), paiseOf(e.credit), paiseOf(e.balance));
+    loose.set(k, (loose.get(k) ?? 0) + 1);
+  }
+  // Rows already matched by their exact key use up their saved copy first.
+  rows.forEach((r, i) => {
+    if (r.balancePaise === null) return;
+    const k = looseKey(r.date, r.debitPaise, r.creditPaise, r.balancePaise);
+    const left = loose.get(k) ?? 0;
+    if (left > 0) {
+      loose.set(k, left - 1);
+      dup.add(i);
+    }
+  });
+  return dup;
+}
+
 /** How many of the rows of a statement are already saved (so the preview can say what an import would add). */
 export async function countAlreadySaved(db: PrismaClient, userId: string, accountId: string, rows: readonly BsPreviewRow[]): Promise<number> {
-  if (rows.length === 0) return 0;
-  const keys = dedupeKeys(accountId, rows);
-  return db.bankStatementEntry.count({ where: { userId, dedupeKey: { in: keys } } });
+  return (await duplicateRows(db, userId, accountId, rows)).size;
 }
 
 export async function importBankRows(db: PrismaClient, userId: string, accountId: string, rows: readonly BsPreviewRow[]): Promise<{ imported: number; duplicates: number }> {
@@ -120,21 +155,30 @@ export async function importBankRows(db: PrismaClient, userId: string, accountId
     if (!Number.isSafeInteger(r.debitPaise) || !Number.isSafeInteger(r.creditPaise) || r.debitPaise < 0 || r.creditPaise < 0 || (r.debitPaise === 0 && r.creditPaise === 0)) throw new ExpenseError("A row has an amount that could not be read.");
   }
   const keys = dedupeKeys(bank.id, rows);
+  const skip = await duplicateRows(db, userId, bank.id, rows);
   const created = await db.bankStatementEntry.createMany({
-    data: rows.map((r, seq) => ({
-      userId,
-      accountId: bank.id,
-      txDate: day(r.date),
-      txTime: r.time,
-      seq,
-      details: r.details.trim().slice(0, 500) || "(no details)",
-      debit: paiseToDecimalString(r.debitPaise),
-      credit: paiseToDecimalString(r.creditPaise),
-      balance: r.balancePaise === null ? null : paiseToDecimalString(r.balancePaise),
-      dedupeKey: keys[seq]!,
-    })),
+    data: rows.flatMap((r, seq) =>
+      skip.has(seq)
+        ? []
+        : [
+            {
+              userId,
+              accountId: bank.id,
+              txDate: day(r.date),
+              txTime: r.time,
+              seq,
+              details: r.details.trim().slice(0, 500) || "(no details)",
+              debit: paiseToDecimalString(r.debitPaise),
+              credit: paiseToDecimalString(r.creditPaise),
+              balance: r.balancePaise === null ? null : paiseToDecimalString(r.balancePaise),
+              dedupeKey: keys[seq]!,
+            },
+          ],
+    ),
     skipDuplicates: true,
   });
+  // Match the new rows with the entries already in Transaction History.
+  await reconcileBankStatement(db, userId).catch((error) => console.error("[bank-statement] could not match the new rows", error));
   await db.auditLog.create({ data: { userId, action: "bank-statement.import", entity: "bank_statement_entry", entityId: bank.id, after: { rows: rows.length, imported: created.count } } });
   return { imported: created.count, duplicates: rows.length - created.count };
 }
@@ -146,6 +190,8 @@ export async function patchBankEntry(db: PrismaClient, userId: string, id: strin
     const reason = patch.reason.trim().replace(/\s+/g, " ");
     if (reason.length > 200) throw new ExpenseError("Keep the reason under 200 characters.");
     data.reason = reason || null;
+    // Typed here: the linked entry will not overwrite it.
+    data.manualReason = true;
   }
   if (patch.categoryId !== undefined) {
     if (patch.categoryId) {
@@ -153,6 +199,7 @@ export async function patchBankEntry(db: PrismaClient, userId: string, id: strin
       if (!found) throw new ExpenseError("That category no longer exists.", "NOT_FOUND");
       data.category = { connect: { id: patch.categoryId } };
     } else data.category = { disconnect: true };
+    data.manualCategory = true;
   }
   const exists = await db.bankStatementEntry.count({ where: { id, userId, deletedAt: null } });
   if (!exists) throw new ExpenseError("That row no longer exists.", "NOT_FOUND");
@@ -191,54 +238,24 @@ export interface NotEnteredRow {
   date: string;
   time: string;
   bank: string;
+  accountId: string;
   details: string;
   debitPaise: number;
   creditPaise: number;
 }
 
 /**
- * Statement rows that have no matching entry in Transaction History: the same bank, the same day (India time), the same kind
- * and the same amount. Each entry covers one statement row, so two identical payments need two entries.
+ * Statement rows that have no matching entry in Transaction History: not linked to one (same bank, same day in India time, same
+ * kind, same amount). The rows are first matched, so this is always up to date. Rows that could match several entries are not
+ * listed here: they are marked for review on the Bank Statement page instead.
  */
-export async function listNotEntered(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<{ rows: NotEnteredRow[]; totals: { debitPaise: number; creditPaise: number } }> {
-  const entries = await db.bankStatementEntry.findMany({
-    where: { userId, deletedAt: null, ...(range.from || range.to ? { txDate: { ...(range.from ? { gte: day(range.from) } : {}), ...(range.to ? { lte: day(range.to) } : {}) } } : {}) },
-    include: { account: { select: { name: true } } },
-    orderBy: [{ txDate: "desc" }, { txTime: "desc" }, { seq: "desc" }],
-  });
-  if (entries.length === 0) return { rows: [], totals: { debitPaise: 0, creditPaise: 0 } };
-
-  // Transactions a day either side of the range, so a late-night entry is still compared on its own date.
-  const bounds = rangeToInstants(range.from, range.to);
-  const widen = (d: Date | undefined, by: number) => (d ? new Date(d.getTime() + by * 86_400_000) : undefined);
-  const txns = await db.transaction.findMany({
-    where: { userId, quickPay: true, deletedAt: null, ...(bounds.gte || bounds.lt ? { occurredAt: { ...(bounds.gte ? { gte: widen(bounds.gte, -1) } : {}), ...(bounds.lt ? { lt: widen(bounds.lt, 1) } : {}) } } : {}) },
-    select: { type: true, amount: true, occurredAt: true, accountId: true, toAccountId: true },
-  });
-  const have = new Map<string, number>();
-  const add = (key: string) => have.set(key, (have.get(key) ?? 0) + 1);
-  for (const t of txns) {
-    if (!t.occurredAt) continue;
-    const date = istDateOf(t.occurredAt);
-    const paise = paiseOf(t.amount);
-    if (t.type === "EXPENSE" && t.accountId) add(`${t.accountId}|${date}|D|${paise}`);
-    else if (t.type === "INCOME" && t.toAccountId) add(`${t.toAccountId}|${date}|C|${paise}`);
-    else if (t.type === "TRANSFER") {
-      if (t.accountId) add(`${t.accountId}|${date}|D|${paise}`);
-      if (t.toAccountId) add(`${t.toAccountId}|${date}|C|${paise}`);
-    }
-  }
-  const rows: NotEnteredRow[] = [];
-  // Oldest first so that the earlier of two identical payments is the one matched.
-  for (const e of [...entries].reverse()) {
-    const debit = paiseOf(e.debit);
-    const credit = paiseOf(e.credit);
-    const date = e.txDate.toISOString().slice(0, 10);
-    const key = debit > 0 ? `${e.accountId}|${date}|D|${debit}` : `${e.accountId}|${date}|C|${credit}`;
-    const left = have.get(key) ?? 0;
-    if (left > 0) have.set(key, left - 1);
-    else rows.push({ id: e.id, date, time: e.txTime, bank: e.account.name, details: e.details, debitPaise: debit, creditPaise: credit });
-  }
-  rows.reverse();
-  return { rows, totals: { debitPaise: rows.reduce((s, r) => s + r.debitPaise, 0), creditPaise: rows.reduce((s, r) => s + r.creditPaise, 0) } };
+export async function listNotEntered(db: PrismaClient, userId: string, range: { from: string | null; to: string | null }): Promise<{ rows: NotEnteredRow[]; totals: { debitPaise: number; creditPaise: number }; reviewCount: number }> {
+  await reconcileBankStatement(db, userId);
+  const where: Prisma.BankStatementEntryWhereInput = { userId, deletedAt: null, transactionId: null, ...(range.from || range.to ? { txDate: { ...(range.from ? { gte: day(range.from) } : {}), ...(range.to ? { lte: day(range.to) } : {}) } } : {}) };
+  const [entries, reviewCount] = await Promise.all([
+    db.bankStatementEntry.findMany({ where: { ...where, needsReview: false }, include: { account: { select: { name: true } } }, orderBy: [{ txDate: "desc" }, { txTime: "desc" }, { seq: "desc" }] }),
+    db.bankStatementEntry.count({ where: { ...where, needsReview: true } }),
+  ]);
+  const rows: NotEnteredRow[] = entries.map((e) => ({ id: e.id, date: e.txDate.toISOString().slice(0, 10), time: e.txTime, bank: e.account.name, accountId: e.accountId, details: e.details, debitPaise: paiseOf(e.debit), creditPaise: paiseOf(e.credit) }));
+  return { rows, totals: { debitPaise: rows.reduce((s, r) => s + r.debitPaise, 0), creditPaise: rows.reduce((s, r) => s + r.creditPaise, 0) }, reviewCount };
 }

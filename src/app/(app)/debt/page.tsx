@@ -12,7 +12,7 @@ import { HdfcPeriodFilter } from "@/features/debt/components/hdfc-period-filter"
 import { DebtTable } from "@/features/debt/components/debt-table";
 import { RecipientFilter } from "@/features/debt/components/recipient-filter";
 import { getDebtSummary } from "@/features/debt/server/service";
-import type { DebtSummary } from "@/features/debt/types";
+import type { DebtRow, DebtSummary } from "@/features/debt/types";
 import { totals } from "@/features/debt/view";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { setDebtRecipientsAction } from "@/features/monthly-due/actions";
@@ -43,6 +43,7 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
   let settings: DebtSettings;
   let everyone: { id: string; name: string }[];
   let picked: string[] = fromAddress;
+  let rikash: DebtRow | null = null;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
@@ -52,6 +53,8 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
     settings = s;
     everyone = full.rows.map((r) => ({ id: r.partyId, name: r.name }));
     summary = picked.length > 0 ? totals(full.rows.filter((r) => picked.includes(r.partyId))) : full;
+    // Rikash is shown on his own at the top. He is found by his recipient id (the one chosen in Monthly Due, else the recipient named Rikash), never by his name in the list, so he is never shown twice.
+    if (personal) rikash = (await getDebtSummary(db, user.id, { from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } })).rows.find((r) => r.partyId === personal) ?? null;
   } catch (error) {
     console.error("[debt] could not load", error);
     return (
@@ -97,6 +100,32 @@ export default async function DebtPage({ searchParams }: PageProps<"/debt">) {
           <RecipientFilter key={picked.join(",")} people={everyone} selected={picked} save={setDebtRecipientsAction} />
         </PeriodFilter>
         <HdfcPeriodFilter today={today} cycle={hdfcFromParams({}, today)} />
+
+        {rikash ? (
+          <section className="rounded-2xl border border-primary/30 bg-primary/5 p-3" aria-label={`${rikash.name}'s debt`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-semibold">{rikash.name}</h2>
+              <Link href={`/debt/${rikash.partyId}${query}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                View transactions
+              </Link>
+            </div>
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                ["Split & Debt", rikash.totalSplitPaise],
+                ["Shopping", rikash.shoppingPaise],
+                ["Credit Portal", rikash.portalPaise],
+                ["Total Debt", rikash.totalDebtPaise],
+                ["Paid", rikash.paidPaise],
+                ["Remaining", rikash.remainingPaise],
+              ].map(([label, value]) => (
+                <div key={label as string}>
+                  <dt className="text-xs text-muted-foreground">{label as string}</dt>
+                  <dd className={cn("font-semibold tabular-nums", label === "Remaining" && (value as number) > 0 && "text-destructive", label === "Paid" && "text-success")}>{formatINR(value as number)}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ) : null}
 
         {settings.showTotals ? (
           <div className="grid gap-3 sm:grid-cols-3">

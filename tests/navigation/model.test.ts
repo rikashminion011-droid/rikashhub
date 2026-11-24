@@ -101,7 +101,7 @@ describe("hiding", () => {
     expect(setHidden(hidden, "/debt", true)).toBe(hidden); // already hidden
   });
   it("drops a heading from view when all its pages are hidden", () => {
-    const l = setHidden(setHidden(DEFAULT_LAYOUT, "/food", true), "/food-rent", true);
+    const l = setHidden(setHidden(DEFAULT_LAYOUT, "/food", true), "/sleep", true);
     expect(visibleSections(l).map((s) => s.id)).not.toContain("food");
   });
   it("refuses to hide the last visible page", () => {

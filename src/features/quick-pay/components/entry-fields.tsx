@@ -83,6 +83,7 @@ export function EntryFields({
   onSelfTransfer,
   onAssignReason,
   headerLeft,
+  lock,
 }: {
   form: FormState;
   setForm: (update: (f: FormState) => FormState) => void;
@@ -103,6 +104,8 @@ export function EntryFields({
   onAssignReason?: (reason: string, type: EntryType, input: { categoryId: string | null; newCategory?: string }) => Promise<{ ok: true; categoryId: string } | { ok: false; error: string }>;
   /** What goes at the start of the top line, normally the date. */
   headerLeft?: ReactNode;
+  /** Fields that cannot be changed (the amount, the kind and the bank of a bank statement row being linked). */
+  lock?: { amount?: boolean; type?: boolean; bank?: boolean };
 }) {
   const labels = options.settings.fields.labels;
   // Banks switched off in Customized Settings are not offered (the one already on the entry still is).
@@ -149,6 +152,7 @@ export function EntryFields({
   /** Double-click (or hold) on Debit: the recent credits to attach. Works from Credit too, by switching to Debit first. */
   const openHistory = () => {
     if (!isDebit) setForm((f) => ({ ...f, type: "DEBIT" }));
+    setForm((f) => ({ ...f, creditManual: true }));
     if (!form.creditsAdded || !isDebit) onToggleCredits(true);
     setCreditsOpen(true);
   };
@@ -159,10 +163,11 @@ export function EntryFields({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-sm:space-y-2">
       {/* The date (from the page), Debit −, Credit + and Self Transfer on one line */}
       <div className="flex items-center gap-2" role="group" aria-label="Date, Debit or Credit, Self Transfer">
         {headerLeft ? <div className="min-w-0 flex-1">{headerLeft}</div> : null}
+        <div inert={lock?.type} className={lock?.type ? "opacity-60" : undefined}>
         <TypeToggle
           value={form.type}
           debitRef={debitRef}
@@ -177,6 +182,7 @@ export function EntryFields({
             }))
           }
         />
+        </div>
         {onSelfTransfer ? <SelfTransferButton onClick={onSelfTransfer} /> : null}
       </div>
 
@@ -198,6 +204,7 @@ export function EntryFields({
             autoComplete="off"
             placeholder="0.00"
             value={form.amount}
+            readOnly={lock?.amount}
             aria-invalid={!!errors.amount}
             aria-describedby={errors.amount ? id("error-amount") : undefined}
             onChange={(e) => {
@@ -306,7 +313,7 @@ export function EntryFields({
       </div>
 
       {/* Through, under Category */}
-      <div id={id("field-bank")} className="scroll-mt-24 space-y-1">
+      <div id={id("field-bank")} inert={lock?.bank} className={cn("scroll-mt-24 space-y-1", lock?.bank && "opacity-60")}>
         <label htmlFor={id("bank")} className={labelClass}>
           {labels.bank}
         </label>
@@ -455,18 +462,18 @@ export function EntryFields({
                 credits={credits}
                 loading={loadingCredits}
                 selected={form.creditIds}
-                onChoose={(creditId, on) => setForm((f) => ({ ...f, creditIds: on ? [creditId] : [] }))}
+                onChoose={(creditId, on) => setForm((f) => ({ ...f, creditManual: true, creditIds: on ? [creditId] : [] }))}
                 canCycle={switches.credit.enabled}
                 onCycle={() =>
                   setForm((f) => {
                     const next = nextSwitch(switches.credit, (credits ?? []).filter((c) => c.type === "CREDIT").map((c) => c.id), f.creditIds[0] ?? null);
-                    return next ? { ...f, creditIds: [next] } : f;
+                    return next ? { ...f, creditManual: true, creditIds: [next] } : f;
                   })
                 }
                 source={options.settings.credits.source}
                 debitAmount={form.amount}
                 onTurnOff={() => {
-                  setForm((f) => ({ ...f, creditIds: [] }));
+                  setForm((f) => ({ ...f, creditManual: true, creditIds: [] }));
                   onToggleCredits(false);
                   setCreditsOpen(false);
                 }}

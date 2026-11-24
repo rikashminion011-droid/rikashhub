@@ -146,6 +146,11 @@ export function BankStatementTable({ rows, filtered, options, actions }: { rows:
                   <td className="px-3 py-2.5 whitespace-nowrap">{row.bank}</td>
                   <td className="max-w-56 px-3 py-1.5">
                     <ReasonCell value={row.reason} onCommit={(text) => patch(row.id, { reason: text })} />
+                    {row.needsReview ? (
+                      <span title="More than one entry in Transaction History matches this row and nothing tells them apart. Nothing was filled in." className="ml-1.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                        Needs review
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-1.5">{categoryCell(row)}</td>
                   <td className="px-2 py-1.5 text-right">
@@ -189,6 +194,7 @@ export function BankStatementTable({ rows, filtered, options, actions }: { rows:
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Reason</p>
                 <ReasonCell value={row.reason} onCommit={(text) => patch(row.id, { reason: text })} />
+                {row.needsReview ? <span className="inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Needs review</span> : null}
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Category</p>

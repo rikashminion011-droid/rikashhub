@@ -26,6 +26,8 @@ export interface FormState {
   shares: FormShare[];
   creditsAdded: boolean;
   creditIds: string[];
+  /** True once the credit was chosen (or deliberately left out) by hand: a new debit is then not given a credit by itself. */
+  creditManual: boolean;
   /** The Shopping Records platform of this Debit (Shopping Portals), or null. */
   shoppingPlatformId: string | null;
   /** For a Credit: who credited it. Null means Others. */
@@ -70,6 +72,7 @@ export function emptyState(settings: QuickPaySettingsData, options?: Pick<QuickP
         : [],
     creditsAdded: false,
     creditIds: [],
+    creditManual: false,
     shoppingPlatformId: null,
     creditedById: null,
   };
@@ -92,6 +95,7 @@ export function fromEntry(entry: EntryDetails, settings: QuickPaySettingsData): 
     shares: entry.shares.map((x) => ({ partyId: x.partyId, method: "PERCENT" as const, value: String(Number(x.percent.toFixed(2))), edited: true })),
     creditsAdded: entry.creditIds.length > 0,
     creditIds: [...entry.creditIds],
+    creditManual: true,
     shoppingPlatformId: entry.shoppingPlatformId,
     creditedById: entry.creditedById,
   };
@@ -181,6 +185,7 @@ export function toQuickPayInput(form: FormState): QuickPayInput {
       shares: form.shares.map(({ partyId, method, value }) => ({ partyId, method, value })),
     },
     creditIds: debit ? form.creditIds : [],
+    creditAuto: debit && !form.creditManual,
     shoppingPlatformId: debit ? form.shoppingPlatformId : null,
     creditedById: debit ? null : form.creditedById,
   };

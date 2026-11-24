@@ -1,21 +1,22 @@
 import type { ReactNode } from "react";
 
+/**
+ * A page starts directly with its data, filters and controls: no visible title or description. The title stays as a hidden
+ * heading for screen readers, and the page's own actions (if it has any) sit in a quiet row at the right.
+ */
 export function PageHeader({
   title,
-  description,
   actions,
 }: {
   title: string;
+  /** Kept so pages can still pass it; it is not shown. */
   description?: string;
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-xl bg-header/70 px-4 py-3 sm:px-5">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-accent-foreground">{title}</h1>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-      </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
-    </div>
+    <>
+      <h1 className="sr-only">{title}</h1>
+      {actions ? <div className="mb-4 flex flex-wrap items-center justify-end gap-2">{actions}</div> : null}
+    </>
   );
 }

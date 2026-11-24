@@ -14,6 +14,10 @@ export interface BsRow {
   debitPaise: number;
   creditPaise: number;
   balancePaise: number | null;
+  /** Linked to the Transaction History entry it matches. */
+  linked: boolean;
+  /** Several entries could match and nothing tells them apart. */
+  needsReview: boolean;
 }
 
 export interface BsTotals {

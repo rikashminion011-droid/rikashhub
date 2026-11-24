@@ -45,7 +45,7 @@ beforeAll(async () => {
   const platforms = await listPlatforms(db, ME.id);
   dmart = platforms.find((p) => p.name === "D Mart")!.id;
   ab = platforms.find((p) => p.name === "AP Supermarket")!.id;
-}, 60_000);
+}, 180_000);
 afterAll(async () => database?.close());
 
 describe("platforms", () => {

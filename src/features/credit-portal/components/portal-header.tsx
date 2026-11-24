@@ -80,31 +80,7 @@ export function PortalHeader({ portals, active, actions }: { portals: PortalRow[
         ) : null}
       </div>
 
-      {active && bar ? (
-        <div className="space-y-2" aria-label="Credit utilization">
-          <p className="text-sm">
-            <span className="text-muted-foreground">Total Credit: </span>
-            <span className="font-semibold tabular-nums">{active.cardInfoSaved ? formatINR(active.totalPaise) : "not set"}</span>
-          </p>
-          {active.cardInfoSaved ? (
-            <div className="flex h-9 w-full overflow-hidden rounded-lg border bg-emerald-50 text-sm font-semibold" role="img" aria-label={`Used ${formatINR(active.usedPaise)} of ${formatINR(active.totalPaise)}; balance ${formatINR(bar.balancePaise)}`}>
-              <div className="flex min-w-0 items-center justify-start bg-amber-500 px-3 whitespace-nowrap text-white tabular-nums" style={{ width: `${bar.usedPercent}%` }}>
-                {bar.usedPercent >= 12 ? formatINR(active.usedPaise) : null}
-              </div>
-              <div className="flex min-w-0 flex-1 items-center justify-end px-3 whitespace-nowrap text-emerald-800 tabular-nums">{100 - bar.usedPercent >= 12 ? formatINR(bar.balancePaise) : null}</div>
-            </div>
-          ) : (
-            <button type="button" onClick={() => setCardOpen(true)} className="w-full rounded-lg border border-dashed py-3 text-sm text-muted-foreground hover:bg-muted/40">
-              Enter the card information to see the credit bar
-            </button>
-          )}
-          {active.cardInfoSaved && (bar.usedPercent < 12 || 100 - bar.usedPercent < 12) ? (
-            <p className="text-xs text-muted-foreground tabular-nums">
-              Used {formatINR(active.usedPaise)} · Balance {formatINR(bar.balancePaise)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+      {active && bar ? <UtilizationBar portal={active} balancePaise={bar.balancePaise} onSetUp={() => setCardOpen(true)} /> : null}
 
       <AddPortalDialog
         open={adding}
@@ -280,5 +256,54 @@ function CardInfoDialog({ open, onOpenChange, portal, setCardInfo, onSaved }: { 
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The credit bar, in violet: the total limit, what is used, what is left and the percentage used, each value beside its label.
+ * The bar is rounded and plain; a segment that is too small to hold text is labelled underneath, so nothing is ever unreadable.
+ * Nothing used shows an empty bar, a full limit a full bar, and spending above the limit a full bar marked "over the limit".
+ */
+function UtilizationBar({ portal, balancePaise, onSetUp }: { portal: PortalRow; balancePaise: number; onSetUp: () => void }) {
+  if (!portal.cardInfoSaved) {
+    return (
+      <button type="button" onClick={onSetUp} className="w-full rounded-2xl border border-dashed border-[#C4B5FD] py-4 text-sm text-[#5B21B6] hover:bg-[#EDE9FE]/50">
+        Enter the card information to see the credit bar
+      </button>
+    );
+  }
+  const total = portal.totalPaise;
+  const used = portal.usedPaise;
+  const over = total > 0 && used > total;
+  const rawPercent = total > 0 ? (used / total) * 100 : 0;
+  const usedPercent = Math.min(100, Math.max(0, rawPercent));
+  const shownPercent = (Math.round(rawPercent * 10) / 10).toFixed(1);
+  const stat = (label: string, value: string, strong = false) => (
+    <p className="flex items-baseline gap-1.5 text-sm">
+      <span className="text-[#5B21B6]/80">{label}</span>
+      <span className={strong ? "text-base font-semibold text-[#5B21B6] tabular-nums" : "font-semibold tabular-nums"}>{value}</span>
+    </p>
+  );
+  return (
+    <div className="space-y-3 rounded-2xl border border-[#C4B5FD]/70 bg-white p-4" aria-label="Credit utilization">
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1.5">
+        {stat("Total Credit Limit", formatINR(total))}
+        {stat("Used", formatINR(used), true)}
+        {stat("Balance", over ? `−${formatINR(used - total)}` : formatINR(balancePaise))}
+        {stat("Utilization", `${shownPercent}%`)}
+      </div>
+      <div className="flex h-9 w-full overflow-hidden rounded-full bg-[#EDE9FE]" role="img" aria-label={`Used ${formatINR(used)} of ${formatINR(total)}, ${shownPercent} percent${over ? ", over the limit" : ""}`}>
+        <div className="flex min-w-0 items-center rounded-full bg-[#7C3AED] px-4 text-sm font-semibold whitespace-nowrap text-white tabular-nums" style={{ width: `${usedPercent}%`, minWidth: used > 0 ? "0.75rem" : 0 }}>
+          {usedPercent >= 30 ? `${formatINR(used)} Used` : null}
+        </div>
+        <div className="flex min-w-0 flex-1 items-center justify-end px-4 text-sm font-semibold whitespace-nowrap text-[#5B21B6] tabular-nums">{100 - usedPercent >= 18 ? `${(100 - usedPercent).toFixed(1)}%` : null}</div>
+      </div>
+      {usedPercent < 30 || 100 - usedPercent < 18 || over ? (
+        <p className="flex flex-wrap gap-x-4 text-xs text-[#5B21B6] tabular-nums">
+          <span>Used {formatINR(used)}</span>
+          <span>Balance {over ? "0 (over the limit)" : formatINR(balancePaise)}</span>
+        </p>
+      ) : null}
+    </div>
   );
 }

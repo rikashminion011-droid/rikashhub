@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { ExpenseError } from "@/features/expenses/server/service";
+import { getCreditPreferences, usageOf } from "@/features/credit-history/server/service";
 import { recomputeBalances, sinceOpening } from "@/lib/db/balances";
 import { paiseToDecimalString, parseAmountInput, parseISODate, toPaise } from "@/lib/finance";
 import { buildBalanceGroups, type AccountBalanceInput } from "../balances";
@@ -410,6 +411,16 @@ export async function listCreditChoices(db: PrismaClient, userId: string, source
     take: source === "last_transaction" ? 1 : source === "credit_values" ? 400 : size,
   });
   let mapped: RecentCredit[] = rows.map((r) => ({ id: r.id, type: typeOf(r), amountPaise: paiseOf(r.amount), reason: r.description ?? r.details ?? "", occurredAt: (r.occurredAt ?? r.createdAt).toISOString() }));
+  // Credit History: each credit shows what is left of it, and which one is the default and which the latest.
+  const creditIds = mapped.filter((m) => m.type === "CREDIT").map((m) => m.id);
+  if (creditIds.length > 0) {
+    const [usage, prefs, latest] = await Promise.all([
+      usageOf(db, userId, creditIds),
+      getCreditPreferences(db, userId),
+      db.transaction.findFirst({ where: { userId, quickPay: true, deletedAt: null, type: "INCOME" }, orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }], select: { id: true } }),
+    ]);
+    mapped = mapped.map((m) => (m.type === "CREDIT" ? { ...m, remainingPaise: m.amountPaise - (usage.get(m.id)?.usedPaise ?? 0), isDefault: m.id === prefs.defaultCreditId, isLatest: m.id === latest?.id } : m));
+  }
   if (source === "credit_values") {
     const seen = new Set<number>();
     mapped = mapped.filter((m) => (seen.has(m.amountPaise) ? false : (seen.add(m.amountPaise), true))).slice(0, size);

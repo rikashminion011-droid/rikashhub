@@ -8,6 +8,8 @@ import { parseAmountInput } from "@/lib/finance";
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { RateLimiter } from "@/lib/security/rate-limit";
+import { getRecipientColumns, resetRecipientColumns, saveRecipientColumns } from "./server/prefs";
+import type { ColumnPrefs } from "./recipient-view";
 import { addDebtEntries, addSplitPayment, deleteDebtEntry, deleteSplitPayment, getDebtHistory, getDebtSummary } from "./server/service";
 import type { DebtHistory, DebtResult, DebtSummary } from "./types";
 
@@ -134,6 +136,40 @@ export async function deleteDebtEntryAction(raw: unknown): Promise<DebtResult> {
     return { ok: true };
   } catch (error) {
     return failure(error, "delete debt");
+  }
+}
+
+/** Saves which columns a recipient's page shows and their order (for this user and recipient). */
+export async function saveRecipientColumnsAction(raw: unknown): Promise<DebtResult<{ columns: ColumnPrefs }>> {
+  try {
+    const parsed = z.object({ partyId: id, order: z.array(z.string().max(20)).max(20), hidden: z.array(z.string().max(20)).max(20) }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Those columns could not be read." };
+    const { user, db } = await context();
+    return { ok: true, columns: await saveRecipientColumns(db, user.id, parsed.data.partyId, { order: parsed.data.order, hidden: parsed.data.hidden }) };
+  } catch (error) {
+    return failure(error, "save columns");
+  }
+}
+
+export async function resetRecipientColumnsAction(raw: unknown): Promise<DebtResult<{ columns: ColumnPrefs }>> {
+  try {
+    const parsed = z.object({ partyId: id }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That person could not be found." };
+    const { user, db } = await context();
+    return { ok: true, columns: await resetRecipientColumns(db, user.id, parsed.data.partyId) };
+  } catch (error) {
+    return failure(error, "reset columns");
+  }
+}
+
+export async function getRecipientColumnsAction(raw: unknown): Promise<DebtResult<{ columns: ColumnPrefs }>> {
+  try {
+    const parsed = z.object({ partyId: id }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That person could not be found." };
+    const user = await requireUser();
+    return { ok: true, columns: await getRecipientColumns(getPrisma(), user.id, parsed.data.partyId) };
+  } catch (error) {
+    return failure(error, "read columns");
   }
 }
 

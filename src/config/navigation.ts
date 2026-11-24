@@ -7,7 +7,10 @@ import {
   LayoutDashboard,
   PiggyBank,
   ShoppingBag,
+  ShoppingCart,
+  History,
   Landmark,
+  Moon,
   ReceiptText,
   UserRound,
   UtensilsCrossed,
@@ -63,6 +66,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
     planned: [],
   },
   {
+    title: "Shopping Cart",
+    href: "/shopping-cart",
+    icon: ShoppingCart,
+    description: "What you plan to buy, by month and category, with product links.",
+    planned: [],
+  },
+  {
     title: "Debt Management",
     href: "/debt",
     icon: HandCoins,
@@ -110,6 +120,13 @@ export const QUICK_PAY_ITEMS: readonly NavItem[] = [
     planned: [],
   },
   {
+    title: "Credit History",
+    href: "/credit-history",
+    icon: History,
+    description: "How each credited amount is used by debits: used, remaining and the debits behind it.",
+    planned: [],
+  },
+  {
     title: "Bank Statement",
     href: "/bank-statement",
     icon: Landmark,
@@ -136,6 +153,17 @@ export const FOOD_ITEMS: readonly NavItem[] = [
   },
 ];
 
+/** Sleep Tracker, in its own group beside Monthly Food Tracking. */
+export const SLEEP_ITEMS: readonly NavItem[] = [
+  {
+    title: "Sleep Tracker",
+    href: "/sleep",
+    icon: Moon,
+    description: "When you slept and woke, how long you slept, and the week at a glance.",
+    planned: [],
+  },
+];
+
 /** Shown below the modules, under "Account". */
 export const ACCOUNT_ITEM: NavItem = {
   title: "User",
@@ -146,7 +174,7 @@ export const ACCOUNT_ITEM: NavItem = {
 };
 
 /** Every page that can appear in the side navigator, in its built-in order. The page address is its identity. */
-export const ALL_NAV_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ...FOOD_ITEMS, ACCOUNT_ITEM];
+export const ALL_NAV_ITEMS: readonly NavItem[] = [...NAV_ITEMS, ...QUICK_PAY_ITEMS, ...FOOD_ITEMS, ...SLEEP_ITEMS, ACCOUNT_ITEM];
 const ALL_ITEMS = ALL_NAV_ITEMS;
 
 /** The item for a path. When several match (/quick-pay and /quick-pay/transactions) the most specific one wins. */

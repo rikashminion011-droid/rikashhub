@@ -18,6 +18,7 @@ import { DraftLink } from "@/features/quick-pay/components/draft-link";
 import { ExportReportDialog } from "@/features/quick-pay/components/export-report-dialog";
 import { ImportDialog } from "@/features/quick-pay/components/import-dialog";
 import { ExportMenu } from "@/features/quick-pay/components/export-menu";
+import { linkBankRowAction } from "@/features/bank-statement/actions";
 import { NotEnteredDialog } from "@/features/bank-statement/components/not-entered-dialog";
 import { listNotEntered } from "@/features/bank-statement/server/service";
 import { TransactionsPager } from "@/features/quick-pay/components/transactions-pager";
@@ -62,7 +63,7 @@ export default async function TransactionHistoryPage({ searchParams }: PageProps
   let options: QuickPayOptions;
   let draftCount = 0;
   let everything = 0;
-  let missing: Awaited<ReturnType<typeof listNotEntered>> = { rows: [], totals: { debitPaise: 0, creditPaise: 0 } };
+  let missing: Awaited<ReturnType<typeof listNotEntered>> = { rows: [], totals: { debitPaise: 0, creditPaise: 0 }, reviewCount: 0 };
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
@@ -71,7 +72,7 @@ export default async function TransactionHistoryPage({ searchParams }: PageProps
       getQuickPayOptions(db, user.id, "gpay"),
       getBulkDraftCount(db, user.id).catch(() => 0),
       db.transaction.count({ where: { userId: user.id, quickPay: true, deletedAt: null } }),
-      listNotEntered(db, user.id, effectiveRange(filters)).catch(() => ({ rows: [], totals: { debitPaise: 0, creditPaise: 0 } })),
+      listNotEntered(db, user.id, effectiveRange(filters)).catch(() => ({ rows: [], totals: { debitPaise: 0, creditPaise: 0 }, reviewCount: 0 })),
     ]);
   } catch (error) {
     console.error("[quick-pay] could not load transactions", error);
@@ -101,7 +102,7 @@ export default async function TransactionHistoryPage({ searchParams }: PageProps
           typeCounts={typeCounts}
           totals={totals}
           slots={{
-            notEntered: missing.rows.length > 0 ? <NotEnteredDialog rows={missing.rows} totals={missing.totals} /> : undefined,
+            notEntered: missing.rows.length > 0 ? <NotEnteredDialog rows={missing.rows} totals={missing.totals} reviewCount={missing.reviewCount} options={options} actions={{ saveEntry: saveEntryAction, getRecentCredits: getRecentCreditsAction, getOptions: getGpayOptionsAction, addCategory: addCategoryAction, addPerson: addPersonAction, link: linkBankRowAction }} /> : undefined,
             draft: <DraftLink iconOnly savedCount={draftCount} />,
             report: <ExportReportDialog query={query} filters={describeFilters(filters, options)} count={totals.count} defaultName={`transaction-history-${todayIst}`} />,
             import: <ImportDialog iconOnly actions={{ getOptions: getGpayOptionsAction, importGpay: importGpayAction }} />,

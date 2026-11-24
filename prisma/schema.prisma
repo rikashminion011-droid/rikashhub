@@ -218,6 +218,11 @@ model User {
   debtEntries            DebtEntry[]
   autopayEntries         AutopayEntry[]
   bankStatementEntries   BankStatementEntry[]
+  cartCategories         ShoppingCartCategory[]
+  cartItems              ShoppingCartItem[]
+  sleepSessions          SleepSession[]
+  creditPreference       CreditPreference?
+  recipientViewPrefs     RecipientViewPref[]
   shoppingPurchases      ShoppingPurchase[]
   creditStatementEntries CreditStatementEntry[]
   splitPayments          SplitPayment[]
@@ -438,13 +443,15 @@ model Transaction {
   monthlyDue     MonthlyDue?          @relation(fields: [monthlyDueId], references: [id])
   category       TransactionCategory? @relation(fields: [categoryId], references: [id])
 
-  attachments         Attachment[]
-  paymentRecord       PaymentRecord?
-  debtPayment         DebtPayment?
-  savingsTransaction  SavingsTransaction?
-  splits              TransactionSplit[]
-  creditLinksAsDebit  TransactionCreditLink[] @relation("CreditLinkDebit")
-  creditLinksAsCredit TransactionCreditLink[] @relation("CreditLinkCredit")
+  attachments          Attachment[]
+  paymentRecord        PaymentRecord?
+  debtPayment          DebtPayment?
+  savingsTransaction   SavingsTransaction?
+  splits               TransactionSplit[]
+  creditLinksAsDebit   TransactionCreditLink[] @relation("CreditLinkDebit")
+  creditLinksAsCredit  TransactionCreditLink[] @relation("CreditLinkCredit")
+  bankStatementEntries BankStatementEntry[]
+  creditPreferences    CreditPreference[]
 
   @@unique([userId, dedupeKey])
   @@index([userId, quickPay, occurredAt])
@@ -799,10 +806,11 @@ model ExpenseParty {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  splits      TransactionSplit[]
-  payments    SplitPayment[]
-  debtEntries DebtEntry[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  splits             TransactionSplit[]
+  payments           SplitPayment[]
+  debtEntries        DebtEntry[]
+  recipientViewPrefs RecipientViewPref[]
 
   @@unique([userId, nameKey])
   @@map("expense_parties")
@@ -940,6 +948,7 @@ model TransactionCreditLink {
 
   @@unique([debitId, creditId])
   @@index([userId, debitId])
+  @@index([creditId])
   @@map("transaction_credit_links")
 }
 
@@ -1213,31 +1222,128 @@ model AutopayEntry {
 
 /// One row of an imported bank statement. Rows of every bank sit in one list, in date order.
 model BankStatementEntry {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  accountId  String    @db.Uuid
-  txDate     DateTime  @db.Date
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @db.Uuid
+  accountId      String    @db.Uuid
+  txDate         DateTime  @db.Date
   /// "HH:mm" in India time; "00:00" when the statement has no time.
-  txTime     String    @default("00:00")
+  txTime         String    @default("00:00")
   /// The row's place in its statement, to keep rows of one day in the statement's order.
-  seq        Int       @default(0)
-  details    String
-  reason     String?
-  categoryId String?   @db.Uuid
-  debit      Decimal   @default(0) @db.Decimal(14, 2)
-  credit     Decimal   @default(0) @db.Decimal(14, 2)
-  balance    Decimal?  @db.Decimal(14, 2)
+  seq            Int       @default(0)
+  details        String
+  reason         String?
+  categoryId     String?   @db.Uuid
+  debit          Decimal   @default(0) @db.Decimal(14, 2)
+  credit         Decimal   @default(0) @db.Decimal(14, 2)
+  balance        Decimal?  @db.Decimal(14, 2)
+  /// The Transaction History entry this row matches (same bank, day, amount and kind). Reason and Category follow it.
+  transactionId  String?   @db.Uuid
+  /// True once the Reason or Category was typed here: a linked entry then does not overwrite it.
+  manualReason   Boolean   @default(false)
+  manualCategory Boolean   @default(false)
+  /// Several entries could match and nothing tells them apart: nothing is filled in until it is linked by hand.
+  needsReview    Boolean   @default(false)
   /// Makes importing the same statement again add nothing.
-  dedupeKey  String
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
+  dedupeKey      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
-  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account  Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  category TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category    TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transaction Transaction?         @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@unique([userId, dedupeKey])
+  @@index([transactionId])
   @@index([userId, deletedAt, txDate, txTime, seq])
   @@map("bank_statement_entries")
+}
+
+/// A category of the Shopping Cart (Professional, Personal, Electronics...). A new one is made right where an item is added.
+model ShoppingCartCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  name      String
+  /// Lower-cased, trimmed name: makes "Personal" and "personal" the same category.
+  nameKey   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ShoppingCartItem[]
+
+  @@unique([userId, nameKey])
+  @@map("shopping_cart_categories")
+}
+
+/// Something planned to be bought. cartNo is permanent: Cart 01, Cart 02... and a number is never given out twice.
+model ShoppingCartItem {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  cartNo       Int
+  name         String
+  /// The month it is planned for: "2026-11".
+  plannedMonth String
+  categoryId   String?   @db.Uuid
+  productLink  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category ShoppingCartCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, cartNo])
+  @@index([userId, deletedAt, plannedMonth])
+  @@map("shopping_cart_items")
+}
+
+/// One sleep. endedAt is empty while the person is still asleep (at most one such row for each user, kept by a partial unique index).
+model SleepSession {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @db.Uuid
+  startedAt       DateTime  @db.Timestamptz(3)
+  endedAt         DateTime? @db.Timestamptz(3)
+  /// Worked out from the full start and end times when the wake-up is recorded.
+  durationMinutes Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deletedAt, endedAt])
+  @@map("sleep_sessions")
+}
+
+/// Credit History: which credit new debits are allocated to. One row for each user, so there is at most one default credit source.
+model CreditPreference {
+  userId          String   @id @db.Uuid
+  defaultCreditId String?  @db.Uuid
+  /// DEFAULT allocates to the default credit source; RECENT to the latest credit.
+  mode            String   @default("DEFAULT")
+  updatedAt       DateTime @updatedAt
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultCredit Transaction? @relation(fields: [defaultCreditId], references: [id], onDelete: SetNull)
+
+  @@index([defaultCreditId])
+  @@map("credit_preferences")
+}
+
+/// The columns of one recipient's Debt Management page for one user: their order and which are hidden.
+model RecipientViewPref {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  partyId   String   @db.Uuid
+  columns   Json
+  updatedAt DateTime @updatedAt
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  party ExpenseParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, partyId])
+  @@map("recipient_view_prefs")
 }

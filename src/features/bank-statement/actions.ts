@@ -6,6 +6,7 @@ import { ExpenseError, ensureUserSetup } from "@/features/expenses/server/servic
 import { requireUser } from "@/lib/auth/session";
 import { getPrisma } from "@/lib/db/prisma";
 import { RateLimiter } from "@/lib/security/rate-limit";
+import { reconcileBankStatement } from "./server/sync";
 import { MAX_STATEMENT_ROWS, deleteBankEntry, importBankRows, patchBankEntry } from "./server/service";
 import type { BsRow } from "./types";
 
@@ -85,6 +86,43 @@ export async function deleteBankEntryAction(raw: unknown): Promise<BsResult> {
     return { ok: true };
   } catch (error) {
     return failure(error, "delete");
+  }
+}
+
+/**
+ * Links a statement row to the Quick Entry transaction made for it. The transaction must be the user's, of the same bank, kind and
+ * amount as the row (so the link is true), and a transaction can be linked to one row only. The row then follows its Reason and Category.
+ */
+export async function linkBankRowAction(raw: unknown): Promise<BsResult> {
+  try {
+    const parsed = z.object({ rowId: id, transactionId: id }).safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "That link could not be read." };
+    const { user, db } = await context();
+    const [row, txn] = await Promise.all([
+      db.bankStatementEntry.findFirst({ where: { id: parsed.data.rowId, userId: user.id, deletedAt: null } }),
+      db.transaction.findFirst({ where: { id: parsed.data.transactionId, userId: user.id, deletedAt: null, quickPay: true } }),
+    ]);
+    if (!row) return { ok: false, error: "That statement row no longer exists." };
+    if (!txn) return { ok: false, error: "That transaction no longer exists." };
+    if (row.transactionId === txn.id) return { ok: true };
+    if (row.transactionId) return { ok: false, error: "That row is already linked." };
+    const debit = Number(row.debit.toString());
+    const credit = Number(row.credit.toString());
+    const sameBank = debit > 0 ? txn.accountId === row.accountId : txn.toAccountId === row.accountId;
+    const sameAmount = Number(txn.amount.toString()) === (debit > 0 ? debit : credit);
+    if (!sameBank || !sameAmount || (debit > 0 ? txn.type !== "EXPENSE" : txn.type !== "INCOME")) return { ok: false, error: "That transaction does not match the row's bank, kind and amount." };
+    try {
+      await db.bankStatementEntry.update({ where: { id: row.id }, data: { transactionId: txn.id, needsReview: false } });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002") return { ok: false, error: "That transaction is already linked to another row." };
+      throw error;
+    }
+    await reconcileBankStatement(db, user.id, { transactionIds: [txn.id] });
+    refresh();
+    revalidatePath("/quick-pay", "layout");
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "link");
   }
 }
 

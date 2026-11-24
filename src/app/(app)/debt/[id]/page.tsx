@@ -6,8 +6,14 @@ import { DatabaseUnavailable } from "@/components/shared/database-unavailable";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { PeriodFilter } from "@/features/credit-portal/components/period-filter";
-import { ExportDebtButton } from "@/features/debt/components/export-debt-button";
-import { DebtItems } from "@/features/debt/components/debt-table";
+import { RecipientTransactions } from "@/features/debt/components/recipient-transactions";
+import { getRecipientColumns } from "@/features/debt/server/prefs";
+import { getQuickPayOptions } from "@/features/quick-pay/server/settings";
+import { addCategoryAction, getEntryAction, getOptionsAction, getRecentCreditsAction, saveEntryAction } from "@/features/quick-pay/actions";
+import { addPersonAction } from "@/features/users/actions";
+import { resetRecipientColumnsAction, saveRecipientColumnsAction } from "@/features/debt/actions";
+import type { ColumnPrefs } from "@/features/debt/recipient-view";
+import type { QuickPayOptions } from "@/features/quick-pay/types";
 import { getDebtHistory } from "@/features/debt/server/service";
 import type { DebtHistory } from "@/features/debt/types";
 import { ensureUserSetup } from "@/features/expenses/server/service";
@@ -36,10 +42,12 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
   const hdfc = hdfcFromParams(sp, today);
 
   let history: DebtHistory;
+  let columns: ColumnPrefs;
+  let options: QuickPayOptions;
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
-    history = await getDebtHistory(db, user.id, id, { from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } });
+    [history, columns, options] = await Promise.all([getDebtHistory(db, user.id, id, { from: period.from, to: period.to, hdfc: { from: hdfc.from, to: hdfc.to } }), getRecipientColumns(db, user.id, id), getQuickPayOptions(db, user.id)]);
   } catch (error) {
     if (error instanceof Error && error.message === "That person no longer exists.") notFound();
     console.error("[debt] recipient could not load", error);
@@ -102,13 +110,19 @@ export default async function RecipientDebtPage({ params, searchParams }: PagePr
           ))}
         </dl>
         <section className="space-y-2" aria-labelledby="owed">
-          <div className="flex items-center justify-between gap-3">
-            <h2 id="owed" className="text-sm font-semibold">
-              Transactions ({history.items.length})
-            </h2>
-            <ExportDebtButton partyId={row.partyId} query={exportQuery} />
-          </div>
-          <DebtItems items={history.items} flat />
+          <h2 id="owed" className="text-sm font-semibold">
+            Transactions
+          </h2>
+          <RecipientTransactions
+            partyId={row.partyId}
+            items={history.items}
+            columns={columns}
+            exportBase={exportQuery}
+            options={options}
+            editActions={{ saveEntry: saveEntryAction, getEntry: getEntryAction, getRecentCredits: getRecentCreditsAction, getOptions: getOptionsAction, addCategory: addCategoryAction, addPerson: addPersonAction }}
+            saveColumns={saveRecipientColumnsAction}
+            resetColumns={resetRecipientColumnsAction}
+          />
         </section>
       </div>
     </>

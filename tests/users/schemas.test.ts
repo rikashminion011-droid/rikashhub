@@ -51,8 +51,8 @@ describe("person name schemas", () => {
 });
 
 describe("sidebar navigation", () => {
-  it("keeps the seven modules and puts User separately under Account", () => {
-    expect(NAV_ITEMS).toHaveLength(7);
+  it("keeps the modules (now with Shopping Cart) and puts User separately under Account", () => {
+    expect(NAV_ITEMS).toHaveLength(8);
     expect(NAV_ITEMS.map((i) => i.href)).not.toContain("/user");
     expect(ACCOUNT_ITEM).toMatchObject({ title: "User", href: "/user" });
   });

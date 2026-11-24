@@ -6,6 +6,7 @@ import { BankBalancesDialog } from "@/features/bank-statement/components/bank-ba
 import { BankImportDialog } from "@/features/bank-statement/components/bank-import-dialog";
 import { BankStatementTable } from "@/features/bank-statement/components/bank-statement-table";
 import { BankStatementToolbar } from "@/features/bank-statement/components/bank-statement-toolbar";
+import { reconcileBankStatement } from "@/features/bank-statement/server/sync";
 import { countBankStatementRows, getBankBalances, listBankStatement } from "@/features/bank-statement/server/service";
 import { ensureUserSetup } from "@/features/expenses/server/service";
 import { ExportReportDialog } from "@/features/quick-pay/components/export-report-dialog";
@@ -46,6 +47,8 @@ export default async function BankStatementPage({ searchParams }: PageProps<"/ba
   try {
     const db = getPrisma();
     await ensureUserSetup(db, user);
+    // Match rows with Transaction History (Reason and Category follow the linked entry). It only changes what is out of step.
+    await reconcileBankStatement(db, user.id).catch((error) => console.error("[bank-statement] could not match rows", error));
     [result, options, everything, balances] = await Promise.all([listBankStatement(db, user.id, filters), getQuickPayOptions(db, user.id, "gpay"), countBankStatementRows(db, user.id), getBankBalances(db, user.id)]);
   } catch (error) {
     console.error("[bank-statement] could not load", error);

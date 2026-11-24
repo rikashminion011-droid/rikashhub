@@ -196,7 +196,7 @@ export function QuickEntryForm({
 
   // No title and no box: plain fields on the page. Only an entry opened for editing gets a small heading.
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-sm:space-y-2">
       {current ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
@@ -210,7 +210,17 @@ export function QuickEntryForm({
       ) : null}
 
       <div>
-        <form onSubmit={onSubmit} noValidate method="post" className="space-y-3">
+        <form
+          onSubmit={onSubmit}
+          noValidate
+          method="post"
+          className="space-y-3 max-sm:space-y-2"
+          // When the keyboard opens, the box being typed in is brought into view instead of hiding under it.
+          onFocusCapture={(e) => {
+            const el = e.target as HTMLElement;
+            if (window.matchMedia("(max-width: 639px)").matches && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) window.setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+          }}
+        >
           <EntryFields
             // The date shares the top line with Debit (−), Credit (+) and Self Transfer. Its calendar has a Today shortcut.
             headerLeft={current ? undefined : <DatePicker hideIcon ariaLabel="Choose the date of this entry" value={entryDate} max={today} onChange={(d) => setEntryDate(d || today)} className="h-10 w-full" />}
@@ -235,8 +245,9 @@ export function QuickEntryForm({
             </p>
           ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl text-base" disabled={saving}>
+          {/* On a phone the Save button stays in reach at the bottom while the fields scroll. */}
+          <div className="flex flex-wrap gap-2 max-sm:sticky max-sm:bottom-0 max-sm:z-20 max-sm:-mx-1 max-sm:bg-background/95 max-sm:px-1 max-sm:py-1.5 max-sm:backdrop-blur">
+            <Button type="submit" size="lg" className="h-11 flex-1 rounded-xl text-base max-sm:h-10" disabled={saving}>
               {saving ? <Loader2 className="animate-spin" /> : <Check />}
               {saving ? "Saving…" : current ? "Update Entry" : "Save Entry"}
             </Button>
@@ -248,10 +259,10 @@ export function QuickEntryForm({
           </div>
 
           <nav aria-label="Related pages" className="grid grid-cols-2 divide-x rounded-xl border bg-card text-sm">
-            <Link href="/quick-pay/settings" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+            <Link href="/quick-pay/settings" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground max-sm:min-h-9 max-sm:py-1 max-sm:text-xs">
               <Settings2 className="size-4 shrink-0" aria-hidden /> Customized Settings
             </Link>
-            <Link href="/quick-pay/transactions" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+            <Link href="/quick-pay/transactions" className="flex min-h-12 items-center justify-center gap-2 px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground max-sm:min-h-9 max-sm:py-1 max-sm:text-xs">
               <Receipt className="size-4 shrink-0" aria-hidden /> Transaction History
             </Link>
           </nav>
